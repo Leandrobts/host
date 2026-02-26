@@ -1,38 +1,245 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PS4 WebKit CVE Test Suite</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+    padding: 20px;
+  }
+  h1 {
+    color: #00d4ff;
+    font-size: 22px;
+    border-bottom: 2px solid #00d4ff;
+    padding-bottom: 10px;
+    margin-bottom: 6px;
+  }
+  .subtitle {
+    color: #888;
+    font-size: 12px;
+    margin-bottom: 20px;
+  }
+  .ua-box {
+    background: #111;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 20px;
+    font-size: 11px;
+    color: #aaa;
+    word-break: break-all;
+  }
+  .ua-box span { color: #00d4ff; }
+  .section-title {
+    color: #ffaa00;
+    font-size: 13px;
+    margin: 16px 0 8px 0;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .card-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .card {
+    background: #111;
+    border: 1px solid #222;
+    border-radius: 8px;
+    padding: 14px;
+    text-decoration: none;
+    display: block;
+    transition: border-color 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .card:hover { border-color: #00d4ff; }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 4px; height: 100%;
+  }
+  .card.red::before { background: #ff4444; }
+  .card.yellow::before { background: #ffaa00; }
+  .card.orange::before { background: #ff6600; }
+  .card.blue::before { background: #4488ff; }
+  .cve-id {
+    color: #fff;
+    font-size: 13px;
+    font-weight: bold;
+    margin-bottom: 4px;
+  }
+  .cve-type {
+    font-size: 11px;
+    margin-bottom: 6px;
+  }
+  .tag-uaf { color: #ff4444; }
+  .tag-oob { color: #ff6600; }
+  .tag-typeconf { color: #ffaa00; }
+  .tag-race { color: #aa88ff; }
+  .tag-buf { color: #ff6688; }
+  .cve-desc {
+    font-size: 11px;
+    color: #888;
+    line-height: 1.4;
+  }
+  .badge {
+    display: inline-block;
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-top: 6px;
+    margin-right: 4px;
+  }
+  .badge-nojit { background: #1a3a1a; color: #44ff44; border: 1px solid #44ff44; }
+  .badge-jit   { background: #3a1a1a; color: #ff4444; border: 1px solid #ff4444; }
+  .badge-blink { background: #1a2a3a; color: #4488ff; border: 1px solid #4488ff; }
+  .badge-webkit{ background: #1a2a2a; color: #00d4ff; border: 1px solid #00d4ff; }
+  .env-btn {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    background: #0d2d0d;
+    border: 1px solid #00aa44;
+    border-radius: 8px;
+    color: #00dd55;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    text-align: center;
+    text-decoration: none;
+    margin-bottom: 10px;
+    cursor: pointer;
+  }
+  .env-btn:hover { background: #0f3d0f; }
+  .footer {
+    margin-top: 20px;
+    font-size: 10px;
+    color: #444;
+    text-align: center;
+    border-top: 1px solid #1a1a1a;
+    padding-top: 10px;
+  }
+</style>
+</head>
+<body>
 
-<!-- Copyright (C) 2023-2025 anonymous
+<h1>⚡ PS4 WebKit CVE Test Suite</h1>
+<p class="subtitle">Firmware 13.04 · AppleWebKit/605.1.15 · Safari/17.0 era</p>
 
-This file is part of PSFree.
+<div class="ua-box">
+  UA detectado: <span id="ua-display">carregando...</span>
+</div>
 
-PSFree is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
+<a href="00_env_check.html" class="env-btn">
+  🔍 [EXECUTAR PRIMEIRO] Verificação de Ambiente e APIs
+</a>
 
-PSFree is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Affero General Public License for more details.
+<div class="section-title">🔴 Prioridade Alta — No-JIT Compatível</div>
+<div class="card-grid">
 
-You should have received a copy of the GNU Affero General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
--->
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>exploit</title>
-    <style>
-      @font-face {
-        font-family: "logging";
-        src: url("./src/fonts/LiberationMono-Regular.ttf");
-      }
-      #console {
-        font-family: "logging";
-      }
-    </style>
-  </head>
-  <body>
-    PSFree: A PS4/PS5 Exploit Chain<br />    
-    <pre id="console"></pre>
-  </body>
-  <script type="module" src="./src/alert.mjs"></script>
+  <a href="CVE-2026-2441.html" class="card red">
+    <div class="cve-id">CVE-2026-2441</div>
+    <div class="cve-type"><span class="tag-uaf">● USE-AFTER-FREE</span></div>
+    <div class="cve-desc">CSS @font-feature-values iterator invalidation. HashMap rehash libera memória enquanto iterador ainda aponta para ela.</div>
+    <span class="badge badge-blink">Blink</span>
+    <span class="badge badge-nojit">NO-JIT ✓</span>
+  </a>
+
+  <a href="CVE-2025-43541.html" class="card red">
+    <div class="cve-id">CVE-2025-43541</div>
+    <div class="cve-type"><span class="tag-typeconf">● TYPE CONFUSION</span></div>
+    <div class="cve-desc">Confusão de tipos em state handling do WebKit. Bugzilla #301257. Trend Micro ZDI.</div>
+    <span class="badge badge-webkit">WebKit</span>
+    <span class="badge badge-nojit">NO-JIT ✓</span>
+  </a>
+
+  <a href="CVE-2025-43536.html" class="card red">
+    <div class="cve-id">CVE-2025-43536</div>
+    <div class="cve-type"><span class="tag-uaf">● USE-AFTER-FREE</span></div>
+    <div class="cve-desc">UAF em memory management do WebKit. Bugzilla #301726. Nan Wang @eternalsakura13.</div>
+    <span class="badge badge-webkit">WebKit</span>
+    <span class="badge badge-nojit">NO-JIT ✓</span>
+  </a>
+
+  <a href="CVE-2025-43535.html" class="card red">
+    <div class="cve-id">CVE-2025-43535</div>
+    <div class="cve-type"><span class="tag-uaf">● MEMORY HANDLING</span></div>
+    <div class="cve-desc">Dois bugs de memory handling. Bugzilla #300774 + #301338. Google Big Sleep + Nan Wang.</div>
+    <span class="badge badge-webkit">WebKit</span>
+    <span class="badge badge-nojit">NO-JIT ✓</span>
+  </a>
+
+  <a href="CVE-2025-43501.html" class="card red">
+    <div class="cve-id">CVE-2025-43501</div>
+    <div class="cve-type"><span class="tag-buf">● BUFFER OVERFLOW</span></div>
+    <div class="cve-desc">Buffer overflow em rendering do WebKit. Bugzilla #301371. Hossein Lotfi (Trend Micro ZDI).</div>
+    <span class="badge badge-webkit">WebKit</span>
+    <span class="badge badge-nojit">NO-JIT ✓</span>
+  </a>
+
+  <a href="CVE-2025-46298.html" class="card red">
+    <div class="cve-id">CVE-2025-46298</div>
+    <div class="cve-type"><span class="tag-buf">● BUFFER OVERFLOW</span></div>
+    <div class="cve-desc">Buffer overflow adicional. Bugzilla #301468. Hossein Lotfi (mesma campanha de fuzzing).</div>
+    <span class="badge badge-webkit">WebKit</span>
+    <span class="badge badge-nojit">NO-JIT ✓</span>
+  </a>
+
+  <a href="CVE-2025-46299.html" class="card red">
+    <div class="cve-id">CVE-2025-46299</div>
+    <div class="cve-type"><span class="tag-uaf">● USE-AFTER-FREE</span></div>
+    <div class="cve-desc">UAF descoberto pelo Google Big Sleep (IA fuzzing). Bugzilla #299518.</div>
+    <span class="badge badge-webkit">WebKit</span>
+    <span class="badge badge-nojit">NO-JIT ✓</span>
+  </a>
+
+</div>
+
+<div class="section-title">🟡 Prioridade Média — Compatibilidade Condicional</div>
+<div class="card-grid">
+
+  <a href="CVE-2025-43531.html" class="card yellow">
+    <div class="cve-id">CVE-2025-43531</div>
+    <div class="cve-type"><span class="tag-race">● RACE CONDITION</span></div>
+    <div class="cve-desc">Race condition em state handling. Bugzilla #301940. Phil Pizlo (Epic Games / ex-WebKit).</div>
+    <span class="badge badge-webkit">WebKit</span>
+    <span class="badge badge-nojit">NO-JIT ✓</span>
+  </a>
+
+  <a href="CVE-2025-14174.html" class="card orange">
+    <div class="cve-id">CVE-2025-14174</div>
+    <div class="cve-type"><span class="tag-oob">● OUT-OF-BOUNDS</span></div>
+    <div class="cve-desc">OOB no ANGLE/WebGL renderer. Bugzilla #303614. Explorado in-the-wild junto ao CVE-2025-43529.</div>
+    <span class="badge badge-webkit">WebKit</span>
+    <span class="badge badge-nojit">NO-JIT ✓</span>
+  </a>
+
+</div>
+
+<div class="section-title">❌ Incompatível com PS4 (JIT requerido)</div>
+<div class="card-grid">
+  <a href="CVE-2025-43529.html" class="card blue">
+    <div class="cve-id">CVE-2025-43529</div>
+    <div class="cve-type"><span class="tag-uaf">● UAF DFG JIT</span></div>
+    <div class="cve-desc">UAF no Store Barrier Insertion Phase do DFG JIT. Requer DFG ativo — não existe no PS4. Incluído para referência.</div>
+    <span class="badge badge-webkit">WebKit</span>
+    <span class="badge badge-jit">JIT ONLY ✗</span>
+  </a>
+</div>
+
+<div class="footer">
+  PS4 WebKit CVE Test Suite · Para submissão ao PlayStation Bug Bounty (HackerOne) · Uso somente em dispositivo próprio
+</div>
+
+<script>
+  document.getElementById('ua-display').textContent = navigator.userAgent;
+</script>
+</body>
 </html>

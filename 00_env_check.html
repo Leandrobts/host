@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>PS4 Environment Check</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a0f; color: #e0e0e0; font-family: 'Courier New', monospace; padding: 16px; font-size: 12px; }
+  h1 { color: #00d4ff; font-size: 16px; margin-bottom: 4px; }
+  .sub { color: #666; font-size: 10px; margin-bottom: 16px; }
+  .section { margin-bottom: 14px; }
+  .section-title { color: #ffaa00; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; border-bottom: 1px solid #1a1a1a; padding-bottom: 3px; }
+  .row { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; border-bottom: 1px solid #111; }
+  .row:last-child { border-bottom: none; }
+  .key { color: #aaa; flex: 1; }
+  .val { font-weight: bold; text-align: right; max-width: 60%; word-break: break-all; }
+  .ok    { color: #44ff88; }
+  .warn  { color: #ffaa00; }
+  .fail  { color: #ff4444; }
+  .info  { color: #4488ff; }
+  .ua-full { background: #111; border: 1px solid #222; border-radius: 4px; padding: 8px; margin: 8px 0; word-break: break-all; color: #aaa; font-size: 10px; line-height: 1.5; }
+  .back-btn { display: inline-block; margin-top: 16px; padding: 8px 16px; background: #111; border: 1px solid #333; border-radius: 4px; color: #888; text-decoration: none; font-size: 11px; }
+  .back-btn:hover { border-color: #00d4ff; color: #00d4ff; }
+  .summary-box { background: #0d1a0d; border: 1px solid #1a3a1a; border-radius: 6px; padding: 10px; margin-top: 14px; }
+  .summary-title { color: #44ff88; font-size: 12px; margin-bottom: 6px; }
+  .summary-line { font-size: 11px; color: #aaa; margin: 3px 0; }
+  .summary-line .highlight { color: #fff; }
+</style>
+</head>
+<body>
+
+<h1>🔍 Verificação de Ambiente — PS4</h1>
+<p class="sub">Execute ANTES dos testes de CVE individuais</p>
+
+<div class="ua-full" id="ua-full">Detectando...</div>
+
+<div class="section">
+  <div class="section-title">📱 Identificação do Dispositivo</div>
+  <div id="device-section"></div>
+</div>
+
+<div class="section">
+  <div class="section-title">⚙️ Motor JavaScript — Capacidades</div>
+  <div id="js-section"></div>
+</div>
+
+<div class="section">
+  <div class="section-title">🎨 CSS — Features Relevantes para CVEs</div>
+  <div id="css-section"></div>
+</div>
+
+<div class="section">
+  <div class="section-title">🧱 DOM e Web APIs</div>
+  <div id="dom-section"></div>
+</div>
+
+<div class="section">
+  <div class="section-title">💾 Memória e Limites</div>
+  <div id="mem-section"></div>
+</div>
+
+<div class="section">
+  <div class="section-title">🖼️ Gráficos e WebGL</div>
+  <div id="gpu-section"></div>
+</div>
+
+<div id="summary-box"></div>
+
+<a href="index.html" class="back-btn">← Voltar ao índice</a>
+
+<script>
+function row(key, val, cls) {
+  cls = cls || 'info';
+  return '<div class="row"><span class="key">' + key + '</span><span class="val ' + cls + '">' + val + '</span></div>';
+}
+
+function check(val, trueLabel, falseLabel, trueClass, falseClass) {
+  trueLabel  = trueLabel  || 'PRESENTE';
+  falseLabel = falseLabel || 'AUSENTE';
+  trueClass  = trueClass  || 'ok';
+  falseClass = falseClass || 'fail';
+  return val ? '<span class="' + trueClass + '">' + trueLabel + '</span>'
+             : '<span class="' + falseClass + '">' + falseLabel + '</span>';
+}
+
+// --- Device ---
+var ua = navigator.userAgent;
+document.getElementById('ua-full').textContent = ua;
+var isPS4    = /PlayStation 4/.test(ua);
+var wkMatch  = ua.match(/AppleWebKit\/([\d.]+)/);
+var verMatch = ua.match(/Version\/([\d.]+)/);
+var fwMatch  = ua.match(/PlayStation 4\/([\d.]+)/);
+var wkVer    = wkMatch  ? wkMatch[1]  : 'N/A';
+var safVer   = verMatch ? verMatch[1] : 'N/A';
+var fwVer    = fwMatch  ? fwMatch[1]  : 'N/A';
+
+var deviceHtml = '';
+deviceHtml += row('Dispositivo detectado', isPS4 ? 'PlayStation 4 ✓' : 'OUTRO (' + navigator.platform + ')', isPS4 ? 'ok' : 'warn');
+deviceHtml += row('Firmware', fwVer, fwVer !== 'N/A' ? 'ok' : 'warn');
+deviceHtml += row('WebKit build', wkVer, 'info');
+deviceHtml += row('Safari Version', safVer, 'info');
+deviceHtml += row('Platform', navigator.platform || 'N/A', 'info');
+document.getElementById('device-section').innerHTML = deviceHtml;
+
+// --- JS Engine ---
+var jsHtml = '';
+jsHtml += row('typeof Proxy',               check(typeof Proxy !== 'undefined'));
+jsHtml += row('typeof Symbol',              check(typeof Symbol !== 'undefined'));
+jsHtml += row('typeof Promise',             check(typeof Promise !== 'undefined'));
+jsHtml += row('typeof WeakRef',             check(typeof WeakRef !== 'undefined'));
+jsHtml += row('typeof FinalizationRegistry',check(typeof FinalizationRegistry !== 'undefined'));
+jsHtml += row('typeof Atomics',             check(typeof Atomics !== 'undefined'));
+jsHtml += row('typeof SharedArrayBuffer',   check(typeof SharedArrayBuffer !== 'undefined'));
+jsHtml += row('typeof BigInt',              check(typeof BigInt !== 'undefined'));
+jsHtml += row('typeof globalThis',          check(typeof globalThis !== 'undefined'));
+jsHtml += row('typeof queueMicrotask',      check(typeof queueMicrotask !== 'undefined'));
+
+// Detectar JIT (heurística: se DFG existe, JIT está ativo)
+var jitHint = 'N/A (sem acesso direto)';
+// Tentar medir velocidade como proxy para JIT
+var t0 = Date.now();
+var dummy = 0;
+for (var _i = 0; _i < 1000000; _i++) dummy += _i;
+var elapsed = Date.now() - t0;
+jitHint = elapsed < 30 ? 'Provavelmente ATIVO (' + elapsed + 'ms)' : 'Provavelmente DESATIVADO (' + elapsed + 'ms)';
+jsHtml += row('JIT (heurística velocidade)', jitHint, elapsed < 30 ? 'warn' : 'ok');
+
+document.getElementById('js-section').innerHTML = jsHtml;
+
+// --- CSS ---
+var cssHtml = '';
+function cssCheck(feature) {
+  try {
+    return CSS && CSS.supports ? CSS.supports(feature) : null;
+  } catch(e) { return null; }
+}
+
+// CVE-2026-2441: @font-feature-values
+var fvSupport = false;
+var fvIterSupport = false;
+var fvSetSupport  = false;
+try {
+  var testStyle = document.createElement('style');
+  testStyle.textContent = '@font-feature-values "TestFont" { @styleset { fancy: 1; } }';
+  document.head.appendChild(testStyle);
+  var sheet = testStyle.sheet;
+  var rule  = sheet && sheet.cssRules && sheet.cssRules[0];
+  fvSupport = !!(rule && rule.styleset !== undefined);
+  if (fvSupport) {
+    fvIterSupport = !!(rule.styleset && typeof rule.styleset.entries === 'function');
+    fvSetSupport  = !!(rule.styleset && typeof rule.styleset.set   === 'function');
+  }
+  document.head.removeChild(testStyle);
+} catch(e) {}
+
+cssHtml += row('@font-feature-values suporte',    check(fvSupport));
+cssHtml += row('  └ .styleset.entries() iterável', check(fvIterSupport, 'SIM ← CVE-2026-2441 TESTÁVEL', 'NÃO', 'ok', 'warn'));
+cssHtml += row('  └ .styleset.set() mutável',      check(fvSetSupport,  'SIM', 'NÃO', 'ok', 'warn'));
+cssHtml += row('@container queries',   check(cssCheck('container-type: inline-size'), 'SUPORTADO', 'AUSENTE', 'info', 'warn'));
+cssHtml += row('@layer',               check(cssCheck('@layer base { }'), 'SUPORTADO', 'AUSENTE', 'info', 'warn'));
+cssHtml += row('CSS Nesting',          check(cssCheck('& > div { }'), 'SUPORTADO', 'AUSENTE', 'info', 'warn'));
+cssHtml += row('CSS Animations',       check(typeof document.createElement('div').animate === 'function', 'SUPORTADO', 'AUSENTE', 'info', 'warn'));
+document.getElementById('css-section').innerHTML = cssHtml;
+
+// --- DOM ---
+var domHtml = '';
+var tempDiv = document.createElement('div');
+domHtml += row('MutationObserver',    check(typeof MutationObserver !== 'undefined'));
+domHtml += row('IntersectionObserver',check(typeof IntersectionObserver !== 'undefined'));
+domHtml += row('ResizeObserver',      check(typeof ResizeObserver !== 'undefined'));
+domHtml += row('CustomEvent',         check(typeof CustomEvent !== 'undefined'));
+domHtml += row('ShadowDOM (attachShadow)', check(typeof tempDiv.attachShadow === 'function'));
+domHtml += row('requestAnimationFrame',   check(typeof requestAnimationFrame === 'function'));
+domHtml += row('setTimeout',              check(typeof setTimeout === 'function'));
+domHtml += row('XMLHttpRequest',          check(typeof XMLHttpRequest !== 'undefined'));
+domHtml += row('fetch()',                 check(typeof fetch !== 'undefined'));
+domHtml += row('EventTarget',            check(typeof EventTarget !== 'undefined'));
+document.getElementById('dom-section').innerHTML = domHtml;
+
+// --- Memória ---
+var memHtml = '';
+function testArrayBuffer(sizeMB) {
+  try { new ArrayBuffer(sizeMB * 1024 * 1024); return true; }
+  catch(e) { return false; }
+}
+memHtml += row('ArrayBuffer 1MB',    check(testArrayBuffer(1)));
+memHtml += row('ArrayBuffer 64MB',   check(testArrayBuffer(64)));
+memHtml += row('ArrayBuffer 256MB',  check(testArrayBuffer(256)));
+memHtml += row('ArrayBuffer 512MB',  check(testArrayBuffer(512), '512MB OK', 'Limite < 512MB', 'ok', 'warn'));
+memHtml += row('Float64Array',       check(typeof Float64Array !== 'undefined'));
+memHtml += row('DataView',           check(typeof DataView !== 'undefined'));
+memHtml += row('TypedArray set()',   check(typeof Uint8Array !== 'undefined' && typeof (new Uint8Array(1)).set === 'function'));
+document.getElementById('mem-section').innerHTML = memHtml;
+
+// --- GPU / WebGL ---
+var gpuHtml = '';
+var canvas = document.createElement('canvas');
+var gl  = null;
+var gl2 = null;
+try { gl  = canvas.getContext('webgl')   || canvas.getContext('experimental-webgl'); } catch(e) {}
+try { gl2 = canvas.getContext('webgl2'); } catch(e) {}
+
+gpuHtml += row('WebGL 1.0',   check(!!gl,  'DISPONÍVEL ← CVE-2025-14174 relevante', 'AUSENTE', 'warn', 'ok'));
+gpuHtml += row('WebGL 2.0',   check(!!gl2, 'DISPONÍVEL', 'AUSENTE', 'warn', 'ok'));
+if (gl) {
+  try {
+    gpuHtml += row('  Renderer', gl.getParameter(gl.RENDERER) || 'N/A', 'info');
+    gpuHtml += row('  Vendor',   gl.getParameter(gl.VENDOR)   || 'N/A', 'info');
+  } catch(e) {}
+}
+gpuHtml += row('canvas 2D', check(!!(document.createElement('canvas').getContext('2d'))));
+gpuHtml += row('OffscreenCanvas', check(typeof OffscreenCanvas !== 'undefined'));
+document.getElementById('gpu-section').innerHTML = gpuHtml;
+
+// --- Sumário ---
+var compatCVEs = [];
+if (fvIterSupport)                          compatCVEs.push('CVE-2026-2441 (CSS UAF)');
+if (typeof MutationObserver !== 'undefined') compatCVEs.push('CVE-2025-43536 (UAF WebKit)');
+if (typeof Float64Array     !== 'undefined') compatCVEs.push('CVE-2025-43535 (Mem Handling)');
+if (typeof ArrayBuffer      !== 'undefined') compatCVEs.push('CVE-2025-43501 (Buffer Overflow)');
+if (typeof ArrayBuffer      !== 'undefined') compatCVEs.push('CVE-2025-46298 (Buffer Overflow 2)');
+if (typeof ArrayBuffer      !== 'undefined') compatCVEs.push('CVE-2025-46299 (UAF BigSleep)');
+if (typeof requestAnimationFrame === 'function') compatCVEs.push('CVE-2025-43531 (Race Condition)');
+if (!!gl)                                    compatCVEs.push('CVE-2025-14174 (OOB ANGLE/WebGL)');
+
+var sumHtml = '<div class="summary-box"><div class="summary-title">📊 Resumo — CVEs provavelmente testáveis neste dispositivo</div>';
+if (compatCVEs.length === 0) {
+  sumHtml += '<div class="summary-line" style="color:#ff4444">Nenhum CVE aplicável detectado neste ambiente.</div>';
+} else {
+  for (var ci = 0; ci < compatCVEs.length; ci++) {
+    sumHtml += '<div class="summary-line">→ <span class="highlight">' + compatCVEs[ci] + '</span></div>';
+  }
+}
+sumHtml += '<div class="summary-line" style="margin-top:8px;color:#666">JIT detectado como: ' + jitHint + '</div>';
+sumHtml += '</div>';
+document.getElementById('summary-box').innerHTML = sumHtml;
+</script>
+</body>
+</html>
