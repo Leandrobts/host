@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Patch Reference — CVE WebKit PS4</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#060608; color:#ccc; font-family:'Courier New',monospace; padding:16px; font-size:11px; }
+h1 { color:#00ffcc; font-size:16px; border-bottom:1px solid #00ffcc; padding-bottom:6px; margin-bottom:4px; }
+.sub { color:#444; font-size:9px; margin-bottom:16px; }
+h2 { color:#ffaa00; font-size:12px; margin:16px 0 8px 0; padding:4px 0 4px 8px; border-left:3px solid #ffaa00; }
+.card { background:#0a0a10; border:1px solid #1a1a22; border-radius:5px; padding:12px; margin-bottom:10px; }
+.cve-id { color:#fff; font-size:13px; font-weight:bold; margin-bottom:4px; }
+.commit-line { color:#00cccc; margin:3px 0; }
+.commit-line a { color:#00aaaa; }
+.file-path { color:#888844; font-size:10px; }
+.vuln-code { background:#110000; border:1px solid #330000; border-radius:3px; padding:8px; margin:6px 0; font-size:10px; color:#cc6666; line-height:1.8; white-space:pre-wrap; }
+.fix-code { background:#001100; border:1px solid #003300; border-radius:3px; padding:8px; margin:6px 0; font-size:10px; color:#44aa66; line-height:1.8; white-space:pre-wrap; }
+.label { font-size:9px; text-transform:uppercase; letter-spacing:1px; margin:6px 0 2px 0; }
+.label.vuln { color:#ff4444; }
+.label.fix  { color:#44ff88; }
+.desc { font-size:10px; color:#778899; line-height:1.6; margin:6px 0; }
+.badge { display:inline-block; font-size:8px; padding:1px 5px; border-radius:2px; margin:3px 3px 0 0; }
+.b-pub  { background:#001a00; color:#00cc66; border:1px solid #00cc66; }
+.b-priv { background:#1a0000; color:#cc4444; border:1px solid #cc4444; }
+.b-itw  { background:#1a0800; color:#ff8800; border:1px solid #ff8800; }
+.b-nojit{ background:#00001a; color:#4488ff; border:1px solid #4488ff; }
+table { width:100%; border-collapse:collapse; margin-top:10px; font-size:10px; }
+th { background:#0d0d18; color:#aabbcc; padding:5px 8px; text-align:left; border:1px solid #1a1a2a; }
+td { padding:4px 8px; border:1px solid #111; color:#aaa; }
+td.red   { color:#ff6666; }
+td.green { color:#44ff88; }
+td.yellow{ color:#ffcc44; }
+td.blue  { color:#4488ff; }
+.footer { margin-top:16px; font-size:9px; color:#333; border-top:1px solid #111; padding-top:8px; }
+</style>
+</head>
+<body>
+<h1>📋 Patch Reference Document</h1>
+<p class="sub">Commits reais, diffs, e análise de patch gap para PS4 FW 13.04 · Gerado: Fev 2026</p>
+
+<!-- ==================== TABELA RESUMO ==================== -->
+<h2>📊 Tabela Consolidada — Status de Patch por CVE</h2>
+<table>
+<tr>
+  <th>CVE</th>
+  <th>Bugzilla</th>
+  <th>Commit / Fix</th>
+  <th>Arquivo Afetado</th>
+  <th>Data Fix</th>
+  <th>No-JIT</th>
+  <th>Status Patch PS4</th>
+</tr>
+<tr>
+  <td class="red">CVE-2026-20608</td><td>#303357</td><td class="yellow">PRIVADO</td>
+  <td class="blue">WebCore (rendering state)</td><td class="red">11/02/2026</td>
+  <td class="green">✓</td><td class="red">SEM PATCH (gap ~17m)</td>
+</tr>
+<tr>
+  <td class="red">CVE-2026-20644</td><td>#303444</td><td class="yellow">PRIVADO</td>
+  <td class="blue">WebCore (memory handling)</td><td class="red">11/02/2026</td>
+  <td class="green">✓</td><td class="red">SEM PATCH (gap ~17m)</td>
+</tr>
+<tr>
+  <td class="red">CVE-2026-20652</td><td>#303959</td><td class="yellow">PRIVADO</td>
+  <td class="blue">WebKit (network/memory)</td><td class="red">11/02/2026</td>
+  <td class="green">✓</td><td class="red">SEM PATCH (gap ~17m)</td>
+</tr>
+<tr>
+  <td class="red">CVE-2026-20635</td><td>#304661</td><td class="yellow">PRIVADO</td>
+  <td class="blue">WebCore (layout)</td><td class="red">11/02/2026</td>
+  <td class="green">✓</td><td class="red">SEM PATCH (gap ~17m)</td>
+</tr>
+<tr>
+  <td class="red">CVE-2026-20636</td><td>#304657</td><td class="yellow">PRIVADO</td>
+  <td class="blue">WebCore (layout)</td><td class="red">11/02/2026</td>
+  <td class="green">✓</td><td class="red">SEM PATCH (gap ~17m)</td>
+</tr>
+<tr>
+  <td style="color:#ff8800">UAF content-visibility</td><td>—</td><td class="red">SEM CVE</td>
+  <td class="blue">WebCore (layer tree)</td><td class="red">?? 0-day</td>
+  <td class="green">✓</td><td class="red">DESCONHECIDO</td>
+</tr>
+<tr>
+  <td class="yellow">CVE-2023-28205</td><td>#254797</td><td class="green">c9880de ✓</td>
+  <td class="blue">SerializedScriptValue.cpp</td><td>Abr/2023</td>
+  <td class="green">✓</td><td class="yellow">PROVAVELMENTE PATCHED</td>
+</tr>
+<tr>
+  <td>CVE-2025-24201</td><td>—</td><td class="green">ANGLE WEBGL ✓</td>
+  <td class="blue">GraphicsContextGLANGLE</td><td>Mar/2025</td>
+  <td class="green">✓</td><td style="color:#888">N/A (sem WebGL no PS4)</td>
+</tr>
+</table>
+
+<!-- ==================== CVE-2023-28205 PATCH REAL ==================== -->
+<h2>🔧 CVE-2023-28205 — Patch Real (Commit c9880de)</h2>
+<div class="card">
+  <div class="cve-id">CVE-2023-28205 — UAF no Structured Clone Deserializer</div>
+  <div class="commit-line">🔗 Commit: github.com/WebKit/WebKit/commit/c9880de4a28b9a64a5e1d0513dc245d61a2e6ddb</div>
+  <div class="file-path">📁 Source/WebCore/bindings/js/SerializedScriptValue.cpp</div>
+  <div class="file-path">📁 Source/JavaScriptCore/runtime/MarkedVector.h (novo arquivo)</div>
+  <span class="badge b-pub">Patch Público</span>
+  <span class="badge b-nojit">No-JIT</span>
+  <span class="badge b-itw">Explorado ITW</span>
+
+  <div class="desc">
+    O deserializador do structured clone armazenava ponteiros para objetos JS em Vectors simples
+    não-escaneados pelo GC. Se o GC fosse disparado durante a deserialização, os objetos eram
+    coletados enquanto o deserializador ainda tinha ponteiros para eles — UAF clássico.
+    Descoberto por Clément Lecigne (Google TAG) + Donncha Ó Cearbhaill (Amnesty International).
+  </div>
+
+  <div class="label vuln">❌ CÓDIGO VULNERÁVEL (antes do patch)</div>
+  <div class="vuln-code">// CloneDeserializer::deserialize() em SerializedScriptValue.cpp
+// Estes Vectors NÃO são escaneados pelo GC:
+Vector&lt;JSObject*, 32&gt; outputObjectStack;   // JSObject* sem GC root
+Vector&lt;JSMap*, 4&gt;    mapStack;             // JSMap*    sem GC root
+Vector&lt;JSSet*, 4&gt;    setStack;             // JSSet*    sem GC root
+
+// Se GC ocorrer aqui → objetos liberados → ponteiros dangling
+// Desserializador continua usando os ponteiros → USE-AFTER-FREE</div>
+
+  <div class="label fix">✅ CÓDIGO CORRIGIDO (após c9880de)</div>
+  <div class="fix-code">// Substituídos por MarkedVector — GC-aware, registra objetos como GC roots:
+MarkedVector&lt;JSObject*&gt; outputObjectStack;  // GC sabe que estes objetos estão em uso
+MarkedVector&lt;JSMap*&gt;    mapStack;            // GC não pode coletar entradas aqui
+MarkedVector&lt;JSSet*&gt;    setStack;            // Idem para Sets
+
+// MarkedVector é basicamente um Barrier de escrita que registra
+// o Vector no GC Heap, impedindo coleta prematura dos objetos</div>
+
+  <div class="label" style="color:#ffcc00">⚠️ ANÁLISE PS4</div>
+  <div class="desc">
+    Patch aplicado no Safari 16.4.1 (Abril 2023). O PS4 13.04 usa Version/17.0 (Safari 17,
+    Set/2023) — <strong style="color:#ffcc00">o fix PROVAVELMENTE chegou no branch</strong>.
+    Porém: o seregonwar confirma que Safari 15.4 era vulnerável. Se o PS4 usa um branch
+    congelado que não incluiu c9880de, o bug está presente. O PoC CVE-2023-28205.html
+    detecta isso: crash via GC+postMessage confirma vulnerabilidade.
+  </div>
+</div>
+
+<!-- ==================== CVE-2025-24201 ==================== -->
+<h2>🔧 CVE-2025-24201 — Mecanismo ANGLE/WebGL</h2>
+<div class="card">
+  <div class="cve-id">CVE-2025-24201 — OOB Write em ANGLE (WebGL PRIMITIVE_RESTART)</div>
+  <div class="commit-line">🔗 PoC: github.com/The-Maxu/CVE-2025-24201-WebKit-Vulnerability-Detector-PoC</div>
+  <div class="file-path">📁 Source/WebCore/platform/graphics/angle/GraphicsContextGLANGLE.cpp</div>
+  <span class="badge b-pub">Patch Público</span>
+  <span class="badge b-nojit">No-JIT</span>
+
+  <div class="label vuln">❌ VALIDAÇÃO AUSENTE (vulnerável)</div>
+  <div class="vuln-code">// WebGLRenderingContext::enable() em WebGL1 não valida:
+void WebGL1RenderingContext::enable(GCGLenum cap) {
+    // FALTAVA: verificar se cap é válido para WebGL1
+    // 0x8D69 (PRIMITIVE_RESTART_FIXED_INDEX) é WebGL2 only
+    // mas era aceito sem GL_INVALID_OPERATION
+    m_context->enable(cap);  // passava direto para o driver ANGLE
+}</div>
+
+  <div class="label fix">✅ DETECÇÃO (3 linhas — The-Maxu)</div>
+  <div class="fix-code">var gl = canvas.getContext("webgl");      // contexto WebGL1
+gl.enable(0x8D69);                        // PRIMITIVE_RESTART_FIXED_INDEX
+var err = gl.getError();                  // 0 = VULNERÁVEL, 0x0500 = protegido
+// Se err === 0: implementação aceita enum inválido → OOB write possível</div>
+
+  <div class="desc">
+    <strong style="color:#4488ff">Relevância PS4:</strong> WebGL ausente no FW 13.04 — impacto direto mínimo.
+    Porém o padrão (enum inválido aceito sem validação na camada gráfica) pode existir
+    em outros componentes do GNM (GPU Native Mode) do PS4.
+  </div>
+</div>
+
+<!-- ==================== SAFARI 26.3 CVEs ==================== -->
+<h2>🔴 CVEs Safari 26.3 (11/02/2026) — Patches Privados</h2>
+<div class="card">
+  <div class="cve-id">CVE-2026-20608 / CVE-2026-20644 / CVE-2026-20652 / CVE-2026-20635 / CVE-2026-20636</div>
+  <span class="badge b-priv">Patch Privado</span>
+  <span class="badge b-nojit">No-JIT</span>
+
+  <div class="desc">
+    Todos corrigidos no Safari 26.3 (11/02/2026). Bugzillas em período de embargo (90 dias).
+    Commits no repositório webkit/WebKit ainda não identificados publicamente.
+  </div>
+
+  <div class="label" style="color:#ffaa00">🔍 COMO ENCONTRAR OS COMMITS</div>
+  <div class="fix-code">// Método 1: Buscar commits em WebKit após Jan 2026 com keywords:
+// "state management" OR "memory handling" em WebCore
+// URL: github.com/WebKit/WebKit/commits/main/Source/WebCore
+// Filtrar por: Jan/2026 → Fev/2026
+
+// Método 2: Diff do WebKitGTK quando WSA-2026-0001 for publicado:
+// webkitgtk.org/security.html → aguardar publicação (~90 dias)
+
+// Método 3: Buscar por Bugzilla IDs nos commit logs:
+// #303357, #303444, #303959, #304657, #304661
+// Comando: grep -r "303357\|303444\|303959" no webkit/WebKit
+
+// Método 4: Analisar diff entre WebKitGTK 2.46.x e 2.48.x
+// quando 2.48 for lançado com os fixes</div>
+
+  <div class="label" style="color:#ff4444">⚠️ JANELA DE PATCH GAP PS4</div>
+  <div class="fix-code">PS4 FW 13.04 branch: ~Setembro 2023 (Version/17.0)
+Bugs corrigidos:     11 Fevereiro 2026
+Gap total:           ~17 meses de vulnerabilidades não patchadas
+WSA-2025-0010:       17 Dez 2025 (último advisory público)
+CVEs neste doc:      Todos pós-Set/2023 → todos no gap do PS4</div>
+</div>
+
+<!-- ==================== UAF content-visibility ==================== -->
+<h2>🟠 UAF content-visibility (Dark-life944) — Sem CVE Formal</h2>
+<div class="card">
+  <div class="cve-id">UAF — Layer Tree via content-visibility CSS</div>
+  <div class="commit-line">🔗 Repositório: github.com/Dark-life944/poc</div>
+  <div class="commit-line">🔗 PoC live: dark-life944.github.io/poc/</div>
+  <span class="badge b-itw">Target PS4/PS5</span>
+  <span class="badge b-nojit">No-JIT</span>
+  <span class="badge" style="background:#2a0000;color:#ff0000;border:1px solid #ff0000">SEM CVE</span>
+
+  <div class="label vuln">❌ FLUXO DO BUG</div>
+  <div class="vuln-code">// Componente: RenderLayerCompositor / WebCore compositor
+// Arquivo provável: Source/WebCore/rendering/RenderLayerCompositor.cpp
+
+// 1. content-visibility: hidden → RenderLayer desaloca estruturas internas
+container.style['content-visibility'] = 'hidden';
+
+// 2. removeChild → RenderObject do filho é destruído
+//    mas o compositor mantém referência ao RenderLayer pai
+container.removeChild(child);  // libera memória do layer filho
+
+// 3. content-visibility: auto → compositor tenta recomputar
+//    usando ponteiro para RenderLayer que pode ter sido movido/liberado
+container.style['content-visibility'] = 'auto';  // UAF aqui
+
+// 4. Heap spray para controlar a memória liberada
+for (var i = 0; i &lt; 1000; i++) spray.push(new Uint8Array(1024));</div>
+
+  <div class="label fix">🔍 INVESTIGAÇÃO NECESSÁRIA</div>
+  <div class="fix-code">// Para confirmar e reportar ao PS Bug Bounty:
+// 1. Executar UAF_content_visibility.html no PS4
+// 2. Se crashar: é um potencial 0-day não reportado
+// 3. Verificar se Apple já assignou CVE em alertas recentes
+// 4. Buscar: site:cve.org "content-visibility" webkit 2024 2025
+// 5. Reportar via: hackerone.com/playstation com crash logs</div>
+</div>
+
+<!-- ==================== COMO MONITORAR ==================== -->
+<h2>📡 Como Monitorar Novos Patches</h2>
+<div class="card">
+  <div class="fix-code">// 1. RSS do WebKitGTK Security:
+//    webkitgtk.org/security.html → aguardar WSA-2026-0001
+
+// 2. Apple Security Releases:
+//    support.apple.com/en-us/100100 (RSS disponível)
+
+// 3. Commits WebKit/WebKit em Source/WebCore:
+//    github.com/WebKit/WebKit/commits/main/Source/WebCore
+
+// 4. Twitter/X de pesquisadores-chave:
+//    @eternalsakura13 (Nan Wang)    → anuncia fixes dos seus bugs
+//    @patch1t (Mickey Jin)          → iOS/macOS kernel + WebKit
+//    @calysteon (Nathaniel Oh)      → WebKit networking
+//    EntryHi                        → WebKit layout bugs
+
+// 5. Bugzilla WebKit (quando público após 90 dias):
+//    bugs.webkit.org/show_bug.cgi?id=303357
+//    bugs.webkit.org/show_bug.cgi?id=303444
+//    bugs.webkit.org/show_bug.cgi?id=303959
+//    bugs.webkit.org/show_bug.cgi?id=304657
+//    bugs.webkit.org/show_bug.cgi?id=304661</div>
+</div>
+
+<div class="footer">
+  Patch Reference Document · PS4 WebKit CVE Research · Para submissão ao PlayStation Bug Bounty
+</div>
+</body>
+</html>

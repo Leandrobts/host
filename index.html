@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>PS4 WebKit NEW CVE PoC Suite — Safari 26.3 + GitHub Findings</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#080810; color:#e0e0e0; font-family:'Courier New',monospace; padding:18px; font-size:12px; }
+h1 { color:#00ffcc; font-size:20px; border-bottom:2px solid #00ffcc; padding-bottom:8px; margin-bottom:4px; }
+.sub { color:#555; font-size:10px; margin-bottom:16px; }
+.ua { background:#0d0d1a; border:1px solid #1a1a3a; border-radius:5px; padding:8px 12px; margin-bottom:16px; font-size:10px; color:#7788bb; word-break:break-all; }
+.ua span { color:#00ffcc; }
+
+.section-title {
+  font-size:11px; text-transform:uppercase; letter-spacing:2px;
+  margin:18px 0 8px 0; padding:4px 8px;
+  border-left:3px solid #ff4444;
+  color:#ff6666;
+}
+.section-title.yellow { border-color:#ffaa00; color:#ffcc44; }
+.section-title.green  { border-color:#00cc88; color:#00ffaa; }
+
+.grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px; }
+
+.card {
+  display:block; text-decoration:none;
+  background:#0d0d18; border:1px solid #1a1a2a;
+  border-radius:7px; padding:13px;
+  position:relative; overflow:hidden;
+  transition:border-color .2s;
+}
+.card:hover { border-color:#00ffcc; }
+.card::before { content:''; position:absolute; top:0; left:0; width:3px; height:100%; }
+.card.red::before    { background:#ff4444; }
+.card.orange::before { background:#ff8800; }
+.card.yellow::before { background:#ffcc00; }
+.card.green::before  { background:#00cc88; }
+.card.blue::before   { background:#4488ff; }
+
+.cve-id   { color:#ffffff; font-size:13px; font-weight:bold; margin-bottom:3px; }
+.cve-date { color:#ff4444; font-size:9px; margin-bottom:4px; }
+.cve-type { font-size:10px; margin-bottom:5px; }
+.cve-desc { font-size:10px; color:#778899; line-height:1.45; }
+
+.badge {
+  display:inline-block; font-size:8px; padding:2px 5px;
+  border-radius:2px; margin:4px 3px 0 0;
+}
+.b-fresh   { background:#1a0000; color:#ff4444; border:1px solid #ff4444; }
+.b-nojit   { background:#001a0a; color:#00cc66; border:1px solid #00cc66; }
+.b-poc     { background:#001a1a; color:#00cccc; border:1px solid #00cccc; }
+.b-patch   { background:#1a1a00; color:#cccc00; border:1px solid #cccc00; }
+.b-0day    { background:#2a0000; color:#ff0000; border:1px solid #ff0000; }
+.b-jit     { background:#1a0000; color:#ff6666; border:1px solid #ff4444; }
+.b-blink   { background:#000a1a; color:#4488ff; border:1px solid #4488ff; }
+
+.patch-info {
+  background:#0d0d1a; border:1px solid #1a2a1a;
+  border-radius:5px; padding:10px; margin-top:14px;
+  font-size:10px; line-height:1.6; color:#667766;
+}
+.patch-info strong { color:#00aa66; display:block; margin-bottom:4px; }
+.commit { color:#00cccc; }
+
+.footer { margin-top:18px; font-size:9px; color:#333; text-align:center; border-top:1px solid #111; padding-top:8px; }
+</style>
+</head>
+<body>
+
+<h1>🆕 PS4 WebKit — NOVOS CVEs PoC Suite</h1>
+<p class="sub">Safari 26.3 (11/02/2026) + GitHub Findings · Firmware 13.04 · AppleWebKit 605.1.15</p>
+
+<div class="ua">UA: <span id="ua"></span></div>
+
+<!-- SEÇÃO 1: SAFARI 26.3 - FRESHEST -->
+<div class="section-title">🔴 SAFARI 26.3 — Patches de 11/02/2026 (Mais Frescos)</div>
+<div class="grid">
+
+  <a href="CVE-2026-20608.html" class="card red">
+    <div class="cve-id">CVE-2026-20608</div>
+    <div class="cve-date">⚡ 11 FEV 2026 — 15 dias atrás</div>
+    <div class="cve-type" style="color:#ff4444">● STATE CONFUSION → CRASH</div>
+    <div class="cve-desc">Bugzilla #303357. HanQing (TSDubhe) + Nan Wang. Improper state management no WebCore durante renderização complexa.</div>
+    <span class="badge b-fresh">FRESHEST</span>
+    <span class="badge b-nojit">NO-JIT ✓</span>
+    <span class="badge b-patch">Patch Privado</span>
+  </a>
+
+  <a href="CVE-2026-20644.html" class="card red">
+    <div class="cve-id">CVE-2026-20644</div>
+    <div class="cve-date">⚡ 11 FEV 2026 — 15 dias atrás</div>
+    <div class="cve-type" style="color:#ff4444">● MEMORY HANDLING → CRASH</div>
+    <div class="cve-desc">Bugzilla #303444. HanQing (TSDubhe) + Nan Wang. Memory handling bug na engine WebKit ao processar web content.</div>
+    <span class="badge b-fresh">FRESHEST</span>
+    <span class="badge b-nojit">NO-JIT ✓</span>
+    <span class="badge b-patch">Patch Privado</span>
+  </a>
+
+  <a href="CVE-2026-20652.html" class="card red">
+    <div class="cve-id">CVE-2026-20652</div>
+    <div class="cve-date">⚡ 11 FEV 2026 — 15 dias atrás</div>
+    <div class="cve-type" style="color:#ff4444">● MEMORY HANDLING → DoS</div>
+    <div class="cve-desc">Bugzilla #303959. Nathaniel Oh (@calysteon). Remote attacker pode causar denial-of-service via memory handling.</div>
+    <span class="badge b-fresh">FRESHEST</span>
+    <span class="badge b-nojit">NO-JIT ✓</span>
+    <span class="badge b-patch">Patch Privado</span>
+  </a>
+
+  <a href="CVE-2026-20635_36.html" class="card red">
+    <div class="cve-id">CVE-2026-20635 + CVE-2026-20636</div>
+    <div class="cve-date">⚡ 11 FEV 2026 — 15 dias atrás</div>
+    <div class="cve-type" style="color:#ff4444">● DUAL MEMORY BUG</div>
+    <div class="cve-desc">Bugzilla #304661 + #304657. EntryHi. Dois bugs de memory/state na mesma sessão de pesquisa do WebKit.</div>
+    <span class="badge b-fresh">FRESHEST</span>
+    <span class="badge b-nojit">NO-JIT ✓</span>
+    <span class="badge b-patch">Patch Privado</span>
+  </a>
+
+</div>
+
+<!-- SEÇÃO 2: GITHUB FINDINGS -->
+<div class="section-title yellow">🟡 GITHUB FINDINGS — PoC Disponível</div>
+<div class="grid">
+
+  <a href="UAF_content_visibility.html" class="card orange">
+    <div class="cve-id">UAF content-visibility (sem CVE)</div>
+    <div class="cve-date">🎯 SEM CVE FORMAL — Possível 0-day</div>
+    <div class="cve-type" style="color:#ff8800">● HEAP UAF — LAYER TREE</div>
+    <div class="cve-desc">Dark-life944/poc. Target PS4/PS5 explícito. Layer tree UAF via content-visibility CSS + remoção DOM. PoC original disponível no GitHub.</div>
+    <span class="badge b-0day">0-DAY?</span>
+    <span class="badge b-nojit">NO-JIT ✓</span>
+    <span class="badge b-poc">PoC GitHub</span>
+  </a>
+
+  <a href="CVE-2023-28205.html" class="card yellow">
+    <div class="cve-id">CVE-2023-28205</div>
+    <div class="cve-date">📅 Abr 2023 — Patch em Safari 16.4.1</div>
+    <div class="cve-type" style="color:#ffcc00">● UAF — STRUCTURED CLONE</div>
+    <div class="cve-desc">seregonwar/uaf-2023-28205. UAF no structured clone deserializer. PS4/PS5 logs no README. Verificar se patch está no branch Version/17.</div>
+    <span class="badge b-poc">PoC GitHub</span>
+    <span class="badge b-nojit">NO-JIT ✓</span>
+    <span class="badge b-patch">Patch Público</span>
+  </a>
+
+  <a href="CVE-2025-24201.html" class="card blue">
+    <div class="cve-id">CVE-2025-24201</div>
+    <div class="cve-date">📅 Mar 2025 — WebGL PRIMITIVE_RESTART</div>
+    <div class="cve-type" style="color:#4488ff">● OOB WRITE — WebGL Validation</div>
+    <div class="cve-desc">The-Maxu PoC. OOB write via PRIMITIVE_RESTART_FIXED_INDEX em contexto WebGL1. Detector de 3 linhas incluso.</div>
+    <span class="badge b-poc">PoC GitHub</span>
+    <span class="badge b-nojit">NO-JIT ✓</span>
+    <span class="badge b-blink">WebGL Dep.</span>
+  </a>
+
+</div>
+
+<!-- SEÇÃO 3: PATCH INFO -->
+<div class="patch-info">
+  <strong>📋 STATUS DOS PATCHES — Safari 26.3 CVEs</strong>
+  • WSA WebKitGTK mais recente: <span class="commit">WSA-2025-0010 (17 Dez 2025)</span> — CVEs de Fev/2026 ainda NÃO incluídos<br>
+  • Bugzilla #303357, #303444, #303959, #304657, #304661 → <span class="commit">PRIVADOS</span> (período de embargo)<br>
+  • Commits no webkit/WebKit ainda não identificados publicamente<br>
+  • Janela de patch gap confirmada: PS4 branch ~Set/2023 → bugs de Fev/2026 = <span class="commit">~17 meses sem patch</span><br>
+  • UAF content-visibility: <span style="color:#ff4444">SEM CVE FORMAL</span> — reportar ao PlayStation Bug Bounty se confirmado
+</div>
+
+<div class="footer">
+  PS4 WebKit New CVE PoC Suite · Exclusivamente para Bug Bounty HackerOne PlayStation · Dispositivo próprio
+</div>
+
+<script>document.getElementById('ua').textContent = navigator.userAgent;</script>
+</body>
+</html>

