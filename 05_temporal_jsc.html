@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Bug #5: Temporal API — JSC Edge Cases Safari 17</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030305;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#ff6600;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.src{background:#050a05;border:2px solid #00aa44;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#44cc88;line-height:1.8}
+.src strong{color:#00ff66;display:block;margin-bottom:4px}
+#log{background:#060608;border:1px solid #1a1a2a;border-radius:5px;padding:10px;min-height:180px;white-space:pre;overflow-y:auto;max-height:380px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.warn{color:#ffaa00}.err{color:#ff4444}.i2{color:#4488ff}.sep{color:#222}
+.btn{display:inline-block;margin-top:10px;margin-right:6px;padding:7px 14px;background:#0d0800;border:1px solid #332200;border-radius:4px;color:#cc8844;cursor:pointer;font:11px 'Courier New',monospace}
+.btn:hover{border-color:#ff6600;color:#ff8800}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+</style>
+</head>
+<body>
+<h1>🟠 Bug #5 — JSC Temporal API: Implementação Incompleta Safari 17</h1>
+<p class="meta">Fonte: Igalia WebKit Periódico · Commits 2023-2024 sem CVE · Edge cases não testados na cena PS4</p>
+
+<div class="src">
+<strong>🔧 CONTEXTO — Temporal API em Safari 17 (PS4 branch)</strong>
+Temporal foi implementado parcialmente no Safari 17 com spec em flux.<br>
+Issues conhecidas sem CVE formal:<br>
+  • Temporal.Duration com relativeTo e overflow → comportamento indefinido<br>
+  • ZonedDateTime balance com DST transitions extremas → crash<br>
+  • Temporal.Instant.fromEpochNanoseconds() com BigInt extremo → OOB<br>
+  • Calendar.dateAdd() com duration e 'constrain' overflow → assertFailure<br>
+  • round() com smallestUnit inválido → exception não tratada<br>
+Nenhum destes edge cases aparece nos writeups de jailbreak PS4.
+</div>
+
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="t1()">① Temporal.now Detect</button>
+  <button class="btn" onclick="t2()">② Duration relativeTo Overflow</button>
+  <button class="btn" onclick="t3()">③ Instant BigInt Extremo</button>
+  <button class="btn" onclick="t4()">④ ZonedDateTime DST Edge</button>
+  <button class="btn" onclick="t5()">⑤ PlainDate round() Edge</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+(t||'')+'─────────────────────','sep')}
+
+var T = typeof Temporal !== 'undefined' ? Temporal : null;
+
+function t1(){
+  sep('Temporal.now — Detecção');
+  if(!T){ l('Temporal NÃO disponível neste ambiente','warn'); l('→ PS4 FW 13.04 pode não ter Temporal','warn'); return; }
+  l('Temporal API DETECTADO ✓','ok');
+  l('Temporal.now.instant(): '+T.now.instant().toString(),'i2');
+  l('Temporal.now.timeZoneId(): '+T.now.timeZoneId(),'i2');
+  try {
+    var pdt = T.now.plainDateTimeISO();
+    l('PlainDateTime: '+pdt.toString(),'ok');
+  } catch(e){ l('plainDateTimeISO() ERROR: '+e.message,'err'); }
+}
+
+function t2(){
+  sep('Duration relativeTo Overflow');
+  if(!T){ l('Temporal ausente','warn'); return; }
+  l('Testando Duration.add() com relativeTo e overflow extremo...','warn');
+  var cases = [
+    // relativeTo com data extrema
+    function(){
+      var d = T.Duration.from({ years: 999999999 });
+      var ref = T.PlainDate.from('2023-01-01');
+      return d.add(T.Duration.from({ months: 11 }), { relativeTo: ref });
+    },
+    // Negativo extremo
+    function(){
+      var d = T.Duration.from({ years: -999999999, months: -11, days: -30 });
+      var ref = T.PlainDate.from('0001-01-01');
+      return d.total({ unit:'days', relativeTo: ref });
+    },
+    // Mix positivo/negativo
+    function(){
+      var d = T.Duration.from({ years: 1, months: -13 });
+      var ref = T.PlainDate.from('2023-06-15');
+      return d.round({ largestUnit:'years', smallestUnit:'days', relativeTo: ref });
+    },
+    // DST zone
+    function(){
+      var d = T.Duration.from({ hours: 2147483647 });
+      var zdt = T.ZonedDateTime.from('2023-03-12T01:30:00-05:00[America/New_York]');
+      return d.add(T.Duration.from({ minutes: 30 }), { relativeTo: zdt });
+    }
+  ];
+  cases.forEach(function(fn, i){
+    try {
+      var r = fn();
+      l('Duration case '+i+': OK → '+r.toString(),'ok');
+    } catch(e){
+      l('Duration case '+i+': '+e.constructor.name+' — '+e.message, e instanceof RangeError?'warn':'err');
+    }
+  });
+}
+
+function t3(){
+  sep('Instant BigInt Extremo');
+  if(!T){ l('Temporal ausente','warn'); return; }
+  l('Testando fromEpochNanoseconds com BigInt extremo...','warn');
+  var bigs = [
+    BigInt('8640000000000000000000'),       // máximo da spec
+    BigInt('8640000000000000000001'),       // além do máximo → RangeError esperado
+    BigInt('-8640000000000000000001'),      // mínimo negativo além
+    BigInt('9999999999999999999999'),       // muito além
+    BigInt('0xFFFFFFFFFFFFFFFFFFFF'),       // 80 bits
+  ];
+  bigs.forEach(function(n, i){
+    try {
+      var inst = T.Instant.fromEpochNanoseconds(n);
+      l('Instant big #'+i+' ('+n+'): '+inst.toString(),'warn');
+    } catch(e){
+      l('Instant big #'+i+': '+e.constructor.name+' (esperado para extremos)','ok');
+    }
+  });
+  // Operações encadeadas com BigInt
+  try {
+    var inst = T.Instant.fromEpochNanoseconds(BigInt('8640000000000000000000'));
+    var added = inst.add({ nanoseconds: 1 }); // além do limite
+    l('Instant.add(+1ns) além do limite: '+added.toString(),'err');
+  } catch(e){ l('Instant.add() além do limite: '+e.constructor.name+' (OK)','ok'); }
+}
+
+function t4(){
+  sep('ZonedDateTime DST Transitions');
+  if(!T){ l('Temporal ausente','warn'); return; }
+  l('Testando ZonedDateTime em horários DST ambíguos...','warn');
+  var cases = [
+    '2023-03-12T02:30:00[America/New_York]', // hora não existe (spring forward)
+    '2023-11-05T01:30:00[America/New_York]', // hora duplicada (fall back)
+    '2023-10-01T00:00:00[Australia/Lord_Howe_Island]', // +30min DST
+    '2023-12-09T23:59:59.999999999[Pacific/Apia]', // samoa (pula um dia)
+  ];
+  cases.forEach(function(s, i){
+    ['earlier','later','compatible','reject'].forEach(function(dis){
+      try {
+        var zdt = T.ZonedDateTime.from(s, { disambiguation: dis });
+        l('ZDT case '+i+' ('+dis+'): '+zdt.toString(),'ok');
+      } catch(e){
+        l('ZDT case '+i+' ('+dis+'): '+e.constructor.name+' — '+e.message.substring(0,60),
+          e instanceof RangeError?'warn':'err');
+      }
+    });
+  });
+}
+
+function t5(){
+  sep('PlainDate/Time round() Edge Cases');
+  if(!T){ l('Temporal ausente','warn'); return; }
+  l('Testando round() com parâmetros extremos...','warn');
+  var time = T.PlainTime.from('23:59:59.999999999');
+  ['second','millisecond','microsecond','nanosecond'].forEach(function(unit){
+    [1,2,3,4,5,30,60].forEach(function(inc){
+      try {
+        var r = time.round({ smallestUnit:unit, roundingIncrement:inc, roundingMode:'expand' });
+        if(r.hour===0 && r.minute===0){
+          l('round('+unit+','+inc+',expand): WRAPAROUND! → '+r.toString(),'err');
+        }
+      } catch(e){
+        l('round('+unit+','+inc+'): '+e.constructor.name,'warn');
+      }
+    });
+  });
+  // PlainDateTime round at midnight boundary
+  try {
+    var pdt = T.PlainDateTime.from('2023-12-31T23:59:59.9');
+    var rounded = pdt.round({ smallestUnit:'second', roundingMode:'ceil' });
+    l('PlainDateTime round to midnight: '+rounded.toString(),'ok');
+    if(rounded.day === 1 && rounded.month === 1) l('→ Crossed midnight into new year: OK','ok');
+  } catch(e){ l('PlainDateTime midnight round: '+e.message,'err'); }
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ Temporal API Edge Cases — Safari 17 branch PS4','warn');
+  t1();
+  setTimeout(t2,300); setTimeout(t3,600); setTimeout(t4,900); setTimeout(t5,1200);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Bug #4: CSS Nesting Hoisting — Style Resolver</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030305;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#ff6600;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.src{background:#050a05;border:2px solid #00aa44;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#44cc88;line-height:1.8}
+.src strong{color:#00ff66;display:block;margin-bottom:4px}
+#log{background:#060608;border:1px solid #1a1a2a;border-radius:5px;padding:10px;min-height:180px;white-space:pre;overflow-y:auto;max-height:380px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.warn{color:#ffaa00}.err{color:#ff4444}.i2{color:#4488ff}.sep{color:#222}
+.btn{display:inline-block;margin-top:10px;margin-right:6px;padding:7px 14px;background:#0d0800;border:1px solid #332200;border-radius:4px;color:#cc8844;cursor:pointer;font:11px 'Courier New',monospace}
+.btn:hover{border-color:#ff6600;color:#ff8800}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+</style>
+</head>
+<body>
+<h1>🟠 Bug #4 — CSS Nesting Hoisting: Style Resolver Stress</h1>
+<p class="meta">Fonte: Safari 18.2 Release Notes · WebKit commit 300297@main · Sem CVE formal</p>
+
+<div class="src">
+<strong>🔧 CONTEXTO TÉCNICO — Safari 17 branch vs 18.2</strong>
+Safari 18.2 removeu o "hoisting behavior" do CSS Nesting onde seletores complexos<br>
+eram embrulhados automaticamente em :is() antes de serem processados.<br>
+No Safari 17 (PS4 branch), este comportamento AINDA EXISTE:<br>
+  .parent { .child { color: red } }  →  hoisted para  .parent:is(.child) { color: red }<br>
+<br>
+ABUSO: seletores :has() + :is() + nesting profundo → explode combinações no resolver<br>
+Complexidade exponencial em number of rule checks → OOM ou crash no style resolver<br>
+Sem CVE atribuído · Jamais discutido na cena PS4
+</div>
+
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="t1()">① Nesting Profundo :has()</button>
+  <button class="btn" onclick="t2()">② :is() Explosion</button>
+  <button class="btn" onclick="t3()">③ @layer + Nesting</button>
+  <button class="btn" onclick="t4()">④ Dynamic Nest Inject</button>
+  <button class="btn" onclick="t5()">⑤ :not(:has()) Combo</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+(t||'')+'─────────────────────','sep')}
+function addStyle(css){var s=document.createElement('style');s.textContent=css;document.head.appendChild(s);return s}
+function removeStyle(s){if(s&&s.parentNode)document.head.removeChild(s)}
+
+function t1(){
+  sep('Nesting Profundo com :has()');
+  l('CSS nesting de 12 níveis com :has() em cada...','warn');
+  try {
+    var css = '.root-test {\n';
+    var close = '';
+    for(var d=0;d<12;d++){
+      css += '  &:has(.depth-'+d+') {\n';
+      css += '    color: hsl('+d*30+',70%,50%);\n';
+      close += '  }\n';
+    }
+    css += close + '}\n';
+
+    var s = addStyle(css);
+    var root = document.createElement('div');
+    root.className = 'root-test';
+    for(var i=0;i<12;i++){
+      var c = document.createElement('div');
+      c.className = 'depth-'+i;
+      c.textContent = 'depth-'+i;
+      root.appendChild(c);
+    }
+    document.body.appendChild(root);
+    root.offsetHeight; // força style recalc
+    removeStyle(s);
+    if(root.parentNode) document.body.removeChild(root);
+    l('Nesting profundo :has(): OK sem crash','ok');
+  } catch(e){ l('EXCEÇÃO: '+e.name+' — '+e.message,'err'); }
+}
+
+function t2(){
+  sep(':is() Explosion via Nesting');
+  l('Gerando explosão combinatorial via :is() nested...','warn');
+  try {
+    // No Safari 17, cada nível de nesting cria um :is() wrapper
+    // → explosão exponencial de regras internas
+    var selectors = [];
+    for(var i=0;i<8;i++) selectors.push('.sel-'+i);
+
+    var css = selectors.map(function(s){ return s; }).join(', ') + ' {\n';
+    // Adiciona nesting dentro de cada seletor — cada um vira :is(.sel-0,.sel-1,...):is(.child-X)
+    for(var j=0;j<8;j++){
+      css += '  & .child-'+j+' {\n';
+      css += '    &:hover, &:focus, &:active {\n';
+      css += '      color: red;\n';
+      css += '      & .grandchild { color: blue; }\n';
+      css += '    }\n';
+      css += '  }\n';
+    }
+    css += '}\n';
+
+    var s = addStyle(css);
+    // Cria DOM correspondente
+    var container = document.createElement('div');
+    selectors.forEach(function(sel){
+      var el = document.createElement('div');
+      el.className = sel.replace('.','');
+      for(var k=0;k<4;k++){
+        var child = document.createElement('div');
+        child.className = 'child-'+k;
+        var gc = document.createElement('div');
+        gc.className = 'grandchild';
+        child.appendChild(gc);
+        el.appendChild(child);
+      }
+      container.appendChild(el);
+    });
+    document.body.appendChild(container);
+    container.offsetHeight;
+    removeStyle(s);
+    document.body.removeChild(container);
+    l(':is() explosion: OK','ok');
+  } catch(e){ l('EXCEÇÃO: '+e.name,'err'); }
+}
+
+function t3(){
+  sep('@layer + Nesting Combinado');
+  l('@layer com nesting aninhado e overrides...','warn');
+  try {
+    var css = [
+      '@layer base, theme, utilities, overrides;',
+      '@layer base {',
+      '  .layer-test { color: red; }',
+      '  .layer-test {',
+      '    & .nested { font-size: 14px; }',
+      '    & .nested {',
+      '      &:has(.deep) { font-weight: bold; }',
+      '    }',
+      '  }',
+      '}',
+      '@layer theme {',
+      '  .layer-test { color: blue; }',
+      '  .layer-test {',
+      '    & .nested { color: green; }',
+      '  }',
+      '}',
+      '@layer utilities {',
+      '  .layer-test { margin: 0; }',
+      '}',
+      '@layer overrides {',
+      '  .layer-test {',
+      '    & .nested:not(:has(.deep)) { opacity: 0.9; }',
+      '  }',
+      '}'
+    ].join('\n');
+
+    var s = addStyle(css);
+    for(var i=0;i<20;i++){
+      var el = document.createElement('div');
+      el.className = 'layer-test';
+      var n = document.createElement('div');
+      n.className = 'nested';
+      if(i%2===0){ var d=document.createElement('div'); d.className='deep'; n.appendChild(d); }
+      el.appendChild(n);
+      document.body.appendChild(el);
+    }
+    document.body.offsetHeight;
+    document.querySelectorAll('.layer-test').forEach(function(e){if(e.parentNode)document.body.removeChild(e);});
+    removeStyle(s);
+    l('@layer + Nesting: OK','ok');
+  } catch(e){ l('EXCEÇÃO: '+e.name,'err'); }
+}
+
+function t4(){
+  sep('Dynamic Nesting Inject');
+  l('Injetando e removendo CSS nesting dinâmicamente 100x...','warn');
+  try {
+    var sheets=[], count=0, crashed=false;
+    function cycle(){
+      if(count>=100||crashed){
+        sheets.forEach(removeStyle); sheets=[];
+        l(!crashed?'Dynamic inject: 100 ciclos OK':'CRASH no ciclo '+count,'ok');
+        return;
+      }
+      count++;
+      // Remove o anterior
+      if(sheets.length>3){ removeStyle(sheets.shift()); }
+      var css='.dyn-'+count+' { color:red; & .child { color:blue; &:has(.x) { font-weight:bold; } } }';
+      var s=addStyle(css);
+      sheets.push(s);
+      // Cria elemento correspondente
+      var el=document.createElement('div');
+      el.className='dyn-'+count;
+      var ch=document.createElement('div');
+      ch.className='child';
+      var x=document.createElement('div');
+      x.className='x';
+      ch.appendChild(x);
+      el.appendChild(ch);
+      document.body.appendChild(el);
+      try{ el.offsetHeight; }catch(e){ crashed=true; l('CRASH: '+e.name,'err'); }
+      if(el.parentNode) document.body.removeChild(el);
+      requestAnimationFrame(cycle);
+    }
+    requestAnimationFrame(cycle);
+    l('100 ciclos de nesting dinâmico iniciados...','i2');
+  } catch(e){ l('EXCEÇÃO: '+e.name,'err'); }
+}
+
+function t5(){
+  sep(':not(:has()) Combination');
+  l('Seletores :not(:has()) dentro de nesting...','warn');
+  try {
+    var css=[
+      '.combo-test {',
+      '  & :not(:has(.target)) { color: gray; }',
+      '  & :not(:has(.target)):not(:has(.other)) { opacity:0.8; }',
+      '  &:has(.target) :not(:has(.sub)) { font-size:12px; }',
+      '  & .middle:not(:has(.deep)):has(.shallow) { margin:0; }',
+      '  &:not(:has(.absent)) { padding:0; }',
+      '}'
+    ].join('\n');
+    var s=addStyle(css);
+    for(var i=0;i<30;i++){
+      var el=document.createElement('div');
+      el.className='combo-test';
+      var inner='';
+      if(i%3===0) inner='<div class="target"><div class="sub"></div></div>';
+      else if(i%3===1) inner='<div class="other"><div class="shallow"></div></div>';
+      else inner='<div class="middle"><div class="deep"></div></div>';
+      el.innerHTML=inner;
+      document.body.appendChild(el);
+    }
+    document.body.offsetHeight;
+    document.querySelectorAll('.combo-test').forEach(function(e){if(e.parentNode)document.body.removeChild(e);});
+    removeStyle(s);
+    l(':not(:has()) combo: OK','ok');
+  } catch(e){ l('EXCEÇÃO: '+e.name,'err'); }
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ CSS Nesting Hoisting — Safari 17 branch','warn');
+  setTimeout(t1,50); setTimeout(t2,400); setTimeout(t3,800); setTimeout(t4,1200); setTimeout(t5,4000);
+}
+</script>
+</body>
+</html>

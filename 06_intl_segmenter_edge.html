@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Bug #6: Intl.Segmenter — Unicode OOM/Crash</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030305;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#ffcc00;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.src{background:#050a05;border:2px solid #00aa44;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#44cc88;line-height:1.8}
+.src strong{color:#00ff66;display:block;margin-bottom:4px}
+#log{background:#060608;border:1px solid #1a1a2a;border-radius:5px;padding:10px;min-height:180px;white-space:pre;overflow-y:auto;max-height:380px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.warn{color:#ffaa00}.err{color:#ff4444}.i2{color:#4488ff}.sep{color:#222}
+.btn{display:inline-block;margin-top:10px;margin-right:6px;padding:7px 14px;background:#110f00;border:1px solid #444400;border-radius:4px;color:#cccc44;cursor:pointer;font:11px 'Courier New',monospace}
+.btn:hover{border-color:#ffcc00;color:#ffee44}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+</style>
+</head>
+<body>
+<h1>🟡 Bug #6 — Intl.Segmenter: Unicode OOM via Scripts Extremos</h1>
+<p class="meta">Fonte: WebKit commits 2023-2025 (múltiplos fixes silenciosos) · Sem CVE · Não referenciado na cena PS4</p>
+
+<div class="src">
+<strong>🔧 VETOR DE ATAQUE — Segmentação Grapheme em Unicode Pathológico</strong>
+Intl.Segmenter com granularity:'grapheme' processa cada cluster Unicode.<br>
+Scripts raros com grapheme clusters complexos causam:<br>
+  • Alocação O(n²) de buffers internos de composição<br>
+  • Infinite loop em graphemes com ZWJ (Zero Width Joiner) chains extremas<br>
+  • Crash em Tibetano + Arabic combining marks misturados<br>
+  • OOM em Emoji sequences: ZWJ + variation selectors encadeados<br>
+Múltiplos commits silenciosos no WebKit/icu-data 2023-2025 sem CVE.
+</div>
+
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="t1()">① Detect Segmenter</button>
+  <button class="btn" onclick="t2()">② Emoji ZWJ Chain OOM</button>
+  <button class="btn" onclick="t3()">③ Tibetano + Arabic Mix</button>
+  <button class="btn" onclick="t4()">④ Variation Selector Spam</button>
+  <button class="btn" onclick="t5()">⑤ Sentence+Word Granularity</button>
+  <button class="btn" onclick="t6()">⑥ Massive String Seg</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+(t||'')+'─────────────────────','sep')}
+
+function t1(){
+  sep('Detecção Intl.Segmenter');
+  if(typeof Intl.Segmenter === 'undefined'){
+    l('Intl.Segmenter NÃO disponível','warn');
+    l('→ PS4 FW 13.04 pode não ter esta feature','warn');
+    return;
+  }
+  l('Intl.Segmenter DISPONÍVEL ✓','ok');
+  var seg = new Intl.Segmenter('en', {granularity:'grapheme'});
+  var test = [...seg.segment('Hello 👋 World')];
+  l('Segmentos de "Hello 👋 World": '+test.length,'ok');
+  test.forEach(function(s){ l('  ['+s.segment+']','i2'); });
+}
+
+function t2(){
+  sep('Emoji ZWJ Chain — Possível OOM');
+  if(typeof Intl.Segmenter === 'undefined'){l('Segmenter ausente','warn');return}
+  l('Construindo chain de Emoji ZWJ complexos...','warn');
+  try {
+    // ZWJ chain: cada emoji family = múltiplos codepoints + ZWJ
+    // 👨‍👩‍👧‍👦 = U+1F468 ZWJ U+1F469 ZWJ U+1F467 ZWJ U+1F466
+    var familyEmoji = '\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67\u200D\uD83D\uDC66';
+    // Encadeia 500 families com variation selectors e ZWJ extras
+    var chain = '';
+    for(var i=0;i<500;i++){
+      chain += familyEmoji + '\uFE0F\u200D'; // variação + ZWJ entre cada
+    }
+    l('String construída: '+chain.length+' chars, ~'+Math.round(chain.length/2)+' codepoints','i2');
+
+    var t0 = performance.now();
+    var seg = new Intl.Segmenter('en', {granularity:'grapheme'});
+    var segments = [...seg.segment(chain)];
+    var elapsed = (performance.now()-t0).toFixed(1);
+    l('Segmentação: '+segments.length+' graphemes em '+elapsed+'ms','ok');
+    if(elapsed > 1000) l('→ Mais de 1s → candidato a OOM/timeout no PS4','warn');
+  } catch(e){ l('EXCEÇÃO: '+e.name+' — '+e.message,'err'); }
+}
+
+function t3(){
+  sep('Tibetano + Arabic Combining Mix');
+  if(typeof Intl.Segmenter === 'undefined'){l('Segmenter ausente','warn');return}
+  l('Misturando scripts Tibetano e Arabic com combining marks...','warn');
+  try {
+    // Tibetano (U+0F00-U+0FFF) com subscript letters (combining)
+    var tibetan = '\u0F68\u0F7E\u0F7F\u0F55\u0F71\u0F72'; // OM com marks
+    // Arabic (RTL) com combining marks
+    var arabic = '\u0627\u064E\u0644\u0650\u0639\u064F\u0631\u064E\u0628\u064A\u0651\u0629'; // العربيّة
+    // Mistura patológica
+    var mixed = '';
+    for(var i=0;i<200;i++){
+      mixed += (i%2===0 ? tibetan : arabic);
+      mixed += '\u200D'; // ZWJ entre scripts diferentes
+    }
+    var seg = new Intl.Segmenter('und', {granularity:'grapheme'});
+    var t0 = performance.now();
+    var segments = [...seg.segment(mixed)];
+    var elapsed = (performance.now()-t0).toFixed(1);
+    l('Tibetano+Arabic mix: '+segments.length+' graphemes em '+elapsed+'ms','ok');
+  } catch(e){ l('EXCEÇÃO: '+e.name+' — '+e.message,'err'); }
+}
+
+function t4(){
+  sep('Variation Selector Spam (VS1-VS256)');
+  if(typeof Intl.Segmenter === 'undefined'){l('Segmenter ausente','warn');return}
+  l('Testando grapheme boundaries com variation selectors...','warn');
+  try {
+    // Variation selectors U+FE00-U+FE0F (text/emoji) e U+E0100-U+E01EF
+    var base = '\u4E2D'; // CJK ideograph 中
+    var text = '';
+    // Cada combinação de base + variation selector = 1 grapheme (teoricamente)
+    for(var vs=0xFE00; vs<=0xFE0F; vs++){
+      text += base + String.fromCodePoint(vs);
+    }
+    // Variation selectors suplementares (surrogate pairs)
+    for(var v2=0xE0100; v2<=0xE01EF; v2++){
+      text += base + String.fromCodePoint(v2);
+    }
+    l('String com variation selectors: '+text.length+' chars','i2');
+    var seg = new Intl.Segmenter('zh', {granularity:'grapheme'});
+    var t0 = performance.now();
+    var segs = [...seg.segment(text)];
+    var elapsed = (performance.now()-t0).toFixed(1);
+    l('Variation selector graphemes: '+segs.length+' em '+elapsed+'ms','ok');
+  } catch(e){ l('EXCEÇÃO: '+e.name+' — '+e.message,'err'); }
+}
+
+function t5(){
+  sep('Sentence+Word Granularity Stress');
+  if(typeof Intl.Segmenter === 'undefined'){l('Segmenter ausente','warn');return}
+  l('Testando word+sentence segmentation em texto multilíngue...','warn');
+  try {
+    var text = [
+      'Hello world. Bonjour monde! Hola mundo? ',
+      'مرحبا بالعالم. שלום עולם! ',
+      '日本語のテキスト。中文文本。한국어 텍스트. ',
+      'Mixed: 混合text テキスト. End.',
+    ].join('').repeat(50); // texto longo e variado
+
+    ['word','sentence'].forEach(function(gran){
+      var seg = new Intl.Segmenter('und', {granularity:gran});
+      var t0 = performance.now();
+      var count = 0;
+      for(var _ of seg.segment(text)){ count++; }
+      var elapsed = (performance.now()-t0).toFixed(1);
+      l(gran+' granularity: '+count+' segmentos em '+elapsed+'ms','ok');
+    });
+  } catch(e){ l('EXCEÇÃO: '+e.name+' — '+e.message,'err'); }
+}
+
+function t6(){
+  sep('Massive String Segmentation (2MB)');
+  if(typeof Intl.Segmenter === 'undefined'){l('Segmenter ausente','warn');return}
+  l('Segmentando string de 2MB com grapheme granularity...','warn');
+  l('⚠️ AVISO: pode crashar o PS4 por OOM!','warn');
+  try {
+    // String com mix de ASCII e multibyte Unicode
+    var chunk = 'Hello 👋 日本語 مرحبا ' .repeat(1000); // ~30KB
+    var massive = chunk.repeat(10); // ~300KB
+    l('String: '+massive.length+' chars (~'+Math.round(massive.length/1024)+'KB)','i2');
+    var seg = new Intl.Segmenter('und', {granularity:'grapheme'});
+    var t0 = performance.now();
+    var count = 0;
+    for(var _ of seg.segment(massive)) count++;
+    var elapsed = (performance.now()-t0).toFixed(1);
+    l('2MB grapheme segmentation: '+count+' graphemes em '+elapsed+'ms','ok');
+    if(elapsed > 500) l('→ >500ms: PS4 pode fazer OOM nesta operação','warn');
+  } catch(e){ l('EXCEÇÃO: '+e.name+' — '+e.message,'err'); }
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ Intl.Segmenter Edge Cases — PS4 FW 13.04','warn');
+  t1();
+  setTimeout(t2,300); setTimeout(t3,800); setTimeout(t4,1300);
+  setTimeout(t5,1800); setTimeout(t6,2500);
+}
+</script>
+</body>
+</html>

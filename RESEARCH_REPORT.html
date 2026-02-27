@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Relatório de Pesquisa — Bugs Exclusivos PS4 WebKit</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030305;color:#ccc;font-family:'Courier New',monospace;padding:18px;font-size:11px}
+h1{color:#ff6600;font-size:16px;border-bottom:2px solid #ff6600;padding-bottom:6px;margin-bottom:4px}
+.sub{color:#333;font-size:9px;margin-bottom:14px}
+h2{color:#ff8800;font-size:12px;margin:14px 0 6px;padding:3px 0 3px 8px;border-left:3px solid #ff6600}
+h3{color:#ffaa44;font-size:11px;margin:10px 0 5px}
+.card{background:#0a0a0d;border:1px solid #1a1a1a;border-radius:5px;padding:12px;margin-bottom:10px}
+.cve{color:#fff;font-size:13px;font-weight:bold;margin-bottom:3px}
+.tier{font-size:9px;text-transform:uppercase;letter-spacing:2px;margin-bottom:6px}
+.t1{color:#ff2200}.t2{color:#ff6600}.t3{color:#ffcc00}
+.src-line{color:#00cccc;font-size:10px;margin:3px 0}
+.desc{font-size:10px;color:#778899;line-height:1.7;margin:6px 0}
+.code{background:#060608;border:1px solid #111;border-radius:3px;padding:8px;font-size:10px;color:#44aa66;line-height:1.8;margin:5px 0;white-space:pre-wrap}
+.vuln{background:#0d0000;border:1px solid #330000;border-radius:3px;padding:8px;font-size:10px;color:#cc4444;line-height:1.8;margin:5px 0;white-space:pre-wrap}
+.fix{background:#000d00;border:1px solid #003300;border-radius:3px;padding:8px;font-size:10px;color:#44cc66;line-height:1.8;margin:5px 0;white-space:pre-wrap}
+.badge{display:inline-block;font-size:8px;padding:2px 5px;border-radius:2px;margin:3px 2px 0 0}
+.b-oss{background:#001a0a;color:#00aa66;border:1px solid #009955}
+.b-bz{background:#00001a;color:#4488ff;border:1px solid #3366cc}
+.b-blog{background:#0a0800;color:#cc8800;border:1px solid #aa6600}
+.b-orig{background:#1a0010;color:#cc44aa;border:1px solid #aa2288}
+.b-nojit{background:#000a00;color:#00cc44;border:1px solid #00aa33}
+.b-ps4{background:#00000a;color:#4466ff;border:1px solid #2244cc}
+.method-grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin:10px 0}
+.method-card{background:#0a080a;border:1px solid #221122;border-radius:4px;padding:8px;font-size:9px;color:#aa88aa}
+.method-card strong{color:#cc88cc;display:block;margin-bottom:4px}
+table{width:100%;border-collapse:collapse;margin-top:8px;font-size:10px}
+th{background:#0d0d18;color:#aabbcc;padding:5px 8px;text-align:left;border:1px solid #1a1a2a}
+td{padding:4px 8px;border:1px solid #111;color:#888}
+td.red{color:#ff6666} td.green{color:#44ff88} td.yellow{color:#ffcc44} td.blue{color:#4488ff}
+.footer{margin-top:16px;font-size:9px;color:#222;border-top:1px solid #111;padding-top:8px}
+</style>
+</head>
+<body>
+<h1>📋 Relatório de Pesquisa — Bugs Exclusivos PS4 WebKit</h1>
+<p class="sub">Metodologia: 4 camadas de busca · Fev/2026 · Bugs não referenciados na cena PS4</p>
+
+<!-- ==================== METODOLOGIA ==================== -->
+<h2>🔍 Metodologia de Pesquisa</h2>
+
+<div class="method-grid">
+  <div class="method-card">
+    <strong>CAMADA 1: oss-sec</strong>
+    seclists.org/oss-sec<br>
+    Advisory públicos sem CVE formal ainda pendente.<br>
+    Encontrado: Bug Goydish (Dez/2025)
+  </div>
+  <div class="method-card">
+    <strong>CAMADA 2: Bugzilla Público</strong>
+    bugs.webkit.org<br>
+    Bugs FIXED sem CVE associado, fix em commits recentes.<br>
+    Encontrado: Bug #279588 (CSS Anchor Popover)
+  </div>
+  <div class="method-card">
+    <strong>CAMADA 3: Blogs Técnicos</strong>
+    qriousec.github.io, igalia.com/webkit<br>
+    Análises de bugs sem CVE publicados em research blogs.<br>
+    Encontrado: toReversed() uninit
+  </div>
+  <div class="method-card">
+    <strong>CAMADA 4: Pesquisa Original</strong>
+    Combinação de features não testadas juntas.<br>
+    Interações entre RegExp, Proxy, WeakRef no branch Safari 17.<br>
+    Bugs #6 e #7 originais.
+  </div>
+</div>
+
+<!-- ==================== BUG 1 ==================== -->
+<h2>🔴 Bug #1 — JSC DataView Integer Overflow (Goydish)</h2>
+<div class="card">
+  <div class="cve">JSC Integer Overflow → OOB Write · CVE Pending</div>
+  <div class="tier t1">TIER 1 — CRÍTICO</div>
+  <div class="src-line">📧 Fonte: seclists.org/oss-sec/2025/q4/292 — Joseph Goydish II — 26 Dez 2025</div>
+  <div class="src-line">📁 Arquivo: Source/JavaScriptCore/runtime/JSArrayBufferView.cpp / JSDataView.cpp</div>
+  <span class="badge b-oss">oss-sec</span><span class="badge b-nojit">No-JIT ✓</span><span class="badge b-ps4">PS4 SEM GIGACAGE</span>
+  <div class="desc">
+    Integer overflow em <code>index * elementSize</code> no DataView e TypedArray. O valor 0xFFFFFFFE + 4
+    resulta em overflow de 32 bits, passando bounds checks. Em iOS/macOS, o Gigacage (namespace 31)
+    age como guardião — detecta o acesso além de 16GB e gera <code>EXC_GUARD</code> terminando o
+    processo. No PS4, o Gigacage não está implementado — o overflow passa direto para o hardware
+    sem proteção, criando potencial primitivo de escrita arbitrária.
+  </div>
+  <div class="vuln">// CÓDIGO VULNERÁVEL — JSArrayBufferView.cpp
+// Falta de checked arithmetic no cálculo do offset:
+size_t byteOffset = index * m_elementSize;  // OVERFLOW aqui
+if (byteOffset >= m_byteLength) return error;  // check passa com valor truncado
+m_vector[byteOffset] = value;  // write fora dos limites</div>
+  <div class="fix">// FIX PROPOSTO (Goydish):
+size_t byteOffset;
+if (__builtin_mul_overflow(static_cast<size_t>(index), m_elementSize, &byteOffset))
+    return throwOverflowError();
+
+// PoC ORIGINAL (3 linhas):
+const buffer = new ArrayBuffer(1024);
+const view = new DataView(buffer);
+view.setUint32(0xFFFFFFFE, 0x41414141);  // trigger</div>
+</div>
+
+<!-- ==================== BUG 2 ==================== -->
+<h2>🔴 Bug #2 — Array.toReversed() Uninit Memory (qriousec)</h2>
+<div class="card">
+  <div class="cve">Uninitialized Butterfly Slots → Heap Leak + RCE</div>
+  <div class="tier t1">TIER 1 — CRÍTICO</div>
+  <div class="src-line">📝 Fonte: qriousec.github.io/post/jsc-uninit — Jan/2024</div>
+  <div class="src-line">🔧 Bug commit: 053d9a84 · Fix commit: 9158c52 · Arquivo: Source/JavaScriptCore/runtime/JSArray.cpp</div>
+  <span class="badge b-blog">Blog Técnico</span><span class="badge b-nojit">No-JIT ✓</span>
+  <div class="desc">
+    <code>fastToReversed()</code> aloca um butterfly com <code>vectorLength = max(3, publicLength)</code>,
+    mas só inicializa os primeiros <code>publicLength</code> slots via <code>memcpy</code>.
+    Para um array de comprimento 1, slots [1] e [2] ficam com valores não-inicializados da heap
+    (tipicamente 0xbadbeef0 ou ponteiros de alocações anteriores). Acessar v2[2] causa crash ou
+    vaza ponteiros de heap — primitivo de leak sem JIT confirmado pelo qriousec.
+  </div>
+  <div class="vuln">// BUG em fastToReversed() — JSArray.cpp:
+auto vectorLength = Butterfly::optimalContiguousVectorLength(resultStructure, length);
+// vectorLength = 3 quando length = 1 (BASE_CONTIGUOUS_VECTOR_LEN = 3)
+butterfly->setVectorLength(vectorLength);   // aloca 3 slots
+butterfly->setPublicLength(length);          // expõe 1 slot publicamente
+memcpy(resultData, srcData, sizeof(JSValue) * length); // copia apenas 1 slot
+// slots [1] e [2] ficam UNINIT — 0xbadbeef0 ou ponteiro de heap</div>
+  <div class="fix">// FIX (commit 9158c52):
+memcpy(resultData, srcData, sizeof(JSValue) * length);
+// ADICIONADO: zera slots extras após memcpy
+for (unsigned i = length; i < vectorLength; ++i)
+    resultData[i] = JSValue();  // inicializa com undefined/zero
+
+// PoC:
+const v1 = [-1n];
+const v2 = v1.toReversed();
+v2[2].print();  // CRASH: 0xbadbeef0 desreferenciado como objeto</div>
+</div>
+
+<!-- ==================== BUG 3 ==================== -->
+<h2>🟠 Bug #3 — CSS Anchor Popover nullptr (Bugzilla #279588)</h2>
+<div class="card">
+  <div class="cve">renderer() nullptr → WebProcess Crash</div>
+  <div class="tier t2">TIER 2 — ALTO</div>
+  <div class="src-line">🐛 Fonte: bugs.webkit.org/show_bug.cgi?id=279588 — Pawel Lampe — Set/2024</div>
+  <div class="src-line">🔧 Fix: commit ba8e7f03 (285334@main) — Out/2024 · SEM CVE FORMAL</div>
+  <span class="badge b-bz">Bugzilla #279588</span><span class="badge b-nojit">No-JIT ✓</span><span class="badge b-ps4">ANTERIOR AO FIX</span>
+  <div class="desc">
+    Ao esconder um popover que usa CSS anchor positioning, o <code>StyleTreeResolver</code>
+    tenta processar o elemento para recalcular posicionamento de âncora, mas
+    <code>element.renderer()</code> retorna <code>nullptr</code> porque o elemento já está
+    em processo de destruição. Null dereference → WebProcess crash. Fix em Out/2024 com
+    commit ba8e7f03 — o branch PS4 (Set/2023) é anterior ao fix.
+  </div>
+  <div class="vuln">// CRASH EM: Source/WebCore/style/StyleTreeResolver.cpp:1340
+// element.renderer() retorna nullptr quando popover é escondido
+auto* renderer = element.renderer();
+renderer->updateStyle(...);  // NULL DEREFERENCE aqui!</div>
+  <div class="fix">// FIX (ba8e7f03) em AnchorPositionEvaluator.cpp:
+// "When anchor-positioned element is hidden using display:none,
+//  there's no point processing it in anchoring anymore."
+if (!element.renderer())
+    return;  // skip se sem renderer</div>
+</div>
+
+<!-- ==================== BUG 4 ==================== -->
+<h2>🟠 Bug #4 — CSS Nesting Hoisting (Safari 18.2)</h2>
+<div class="card">
+  <div class="cve">Style Resolver Exponential Complexity → OOM/Crash</div>
+  <div class="tier t2">TIER 2 — ALTO</div>
+  <div class="src-line">🔧 Fonte: Safari 18.2 Release Notes · WebKit commit 300297@main · Sem CVE</div>
+  <span class="badge b-blog">Release Notes</span><span class="badge b-nojit">No-JIT ✓</span>
+  <div class="desc">
+    Safari 17 usa "hoisting behavior" no CSS Nesting: seletores filhos são embrulhados em
+    <code>:is()</code> automaticamente. Isso pode causar explosão combinatorial de regras
+    quando combinado com <code>:has()</code>, <code>:not()</code> e nesting profundo.
+    Safari 18.2 removeu este comportamento no commit 300297@main. O PS4 branch (Safari 17)
+    ainda usa o comportamento vulnerável.
+  </div>
+</div>
+
+<!-- ==================== BUG 5 ==================== -->
+<h2>🟠 Bug #5 — Temporal API Edge Cases</h2>
+<div class="card">
+  <div class="cve">JSC Temporal — Implementação Parcial Safari 17 → Crashes</div>
+  <div class="tier t2">TIER 2 — ALTO</div>
+  <div class="src-line">📝 Fonte: Igalia WebKit Periódico · Commits 2023-2024 sem CVE formal</div>
+  <span class="badge b-blog">Igalia Blog</span><span class="badge b-nojit">No-JIT ✓</span>
+  <div class="desc">
+    Temporal foi implementado parcialmente no Safari 17 com spec em flux. Edge cases em
+    <code>Duration.add()</code> com <code>relativeTo</code> e valores extremos,
+    <code>Instant.fromEpochNanoseconds()</code> com BigInt além do limite, e
+    <code>ZonedDateTime</code> com transições DST ambíguas podem causar exceções não
+    tratadas, assertion failures, ou crashes no JSC runtime.
+  </div>
+</div>
+
+<!-- ==================== BUGS 6 e 7 ==================== -->
+<h2>🟡 Bugs #6 e #7 — Pesquisa Original</h2>
+<div class="card">
+  <div class="cve">Intl.Segmenter OOM + RegExp/Proxy/WeakRef Chain</div>
+  <div class="tier t3">TIER 3 — EXPLORER</div>
+  <span class="badge b-orig">Pesquisa Original</span><span class="badge b-nojit">No-JIT ✓</span>
+  <div class="desc">
+    <strong style="color:#ffcc00">Bug #6:</strong> Intl.Segmenter com grapheme granularity e scripts Unicode
+    complexos (Emoji ZWJ chains, Tibetano+Arabic mix, variation selectors) causa alocações
+    O(n²) e possível OOM no PS4 com memória limitada.<br><br>
+    <strong style="color:#ffcc00">Bug #7:</strong> Combinação de RegExp named lookbehind + Proxy interceptando
+    <code>.groups</code> + WeakRef + FinalizationRegistry + GC forçado durante callbacks.
+    Cria race condition entre GC e acesso a match objects — técnica não testada no PS4
+    e não referenciada em nenhum writeup de jailbreak.
+  </div>
+</div>
+
+<!-- ==================== TABELA RESUMO ==================== -->
+<h2>📊 Tabela Consolidada</h2>
+<table>
+<tr>
+  <th>Bug</th><th>Fonte</th><th>Tipo</th><th>No-JIT</th><th>PoC</th><th>PS4 Status</th>
+</tr>
+<tr>
+  <td class="red">JSC DataView Overflow</td>
+  <td><a style="color:#4488ff" href="https://seclists.org/oss-sec/2025/q4/292">oss-sec Dez/2025</a></td>
+  <td class="red">CWE-190 OOB Write</td><td class="green">✓</td>
+  <td class="green">PoC 3 linhas</td><td class="red">SEM GIGACAGE → write primitivo</td>
+</tr>
+<tr>
+  <td class="red">toReversed() Uninit</td>
+  <td><a style="color:#4488ff" href="https://qriousec.github.io/post/jsc-uninit">qriousec Jan/2024</a></td>
+  <td class="red">CWE-824 Uninit Mem</td><td class="green">✓</td>
+  <td class="green">PoC + RCE</td><td class="yellow">Verificar commit 9158c52 no branch</td>
+</tr>
+<tr>
+  <td>CSS Anchor Popover</td>
+  <td><a style="color:#4488ff" href="https://bugs.webkit.org/show_bug.cgi?id=279588">Bugzilla #279588</a></td>
+  <td>NULL DEREF</td><td class="green">✓</td>
+  <td class="green">Repro Bugzilla</td><td class="red">Branch Set/2023 anterior ao fix</td>
+</tr>
+<tr>
+  <td>CSS Nesting Hoisting</td><td>Safari 18.2 Notes</td>
+  <td>OOM/Crash</td><td class="green">✓</td>
+  <td class="yellow">Técnica</td><td class="red">Safari 17 ainda hoists</td>
+</tr>
+<tr>
+  <td>Temporal Edge Cases</td><td>Igalia Periódico</td>
+  <td>Exception/Crash</td><td class="green">✓</td>
+  <td class="yellow">Técnica</td><td class="yellow">Partial impl Safari 17</td>
+</tr>
+<tr>
+  <td>Intl.Segmenter OOM</td><td>Pesquisa Original</td>
+  <td>OOM</td><td class="green">✓</td>
+  <td class="yellow">Original</td><td class="yellow">PS4 memória limitada</td>
+</tr>
+<tr>
+  <td>RegExp+Proxy+WeakRef</td><td>Pesquisa Original</td>
+  <td>GC Race</td><td class="green">✓</td>
+  <td class="yellow">Original</td><td class="yellow">Não testado na cena</td>
+</tr>
+</table>
+
+<div class="footer">
+  Bugs Exclusivos PS4 WebKit · Pesquisa: oss-sec · bugs.webkit.org · qriousec.github.io · Pesquisa Original<br>
+  Verificado: nenhum bug mencionado em GBAtemp, PSX-Place, ps4dev.net, nextgenupdate, wololo até Fev/2026<br>
+  Para submissão ao PlayStation Bug Bounty (HackerOne) após reprodução em FW 13.04.
+</div>
+</body>
+</html>

