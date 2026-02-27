@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>CVE-2025-43419 — @ulexec Memory Corruption BZ#293895</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030206;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#ff8866;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.src{background:#080400;border:2px solid #664433;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#cc9977;line-height:1.8}
+.src strong{color:#ffaa88;display:block;margin-bottom:4px}
+#log{background:#060608;border:1px solid #1a1008;border-radius:5px;padding:10px;min-height:200px;white-space:pre;overflow-y:auto;max-height:420px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.w{color:#ffaa00}.e{color:#ff4444}.i{color:#66aaff}.sep{color:#333}
+.btn{display:inline-block;margin-top:10px;margin-right:5px;padding:7px 13px;background:#0d0600;border:1px solid #443322;border-radius:4px;color:#cc7755;cursor:pointer;font:11px 'Courier New',monospace}
+.btn:hover{border-color:#ff8866;color:#ffaa88}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+</style>
+</head>
+<body>
+<h1>🐛 CVE-2025-43419 — @ulexec Memory Corruption BZ#293895</h1>
+<p class="meta">Crédito: Ignacio Sanmillan @ulexec · Bugzilla #293895 · Afeta WebKitGTK antes de 2.50.0</p>
+<div class="src">
+<strong>📋 CVE-2025-43419 — Segundo bug @ulexec da mesma série</strong>
+CVE: CVE-2025-43419 · Bugzilla: #293895<br>
+Afeta: WebKitGTK e WPE WebKit antes de 2.50.0 (mais antigo que CVE-2025-43216)<br>
+Fix: "The issue was addressed with improved memory handling"<br>
+<br>
+DIFERENÇA vs CVE-2025-43216:<br>
+  • CVE-2025-43216 (BZ#295382): afeta antes de 2.50.2 → fix mais recente<br>
+  • CVE-2025-43419 (BZ#293895): afeta antes de 2.50.0 → fix um pouco anterior<br>
+  • AMBOS afetam PS4 branch (Set/2023)<br>
+<br>
+ANÁLISE: @ulexec descreve como "memory corruption" não "use-after-free" para BZ#293895.<br>
+Suspeita: OOB write ou type confusion em um dos subsistemas de rendering.<br>
+Padrões testados: HTML parsing edge cases · Table layout · Flexbox overflow · Grid<br>
+Todos os caminhos sem JIT — bugs no layout engine WebCore.
+</div>
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="t1()">① Table Layout Edge Cases</button>
+  <button class="btn" onclick="t2()">② Flexbox Overflow</button>
+  <button class="btn" onclick="t3()">③ CSS Grid Stress</button>
+  <button class="btn" onclick="t4()">④ HTML Parser + Dynamic</button>
+  <button class="btn" onclick="t5()">⑤ contenteditable UAF</button>
+  <button class="btn" onclick="t6()">⑥ Form + Validation</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+t+' ───','sep')}
+function gc(){try{var a=[];for(var i=0;i<12;i++)a.push(new ArrayBuffer(1024*1024));a=null}catch(e){}}
+
+function t1(){
+  sep('Table Layout Edge Cases');
+  l('Tabelas com estrutura dinâmica alterada durante layout...','w');
+  try {
+    var table=document.createElement('table');
+    table.style.cssText='border-collapse:collapse;width:400px';
+    var tbody=document.createElement('tbody');
+    table.appendChild(tbody);
+    document.body.appendChild(table);
+    // Cria linhas e células
+    var rows=[];
+    for(var i=0;i<20;i++){
+      var tr=document.createElement('tr');
+      for(var j=0;j<5;j++){
+        var td=document.createElement('td');
+        td.textContent=i+','+j;
+        td.setAttribute('colspan', j===0?2:1);
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+      rows.push(tr);
+    }
+    // Força layout
+    table.offsetHeight;
+    // Mescla cells dinamicamente (colspan durante re-layout)
+    rows.forEach(function(tr,idx){
+      if(idx%3===0){
+        var cells=tr.querySelectorAll('td');
+        if(cells.length>0) cells[0].setAttribute('colspan','3');
+      }
+    });
+    table.offsetHeight; // re-layout com colspan alterado
+    // Remove linhas durante layout
+    rows.slice(0,5).forEach(function(tr){
+      if(tr.parentNode) tbody.removeChild(tr);
+    });
+    table.offsetHeight;
+    document.body.removeChild(table);
+    l('Table layout: sem crash','ok');
+  } catch(e){ l('CRASH table: '+e.name+' — '+e.message,'e'); }
+}
+
+function t2(){
+  sep('Flexbox Overflow + Dynamic Items');
+  l('Flexbox com overflow e items dinâmicos durante layout...','w');
+  try {
+    var flex=document.createElement('div');
+    flex.style.cssText='display:flex;flex-wrap:wrap;width:300px;overflow:auto;max-height:200px;align-items:flex-start';
+    document.body.appendChild(flex);
+    var items=[];
+    for(var i=0;i<50;i++){
+      var el=document.createElement('div');
+      el.style.cssText='flex: '+(1+i%4)+';min-width:'+(20+i%30)+'px;height:'+(20+i%40)+'px;background:hsl('+i*7+',70%,50%)';
+      flex.appendChild(el);
+      items.push(el);
+    }
+    flex.offsetHeight;
+    // Altera flex properties durante layout ativo
+    items.forEach(function(el,i){
+      el.style.flex=(4-i%4).toString();
+      if(i%5===0) flex.offsetWidth; // força reflow no meio
+    });
+    // Remove items e muda order
+    items.slice(0,15).forEach(function(el){
+      if(el.parentNode) flex.removeChild(el);
+    });
+    // Adiciona items novos com order negativo
+    for(var j=0;j<10;j++){
+      var el=document.createElement('div');
+      el.style.cssText='flex:1;order:'+(j-5)+';min-width:30px;height:30px;background:red';
+      flex.appendChild(el);
+    }
+    flex.offsetHeight;
+    document.body.removeChild(flex);
+    l('Flexbox overflow: sem crash','ok');
+  } catch(e){ l('CRASH flexbox: '+e.name,'e'); }
+}
+
+function t3(){
+  sep('CSS Grid Stress');
+  l('CSS Grid com areas nomeadas alteradas dinamicamente...','w');
+  try {
+    var style=document.createElement('style');
+    style.textContent='.grid-test{display:grid;grid-template-areas:"h h h" "s m m" "s m m" "f f f";grid-template-columns:1fr 2fr 1fr;gap:5px;width:400px}';
+    document.head.appendChild(style);
+    var grid=document.createElement('div');
+    grid.className='grid-test';
+    document.body.appendChild(grid);
+    var areas=['h','s','m','f'];
+    var children=[];
+    for(var i=0;i<12;i++){
+      var el=document.createElement('div');
+      el.style.cssText='grid-area:'+areas[i%4]+';background:hsl('+i*30+',70%,50%);min-height:30px';
+      el.textContent='grid-'+i;
+      grid.appendChild(el);
+      children.push(el);
+    }
+    grid.offsetHeight;
+    // Altera grid areas durante layout
+    style.textContent='.grid-test{display:grid;grid-template-areas:"h h" "m m" "f f";grid-template-columns:1fr 1fr;gap:5px;width:400px}';
+    grid.offsetHeight; // re-layout com template diferente
+    // Remove alguns filhos
+    children.slice(0,4).forEach(function(c){
+      if(c.parentNode) grid.removeChild(c);
+    });
+    grid.offsetHeight;
+    document.body.removeChild(grid);
+    document.head.removeChild(style);
+    l('CSS Grid stress: sem crash','ok');
+  } catch(e){ l('CRASH grid: '+e.name,'e'); }
+}
+
+function t4(){
+  sep('HTML Parser + Dynamic DOM');
+  l('Parsing HTML com scripts que modificam estrutura durante parse...','w');
+  try {
+    var container=document.createElement('div');
+    document.body.appendChild(container);
+    // innerHTML com estrutura complexa
+    var html='';
+    for(var i=0;i<30;i++){
+      html+='<details '+(i%2?'open':'')+'>'+
+        '<summary>Item '+i+'</summary>'+
+        '<div class="content-'+i+'">'+
+          '<p>Para '+i+'</p>'+
+          '<ul>'+'<li>item</li>'.repeat(3)+'</ul>'+
+        '</div>'+
+        '</details>';
+    }
+    container.innerHTML=html;
+    // Força layout com details elements
+    container.offsetHeight;
+    // Abre/fecha details dinamicamente
+    container.querySelectorAll('details').forEach(function(d,i){
+      d.open=!d.open;
+    });
+    container.offsetHeight;
+    // Remove alternados
+    var summaries=container.querySelectorAll('summary');
+    for(var j=0;j<summaries.length;j+=2){
+      var parent=summaries[j].closest('details');
+      if(parent&&parent.parentNode) parent.parentNode.removeChild(parent);
+    }
+    container.offsetHeight;
+    document.body.removeChild(container);
+    l('HTML parser dynamic: sem crash','ok');
+  } catch(e){ l('CRASH html parser: '+e.name,'e'); }
+}
+
+function t5(){
+  sep('contenteditable UAF');
+  l('contenteditable com operações de editing e remoção simultânea...','w');
+  try {
+    var editor=document.createElement('div');
+    editor.contentEditable='true';
+    editor.style.cssText='width:300px;min-height:50px;border:1px solid #333;padding:8px';
+    editor.innerHTML='<p>Linha 1</p><p>Linha 2</p><p>Linha 3</p>';
+    document.body.appendChild(editor);
+    // Força o editor a ter um selection
+    var range=document.createRange();
+    range.selectNodeContents(editor);
+    var sel=window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    // Executa comandos de edição
+    ['bold','italic','underline','strikeThrough','insertParagraph'].forEach(function(cmd){
+      try { document.execCommand(cmd,false,null); } catch(e2){}
+    });
+    editor.offsetHeight;
+    // Remove o editor durante edição ativa
+    if(editor.parentNode) document.body.removeChild(editor);
+    gc();
+    // Tenta executar comando após remoção
+    try {
+      document.execCommand('bold',false,null);
+      l('execCommand após remoção: executou','w');
+    } catch(e2){ l('execCommand após remoção: '+e2.name+' (ok)','ok'); }
+    l('contenteditable: sem crash','ok');
+  } catch(e){ l('CRASH contenteditable: '+e.name,'e'); }
+}
+
+function t6(){
+  sep('Form + Validation');
+  l('Form com validação durante remoção do elemento...','w');
+  try {
+    var form=document.createElement('form');
+    form.noValidate=false;
+    document.body.appendChild(form);
+    var inputs=[];
+    for(var i=0;i<15;i++){
+      var inp=document.createElement('input');
+      inp.type=['text','email','number','url','tel'][i%5];
+      inp.required=!!(i%2);
+      inp.pattern=i%3?'[A-Za-z]+':null;
+      inp.value=i%2?'':'invalid_'+(i%3===1?'email':'value');
+      form.appendChild(inp);
+      inputs.push(inp);
+    }
+    // Verifica validação
+    var valid=form.checkValidity();
+    l('Form validity: '+valid,'i');
+    // Remove metade dos inputs durante validação
+    inputs.slice(0,7).forEach(function(inp){
+      if(inp.parentNode) form.removeChild(inp);
+    });
+    gc();
+    var valid2=form.checkValidity();
+    l('Form validity após remoção: '+valid2,'ok');
+    if(form.parentNode) document.body.removeChild(form);
+    l('Form + validation: sem crash','ok');
+  } catch(e){ l('CRASH form: '+e.name,'e'); }
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ CVE-2025-43419 — @ulexec Memory Corruption (BZ#293895)','w');
+  l('Testando: Table · Flexbox · Grid · HTML parser · contenteditable · Form','i');
+  t1();
+  setTimeout(t2,500);setTimeout(t3,1000);setTimeout(t4,1500);
+  setTimeout(t5,2000);setTimeout(t6,2500);
+}
+</script>
+</body>
+</html>

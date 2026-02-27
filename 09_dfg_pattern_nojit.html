@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Escape Analysis Pattern — Versão LLInt (PS4)</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030206;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#ffcc00;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.src{background:#0a0a00;border:2px solid #665500;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#ccaa44;line-height:1.8}
+.src strong{color:#ffcc44;display:block;margin-bottom:4px}
+#log{background:#060608;border:1px solid #1a1a08;border-radius:5px;padding:10px;min-height:200px;white-space:pre;overflow-y:auto;max-height:420px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.w{color:#ffaa00}.e{color:#ff4444}.i{color:#aaccff}.sep{color:#333}
+.btn{display:inline-block;margin-top:10px;margin-right:5px;padding:7px 13px;background:#0a0a00;border:1px solid #444400;border-radius:4px;color:#aaaa00;cursor:pointer;font:11px 'Courier New',monospace}
+.btn:hover{border-color:#ffcc00;color:#ffee44}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+</style>
+</head>
+<body>
+<h1>🔬 Escape Analysis Pattern — Versão LLInt (Análise CVE-2025-43529)</h1>
+<p class="meta">Pesquisa: análogo LLInt do DFG ObjectAllocationSinkingPhase bug · Sem JIT</p>
+<div class="src">
+<strong>📋 ANÁLISE — Existe versão LLInt do escape analysis bug?</strong>
+CVE-2025-43529 é específico do DFG (Deep Fun Graph JIT compiler).<br>
+O PS4 desabilita JIT → bug principal NÃO ativo.<br>
+<br>
+MAS: O JSC tem mecanismos de rastreamento de "escape" também em LLInt:<br>
+  • StructureStubInfo (rastreia shapes de objetos para polymorphic caching)<br>
+  • PutByVal com objetos de shapes múltiplas<br>
+  • Arguments object materialization em funções<br>
+  • Closure variable capture em nested functions<br>
+  • Generator/Async function state machine object tracking<br>
+<br>
+HIPÓTESE: Se o bug está no mecanismo de Phi merge (2 shapes de objeto em um branch),<br>
+versões análogas podem existir no interpreter para:<br>
+  • Arguments objects em funções polimórficas<br>
+  • Closures que capturam objetos de shapes variáveis<br>
+  • Generator frames com objetos de múltiplos tipos
+</div>
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="t1()">① Arguments Object Polymorphism</button>
+  <button class="btn" onclick="t2()">② Closure Variable Capture</button>
+  <button class="btn" onclick="t3()">③ Generator State Machine</button>
+  <button class="btn" onclick="t4()">④ Async Frame Objects</button>
+  <button class="btn" onclick="t5()">⑤ Eval Scope Escape</button>
+  <button class="btn" onclick="t6()">⑥ Proxy + Shape Change</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+t+' ───','sep')}
+function gc(){try{var a=[];for(var i=0;i<15;i++)a.push(new ArrayBuffer(1024*1024*2));a=null}catch(e){}}
+
+function t1(){
+  sep('Arguments Object — Shape Polymorphism');
+  l('Arguments object com shapes múltiplas em função polimórfica...','w');
+  try {
+    var leaked=null;
+    function poly(){
+      var args=arguments; // Arguments object
+      if(args.length===1){
+        args[0].type='A'; // shape A: {type, x}
+        args[0].x=args[0].value+1;
+        leaked=args[0];
+      } else if(args.length===2){
+        args[0].type='B'; // shape B: {type, y, z}
+        args[0].y=args[1]*2;
+        args[0].z=args[1]*3;
+        leaked=args[0];
+      } else {
+        args[0].type='C'; // shape C: completamente diferente
+        leaked=null;
+      }
+      return args[0];
+    }
+    // Polimorfismo: chamadas alternadas com shapes diferentes
+    for(var i=0;i<5000;i++){
+      if(i%3===0) poly({value:i});
+      else if(i%3===1) poly({value:i}, i*2);
+      else poly({value:i}, i*2, i*3);
+      // GC ocasional durante o polimorfismo
+      if(i%500===0){ gc(); }
+    }
+    // Verifica se leaked ainda é válido após GC
+    if(leaked){
+      l('leaked.type='+leaked.type+' leaked.value='+leaked.value,'ok');
+    }
+    l('Arguments polymorphism: 5000 iterações sem crash','ok');
+  } catch(e){ l('CRASH arguments poly: '+e.name,'e'); }
+}
+
+function t2(){
+  sep('Closure Variable Capture — Shape Change');
+  l('Closure captura objeto que muda de shape após captura...','w');
+  try {
+    var closures=[];
+    for(var i=0;i<100;i++){
+      var captured={id:i, value:i*2}; // shape inicial: {id, value}
+      var closure=(function(obj){
+        return function(){
+          return obj.id + (obj.extra||0); // acessa 'extra' que pode não existir
+        };
+      })(captured);
+      closures.push({fn:closure, obj:captured});
+    }
+    // Muda a shape de alguns objetos capturados
+    closures.forEach(function(c,idx){
+      if(idx%3===0){
+        c.obj.extra=idx*10; // adiciona propriedade → muda shape
+        delete c.obj.value; // remove propriedade → muda shape novamente
+      }
+    });
+    gc(); // GC com closures ainda ativas
+    // Executa closures com objetos de shapes diferentes
+    var results=[];
+    closures.forEach(function(c){
+      try { results.push(c.fn()); }
+      catch(e2){ l('CRASH em closure: '+e2.name,'e'); }
+    });
+    l('Closure shape change: '+results.length+' resultados sem crash','ok');
+  } catch(e){ l('CRASH closures: '+e.name,'e'); }
+}
+
+function t3(){
+  sep('Generator State Machine — Object Tracking');
+  l('Generator com objetos de múltiplos tipos no frame...','w');
+  try {
+    function* polyGenerator(n) {
+      for(var i=0;i<n;i++){
+        if(i%3===0){
+          var obj={type:'int', val:i}; // shape A
+          yield obj;
+          obj.extra='added'; // muda shape após yield
+        } else if(i%3===1){
+          var obj={type:'float', val:i+0.5, precision:2}; // shape B
+          yield obj;
+        } else {
+          var obj={type:'string', val:''+i, length:(''+i).length, codes:[i]}; // shape C
+          yield obj;
+        }
+      }
+    }
+    var gen=polyGenerator(300);
+    var results=[];
+    var r;
+    while(!(r=gen.next()).done){
+      results.push(r.value);
+      if(results.length%50===0) gc(); // GC com generator frame ativo
+    }
+    l('Generator state machine: '+results.length+' yields sem crash','ok');
+    // Verifica que os objetos ainda são válidos após GC de frames
+    var sampleA=results.filter(function(r){return r.type==='int'}).slice(0,5);
+    sampleA.forEach(function(o){ var v=o.val; });
+    l('Objetos de generator pós-GC: válidos','ok');
+  } catch(e){ l('CRASH generator: '+e.name,'e'); }
+}
+
+function t4(){
+  sep('Async Frame Objects');
+  l('Async function com objetos de diferentes shapes em await boundaries...','w');
+  async function asyncPoly(i, shape) {
+    var obj;
+    if(shape===0) obj={a:i, b:i+1};
+    else if(shape===1) obj={c:i, d:i+2, e:i+3};
+    else obj={f:i, g:i*2, h:i*3, j:i*4};
+    // await aqui cria um "frame snapshot" do objeto
+    await Promise.resolve();
+    // Após await, acessa o objeto (pode ter sido coletado se frame stale)
+    return obj.a || obj.c || obj.f;
+  }
+  var promises=[];
+  for(var i=0;i<100;i++){
+    promises.push(asyncPoly(i, i%3));
+    if(i%20===0) gc(); // GC durante await pendente
+  }
+  Promise.all(promises).then(function(results){
+    l('Async frame objects: '+results.length+' sem crash','ok');
+    l('Sum: '+(results.reduce(function(a,b){return a+(b||0)},0)),'i');
+  }).catch(function(e){ l('CRASH async: '+e.name,'e'); });
+  l('100 async tasks com GC entre awaits...','i');
+}
+
+function t5(){
+  sep('Eval Scope Escape');
+  l('eval() com objetos que escapam para o escopo externo...','w');
+  try {
+    var escapeSlot=null;
+    for(var i=0;i<100;i++){
+      // eval cria escopo dinâmico — o objeto pode "escapar"
+      var shape=i%3;
+      eval('(function(){ '+
+        'var inner = { shape: '+shape+', val: '+i+' }; '+
+        (shape===0 ? 'inner.extra = "A";' : shape===1 ? 'inner.y = '+(i*2)+';' : 'inner.z = true;')+
+        'escapeSlot = inner; '+
+        '})();'
+      );
+      if(i%25===0) gc();
+    }
+    if(escapeSlot) l('escapeSlot.shape='+escapeSlot.shape+' .val='+escapeSlot.val,'ok');
+    l('Eval scope escape: sem crash','ok');
+  } catch(e){ l('CRASH eval: '+e.name,'e'); }
+}
+
+function t6(){
+  sep('Proxy + Shape Change GC Race');
+  l('Proxy intercepta property access durante shape transition + GC...','w');
+  try {
+    var targets=[];
+    for(var i=0;i<50;i++){
+      var base={id:i, val:i*2};
+      var proxy=new Proxy(base, {
+        get: function(t,p){
+          gc(); // GC durante acesso via Proxy
+          return t[p];
+        },
+        set: function(t,p,v){
+          gc(); // GC durante set
+          t[p]=v;
+          return true;
+        }
+      });
+      targets.push({base:base, proxy:proxy});
+    }
+    // Muda shapes via proxy (dispara GC em cada operação)
+    targets.forEach(function(t,idx){
+      t.proxy.id; // get com GC
+      t.proxy.extra=idx*3; // set com GC — muda shape
+      t.proxy.val; // get após shape change
+      if(idx%10===0) delete t.base.val; // remove propriedade diretamente
+    });
+    l('Proxy + shape change: sem crash','ok');
+    // Verifica integridade
+    targets.slice(0,5).forEach(function(t,i){
+      try {
+        var id=t.proxy.id;
+        l('proxy['+i+'].id='+id,'ok');
+      } catch(e2){ l('CRASH proxy access: '+e2.name,'e'); }
+    });
+  } catch(e){ l('CRASH proxy: '+e.name,'e'); }
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ Escape Analysis Pattern — LLInt (sem JIT) — Análise CVE-2025-43529','w');
+  l('Testando: Arguments · Closure · Generator · Async · Eval · Proxy','i');
+  t1();
+  setTimeout(t2,400);setTimeout(t3,800);
+  t4(); // async
+  setTimeout(t5,1200);setTimeout(t6,1600);
+}
+</script>
+</body>
+</html>
