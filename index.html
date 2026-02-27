@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>PS4 WebKit — Pesquisa 2024+ (Nova Rodada)</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#020305;color:#ddd;font-family:'Courier New',monospace;padding:18px;font-size:12px}
+h1{color:#44aaff;font-size:18px;border-bottom:2px solid #224488;padding-bottom:8px;margin-bottom:4px}
+.sub{color:#334;font-size:9px;margin-bottom:10px}
+.ua{background:#08090d;border:1px solid #112233;border-radius:4px;padding:7px 10px;margin-bottom:12px;font-size:10px;color:#336688}
+.src-info{background:#050811;border:2px solid #224488;border-radius:5px;padding:10px;margin-bottom:14px;font-size:10px;color:#5588bb;line-height:1.8}
+.src-info strong{color:#44aaff;display:block;margin-bottom:4px}
+
+.tier-title{font-size:9px;text-transform:uppercase;letter-spacing:3px;margin:14px 0 8px;padding:3px 8px;border-left:3px solid}
+.t1{border-color:#ff4400;color:#ff6644}.t2{border-color:#ff8800;color:#ffaa44}.t3{border-color:#4488ff;color:#66aaff}
+
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.card{display:block;text-decoration:none;background:#070810;border:1px solid #151820;border-radius:7px;padding:12px;position:relative;overflow:hidden}
+.card:hover{border-color:#44aaff}
+.card::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%}
+.c1::before{background:#ff4400}.c2::before{background:#ff8800}.c3::before{background:#4488ff}
+
+.ttl{color:#eee;font-size:11px;font-weight:bold;margin-bottom:2px}
+.cve{font-size:9px;color:#44aaff;margin-bottom:3px}
+.who{font-size:9px;color:#667788;margin-bottom:3px}
+.desc{font-size:10px;color:#556677;line-height:1.5}
+.bdg{display:inline-block;font-size:8px;padding:2px 5px;border-radius:2px;margin:3px 2px 0 0}
+.b-uaf{background:#1a0000;color:#ff4444;border:1px solid #880000}
+.b-rce{background:#0d0000;color:#ff2200;border:1px solid #550000}
+.b-nojit{background:#001a0a;color:#00cc66;border:1px solid #008844}
+.b-2024{background:#00051a;color:#4488ff;border:1px solid #224488}
+.b-oob{background:#1a0a00;color:#ff8800;border:1px solid #884400}
+.b-gap{background:#0a001a;color:#aa44ff;border:1px solid #551188}
+.b-nan{background:#1a001a;color:#cc44ff;border:1px solid #881188}
+.b-huang{background:#001a1a;color:#44cccc;border:1px solid #228888}
+
+.timeline{background:#060810;border:1px solid #1a2233;border-radius:5px;padding:10px;margin:12px 0;font-size:10px}
+.timeline strong{color:#44aaff;display:block;margin-bottom:6px}
+.tl-row{display:flex;gap:8px;margin-bottom:3px;align-items:center}
+.tl-date{color:#336688;width:80px;flex-shrink:0;font-size:9px}
+.tl-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.tl-text{color:#778899;font-size:10px}
+.d-ps4{background:#ff4444}.d-fix{background:#44ff88}.d-vuln{background:#ffaa44}
+
+.footer{margin-top:16px;font-size:9px;color:#222;text-align:center;border-top:1px solid #111;padding-top:8px}
+</style>
+</head>
+<body>
+<h1>🔭 PS4 WebKit — Pesquisa 2024+ Nova Rodada</h1>
+<p class="sub">Fontes: Apple Security Advisories Safari 17.1→17.6 · WSA-2024-0002 · WSA-2024-0004 · Fev/2026</p>
+<div class="ua">UA: <span id="ua"></span></div>
+
+<div class="src-info">
+<strong>📊 NOVA METODOLOGIA — Advisories cronológicos vs branch PS4</strong>
+PS4 Branch: Setembro 2023 (Safari 17.0 / WebKit ~605.1.15)<br>
+Safari 17.1: Out/2023 → contém fixes POSTERIORES ao branch PS4<br>
+Safari 17.2: Dez/2023 → mais fixes posteriores<br>
+Safari 17.4: Mar/2024 → todos os fixes aqui são bugs do branch PS4<br>
+Safari 17.5: Mai/2024 → 8 meses de bugs acumulados → GAP GRANDE<br>
+Safari 17.6: Jul/2024 → 10 meses de bugs — múltiplos UAFs Huang Xilin + Motyl<br>
+<br>
+BUGS CHAVE IDENTIFICADOS:<br>
+  🔴 CVE-2023-42950 (BZ#263682) — Nan Wang UAF + ACE → before 2.44.0 (Mar/2024)<br>
+  🔴 CVE-2024-40776 (BZ#273176) — Huang Xilin UAF → Safari 17.6 Jul/2024<br>
+  🔴 CVE-2024-40782 (BZ#268770) — Maksymilian Motyl UAF → Safari 17.6<br>
+  🟠 CVE-2024-27851 (BZ#272106) — Nan Wang OOB → ACE → Safari 17.5 Mai/2024<br>
+  🟠 CVE-2024-27808 (BZ#268221) — Lukas Bernhard CISPA → ACE → Safari 17.5<br>
+  🟠 CVE-2024-27856 (BZ#268765) — Motyl+Lee+ajajfxhj → ACE → Safari 17.5<br>
+  🔵 CVE-2023-42956 (BZ#263989) — Demon.Team DoS → before 2.44.0<br>
+  🔵 CVE-2024-23252 (BZ#263758) — anbu1024/SecANT DoS → Safari 17.4
+</div>
+
+<div class="timeline">
+<strong>⏱ TIMELINE — Bug introdução vs PS4 branch</strong>
+<div class="tl-row"><span class="tl-date">Set/2023</span><span class="tl-dot d-ps4"></span><span class="tl-text">PS4 FW 13.04 branch cortado — bugs existentes até aqui estão no PS4</span></div>
+<div class="tl-row"><span class="tl-date">Out/2023</span><span class="tl-dot d-fix"></span><span class="tl-text">Safari 17.1 — CVE-2023-41976 UAF Junsung Lee (fix posterior ao branch)</span></div>
+<div class="tl-row"><span class="tl-date">Mar/2024</span><span class="tl-dot d-fix"></span><span class="tl-text">Safari 17.4 — CVE-2023-42950 UAF Nan Wang + CVE-2024-23252 DoS fixados</span></div>
+<div class="tl-row"><span class="tl-date">Mai/2024</span><span class="tl-dot d-fix"></span><span class="tl-text">Safari 17.5 — CVE-2024-27808 CISPA + CVE-2024-27851 Nan Wang + CVE-2024-27856</span></div>
+<div class="tl-row"><span class="tl-date">Jul/2024</span><span class="tl-dot d-fix"></span><span class="tl-text">Safari 17.6 — CVE-2024-40776/40782 UAFs Huang Xilin + Motyl</span></div>
+<div class="tl-row"><span class="tl-date">Fev/2026</span><span class="tl-dot d-ps4"></span><span class="tl-text">AGORA — PS4 FW 13.04 ainda no branch Set/2023 → todos acima = vulneráveis</span></div>
+</div>
+
+<div class="tier-title t1">🔴 TIER 1 — UAF CONFIRMADO + RCE (Prioridade Máxima)</div>
+<div class="grid">
+  <a href="01_cve_2023_42950_nan_wang_uaf_rce.html" class="card c1">
+    <div class="ttl">CVE-2023-42950 — Nan Wang UAF + Arbitrary Code Exec</div>
+    <div class="cve">BZ#263682 · WSA-2024-0002 (Mar/2024) · Safari 17.4</div>
+    <div class="who">Nan Wang (@eternalsakura13) + rushikesh nandedkar</div>
+    <div class="desc">UAF com impacto: "arbitrary code execution". Nan Wang descobre UAFs em WebCore DOM. Fix antes de 2.44.0 = 6 meses após o branch PS4. Sem JIT envolvido por histórico do pesquisador.</div>
+    <span class="bdg b-uaf">UAF</span><span class="bdg b-rce">ACE</span><span class="bdg b-nojit">NO-JIT ✓</span><span class="bdg b-nan">Nan Wang</span>
+  </a>
+  <a href="02_cve_2024_40776_huang_xilin.html" class="card c1">
+    <div class="ttl">CVE-2024-40776 — Huang Xilin (Ant Group) UAF</div>
+    <div class="cve">BZ#273176 · Safari 17.6 Jul/2024 · WSA-2024-0004</div>
+    <div class="who">Huang Xilin of Ant Group Light-Year Security Lab</div>
+    <div class="desc">UAF confirmado: "use-after-free issue was addressed with improved memory management" → process crash. Ant Group Light-Year é equipe especializada em WebKit DOM/CSS bugs. 10 meses de gap com o branch PS4.</div>
+    <span class="bdg b-uaf">UAF</span><span class="bdg b-nojit">NO-JIT ✓</span><span class="bdg b-huang">Ant Group</span><span class="bdg b-2024">Jul/2024</span>
+  </a>
+</div>
+<div class="grid">
+  <a href="03_cve_2024_40782_motyl.html" class="card c1">
+    <div class="ttl">CVE-2024-40782 — Maksymilian Motyl (Immunity) UAF</div>
+    <div class="cve">BZ#268770 · Safari 17.6 Jul/2024</div>
+    <div class="who">Maksymilian Motyl of Immunity Systems</div>
+    <div class="desc">UAF confirmado. Motyl (Immunity Systems) especializa em bugs de DOM/parsing sem JIT. Mesmo advisory do Huang Xilin — clusters de bugs relacionados sugerem mesma área de código. Process crash.</div>
+    <span class="bdg b-uaf">UAF</span><span class="bdg b-nojit">NO-JIT ✓</span><span class="bdg b-2024">Jul/2024</span>
+  </a>
+  <a href="04_cve_2024_40779_80_huang_oob.html" class="card c1">
+    <div class="ttl">CVE-2024-40779/40780 — Huang Xilin OOB Read (×2)</div>
+    <div class="cve">BZ#275431 + BZ#275273 · Safari 17.6 Jul/2024</div>
+    <div class="who">Huang Xilin of Ant Group (2 bugs simultâneos)</div>
+    <div class="desc">Dois OOB reads confirmados. Huang Xilin encontrou 4 bugs na mesma sessão de pesquisa: 2 UAFs + 2 OOB reads. Cluster sugere área comum → mesmo componente WebCore. Crash garantido.</div>
+    <span class="bdg b-oob">OOB ×2</span><span class="bdg b-nojit">NO-JIT ✓</span><span class="bdg b-huang">Ant Group</span>
+  </a>
+</div>
+
+<div class="tier-title t2">🟠 TIER 2 — ACE SEM UAF EXPLÍCITO, Safari 17.5 (Mai/2024)</div>
+<div class="grid">
+  <a href="05_cve_2024_27851_nan_wang_oob.html" class="card c2">
+    <div class="ttl">CVE-2024-27851 — Nan Wang Bounds Check (BZ#272106)</div>
+    <div class="cve">BZ#272106 · Safari 17.5 Mai/2024</div>
+    <div class="who">Nan Wang (@eternalsakura13) · 360 VRI</div>
+    <div class="desc">OOB/bounds check com impacto ACE. "improved bounds checks". Nan Wang na mesma série de pesquisa → mesma área de código do BZ#263682. WebKit (não JSC). Gap: 8 meses pós-branch PS4.</div>
+    <span class="bdg b-oob">OOB→ACE</span><span class="bdg b-nojit">NO-JIT ✓</span><span class="bdg b-nan">Nan Wang</span>
+  </a>
+  <a href="06_cve_2024_27808_cispa.html" class="card c2">
+    <div class="ttl">CVE-2024-27808 — Lukas Bernhard CISPA (BZ#268221)</div>
+    <div class="cve">BZ#268221 · Safari 17.5 Mai/2024</div>
+    <div class="who">Lukas Bernhard · CISPA Helmholtz Center for Info Security</div>
+    <div class="desc">ACE: "arbitrary code execution", "improved memory handling". CISPA é instituto top de segurança de browser em pesquisa acadêmica. Lukas Bernhard tem foco em WebKit parsing e DOM lifecycle. No-JIT.</div>
+    <span class="bdg b-rce">ACE</span><span class="bdg b-nojit">NO-JIT ✓</span><span class="bdg b-gap">8 meses</span>
+  </a>
+</div>
+<div class="grid">
+  <a href="07_cve_2024_27856_cluster.html" class="card c2">
+    <div class="ttl">CVE-2024-27856 — Cluster Motyl+Lee+ajajfxhj (BZ#268765)</div>
+    <div class="cve">BZ#268765 · Safari 17.5 Mai/2024</div>
+    <div class="who">Motyl + Junsung Lee (ZDI) + ajajfxhj — 3 pesquisadores</div>
+    <div class="desc">3 pesquisadores reportaram o mesmo bug → alta severidade. "Processing a file may lead to arbitrary code execution". Arquivo processado via WebKit = HTML/SVG/CSS/XML parser. No JIT.</div>
+    <span class="bdg b-rce">ACE</span><span class="bdg b-nojit">FILE PARSE</span><span class="bdg b-gap">8 meses</span>
+  </a>
+  <a href="08_cve_2024_44185_gary_kwong.html" class="card c2">
+    <div class="ttl">CVE-2024-44185 — Gary Kwong (BZ#276097)</div>
+    <div class="cve">BZ#276097 · Safari 17.6 · Entry adicionada Out/2024</div>
+    <div class="who">Gary Kwong · process crash</div>
+    <div class="desc">Gary Kwong foca em WebKit layout engine e rendering. "improved checks" → bug de validação em rendering path. Adicionado retroativamente ao advisory → bug descoberto antes mas corrigido em Jul/2024.</div>
+    <span class="bdg b-oob">CRASH</span><span class="bdg b-nojit">Render ✓</span>
+  </a>
+</div>
+
+<div class="tier-title t3">🔵 TIER 3 — DoS CONFIRMADO, Targets Antes de Safari 17.4</div>
+<div class="grid">
+  <a href="09_cve_2023_42950_demon_dos.html" class="card c3">
+    <div class="ttl">CVE-2023-42956 — Demon.Team DoS (BZ#263989)</div>
+    <div class="cve">BZ#263989 · WSA-2024-0002 Mar/2024 · before 2.44.0</div>
+    <div class="who">SungKwon Lee (Demon.Team)</div>
+    <div class="desc">DoS: "Processing web content may lead to a denial-of-service". "improved memory handling". Demon.Team especializa em WebKit bugs de memória. Afeta antes de 2.44.0 → PS4 branch vulnerável.</div>
+    <span class="bdg b-oob">DoS</span><span class="bdg b-nojit">NO-JIT ✓</span>
+  </a>
+  <a href="10_cve_2024_23252_anbu_dos.html" class="card c3">
+    <div class="ttl">CVE-2024-23252 — anbu1024/SecANT DoS (BZ#263758)</div>
+    <div class="cve">BZ#263758 · WSA-2024-0002 Mar/2024 · before 2.44.0</div>
+    <div class="who">anbu1024 of SecANT</div>
+    <div class="desc">DoS: "Processing web content may lead to a denial-of-service". "improved memory handling". SecANT foca em bugs de memória em browsers. Afeta antes de 2.44.0 = afeta PS4 branch Set/2023.</div>
+    <span class="bdg b-oob">DoS</span><span class="bdg b-nojit">NO-JIT ✓</span>
+  </a>
+</div>
+
+<div class="footer">PS4 WebKit Research 2024+ · Fontes: Apple Security Advisories · WSA-2024-0002 · WSA-2024-0004 · Fev/2026</div>
+<script>document.getElementById('ua').textContent=navigator.userAgent</script>
+</body>
+</html>

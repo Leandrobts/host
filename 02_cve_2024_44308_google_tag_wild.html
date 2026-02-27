@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>CVE-2024-44308 — Google TAG · Explorado in-the-wild · BZ#283063</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030206;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#ff0000;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.src{background:#0a0000;border:2px solid #880000;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#dd5555;line-height:1.8}
+.src strong{color:#ff4444;display:block;margin-bottom:4px}
+.wild{background:#1a0000;border:1px solid #ff0000;border-radius:4px;padding:6px 10px;margin-bottom:8px;font-size:10px;color:#ff3333}
+#log{background:#060608;border:1px solid #200808;border-radius:5px;padding:10px;min-height:220px;white-space:pre;overflow-y:auto;max-height:450px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.w{color:#ffaa00}.e{color:#ff4444}.i{color:#ff9955}.sep{color:#333}
+.btn{display:inline-block;margin-top:8px;margin-right:5px;padding:7px 12px;background:#0d0000;border:1px solid #660000;border-radius:4px;color:#cc2222;cursor:pointer;font:11px 'Courier New',monospace}
+.btn:hover{border-color:#ff0000;color:#ff4444}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+</style>
+</head>
+<body>
+<h1>🚨 CVE-2024-44308 — Google TAG · EXPLORADO IN-THE-WILD · BZ#283063</h1>
+<p class="meta">Clément Lecigne + Benoît Sevens (Google TAG) · WSA-2024-0007 Nov/2024 · before WebKit 2.46.4 · Intel Mac targets</p>
+<div class="wild">⚠️ EXPLORADO ATIVAMENTE em Nov/2024 contra Mac Intel. Apple confirmou. Fix emergencial.</div>
+<div class="src">
+<strong>📋 ANÁLISE — Google TAG BZ#283063</strong>
+CVE: CVE-2024-44308 · Impact: "Processing maliciously crafted web content may lead to arbitrary code execution"<br>
+"Apple is aware of a report that this issue may have been actively exploited on Intel-based Mac systems"<br>
+Fix: "The issue was addressed with improved checks" → validação de input/bounds check em JavaScriptCore<br>
+Afeta: before 2.46.4 · PS4 branch Set/2023 → <strong style="color:#ff4444">AFETADO (26 meses de gap)</strong><br>
+<br>
+COMPONENTE: JavaScriptCore — memory mishandling processing JavaScript.<br>
+Fix "improved checks" (não "improved memory management") → bounds/type check em operação JSC.<br>
+PS4 tem JIT desabilitado mas JSC interpreta JS via LLInt — checks de bounds/validação existem<br>
+em ambos os caminhos. Google TAG descobriu via análise de tráfego malicioso real.<br>
+<br>
+PS4/x86-64: sem PAC (Pointer Authentication) → primitivas de UAF/OOB mais efetivas que em ARM.
+</div>
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="t1()">① JSC Property Access Bounds</button>
+  <button class="btn" onclick="t2()">② Array Buffer Bounds Check</button>
+  <button class="btn" onclick="t3()">③ Object Shape Validation</button>
+  <button class="btn" onclick="t4()">④ String Index Checks</button>
+  <button class="btn" onclick="t5()">⑤ TypedArray Operations</button>
+  <button class="btn" onclick="t6()">⑥ RegExp State Machine</button>
+  <button class="btn" onclick="t7()">⑦ Number Conversion Edge</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+t+' ───','sep')}
+function gc(){try{var a=[];for(var i=0;i<10;i++)a.push(new ArrayBuffer(1024*512));a=null}catch(e){}}
+
+function t1(){
+  sep('JSC Property Access — Bounds Check (CVE-2024-44308 vector)');
+  l('JSC check de bounds em property enumeration com Proxy reentrante...','w');
+  try {
+    // Proxy intercepta para-for..in e modifica o objeto durante enumeração
+    var keys = [];
+    var base = {};
+    for(var i = 0; i < 100; i++) base['prop_'+i] = i;
+    var reenter = 0;
+    var proxy = new Proxy(base, {
+      ownKeys: function(t){
+        reenter++;
+        if(reenter === 1){
+          // Adiciona e remove propriedades DURANTE ownKeys
+          for(var j = 0; j < 50; j++) delete t['prop_'+j];
+          for(var k = 0; k < 50; k++) t['new_'+k] = k;
+        }
+        return Object.keys(t);
+      },
+      getOwnPropertyDescriptor: function(t, prop){
+        // Pode retornar undefined para propriedades que acabaram de ser deletadas
+        return Object.getOwnPropertyDescriptor(t, prop);
+      }
+    });
+    // JSPropertyNameEnumerator usa este caminho
+    for(var p in proxy) keys.push(p);
+    l('Property enum com Proxy reentrante: '+keys.length+' keys, reenter='+reenter,'ok');
+  } catch(e){ l('CRASH JSC property: '+e.name+' — '+e.message,'e'); }
+}
+
+function t2(){
+  sep('ArrayBuffer Bounds Check — Validação JSC');
+  l('Operações de bounds em ArrayBuffer com tamanhos extremos...','w');
+  try {
+    // DataView com offsets extremos
+    var buf = new ArrayBuffer(16);
+    var view = new DataView(buf);
+    var tests = [
+      function(){ return view.getUint8(0); },
+      function(){ return view.getUint8(15); },
+      function(){ return view.getUint32(12); }, // último offset válido para 4 bytes
+      function(){ return view.getFloat64(8); }, // último offset válido para 8 bytes
+    ];
+    var bounds_tests = [
+      function(){ return view.getUint8(16); },   // OOB — deve lançar
+      function(){ return view.getUint8(-1); },   // negativo — deve lançar
+      function(){ return view.getUint32(13); },  // OOB parcial
+      function(){ return view.getFloat64(9); },  // OOB parcial
+    ];
+    // Testes válidos
+    tests.forEach(function(fn, i){
+      try { var r = fn(); l('valid['+i+']='+r,'ok'); }
+      catch(e2){ l('CRASH valid['+i+']: '+e2.name,'e'); }
+    });
+    // Testes de bounds — todos devem lançar RangeError
+    bounds_tests.forEach(function(fn, i){
+      try { var r = fn(); l('BOUNDS MISS ['+i+']: retornou '+r+' sem exceção!','e'); }
+      catch(e2){ l('bounds['+i+']: '+e2.name+' (correto)','ok'); }
+    });
+    // Teste com SharedArrayBuffer se disponível
+    if(typeof SharedArrayBuffer !== 'undefined'){
+      var sbuf = new SharedArrayBuffer(8);
+      var sv = new DataView(sbuf);
+      try { sv.setUint32(0, 0xdeadbeef); var r = sv.getUint32(0); l('SharedArrayBuffer: 0x'+r.toString(16),'ok'); }
+      catch(e2){ l('SharedArrayBuffer: '+e2.name,'w'); }
+    }
+  } catch(e){ l('CRASH ArrayBuffer: '+e.name,'e'); }
+}
+
+function t3(){
+  sep('Object Shape Validation — JSC Structure ID');
+  l('Objetos com shapes que mudam rapidamente — Structure cache corruption...','w');
+  try {
+    // JSC usa "Structure" objects para track de shapes
+    // Mudar shape rápido pode corromper o structure cache
+    var N = 2000;
+    var objects = [];
+    for(var i = 0; i < N; i++){
+      objects.push({a: i, b: i+1}); // shape básica {a, b}
+    }
+    // Agora adiciona propriedades para forçar muitas transições de structure
+    for(var j = 0; j < N; j++){
+      if(j % 4 === 0)      { objects[j].c = j; }
+      else if(j % 4 === 1) { objects[j].d = j; objects[j].e = j+1; }
+      else if(j % 4 === 2) { delete objects[j].a; }
+      else                 { objects[j].a = 'string'; } // type change
+    }
+    gc();
+    // Lê todos os objetos após shape changes + GC
+    var sum = 0;
+    objects.forEach(function(obj){
+      try {
+        sum += (obj.a || 0) + (obj.b || 0) + (obj.c || 0);
+      } catch(e2){ l('CRASH object read: '+e2.name,'e'); }
+    });
+    l('Object shape validation: N='+N+' sum='+sum,'ok');
+  } catch(e){ l('CRASH shape: '+e.name,'e'); }
+}
+
+function t4(){
+  sep('String Index Bounds Check — JSC charCodeAt/substring');
+  l('Operações de string com índices construídos por int overflow...','w');
+  try {
+    var str = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    var extreme_indices = [
+      0, 1, 25, 26,        // válidos e limites
+      -1, -2147483648,     // negativos
+      2147483647, 4294967295, // overflow 32-bit
+      Infinity, -Infinity, NaN,
+      1.5, -0.5,           // float index
+    ];
+    extreme_indices.forEach(function(idx){
+      try {
+        var r1 = str.charCodeAt(idx);
+        var r2 = str.charAt(idx);
+        var r3 = str[idx];
+        // charCodeAt pode retornar NaN para out-of-bounds — não deve crashar
+        l('charCodeAt('+idx+')='+r1+' charAt="'+r2+'"','ok');
+      } catch(e2){ l('CRASH string['+idx+']: '+e2.name,'e'); }
+    });
+    // String slice com extremos
+    try {
+      var s1 = str.substring(-100, 100);
+      var s2 = str.slice(2147483647, -2147483648);
+      var s3 = str.substring(NaN, Infinity);
+      l('Substring extremos: ok len='+s1.length,'ok');
+    } catch(e2){ l('CRASH substring: '+e2.name,'e'); }
+  } catch(e){ l('CRASH string: '+e.name,'e'); }
+}
+
+function t5(){
+  sep('TypedArray Operations — Int/Float Coercion');
+  l('TypedArray com conversões de tipo que podem gerar bounds issues...','w');
+  try {
+    var ta = new Int32Array(100);
+    var fa = new Float64Array(50);
+    // Escreve valores extremos
+    var extreme_vals = [
+      0, 1, -1, 2147483647, -2147483648, // Int32 extremos
+      0x7fffffff, 0x80000000, 0xffffffff, 0x100000000,
+      NaN, Infinity, -Infinity, 1.5, -0.5
+    ];
+    extreme_vals.forEach(function(v, i){
+      try {
+        ta[i % 100] = v;
+        var read = ta[i % 100]; // coerção Int32 ao escrever
+        fa[i % 50] = v;
+        var fread = fa[i % 50];
+        // Verifica coerção
+      } catch(e2){ l('CRASH TypedArray['+i+']='+v+': '+e2.name,'e'); }
+    });
+    l('TypedArray extremos: '+extreme_vals.length+' valores sem crash','ok');
+    // set() com offset extremo
+    try { ta.set([1,2,3], 98); l('set at offset 98: ok','ok'); }
+    catch(e2){ l('set(98): '+e2.name+' (esperado)','ok'); }
+    try { ta.set([1,2,3], 99); l('BOUNDS MISS: set(99) não lançou','e'); }
+    catch(e2){ l('set(99) OOB: '+e2.name+' (correto)','ok'); }
+  } catch(e){ l('CRASH TypedArray: '+e.name,'e'); }
+}
+
+function t6(){
+  sep('RegExp State Machine — Backtracking Bomb');
+  l('RegExp com patterns de backtracking extremo — state machine JSC...','w');
+  try {
+    var patterns = [
+      /^(a+)+$/,           // exponential backtracking
+      /(x+x+)+y/,          // catastrophic backtracking
+      /^([^!]+!){2,}$/,    // multi-step backtracking
+      /(?=(a+))\1b/,       // lookahead UAF candidate
+      /\b\w+\b/g,          // global com exec loop
+    ];
+    var input = 'a'.repeat(20) + 'b';
+    patterns.forEach(function(re, i){
+      try {
+        var start = Date.now();
+        var result = re.test(input);
+        var elapsed = Date.now() - start;
+        l('RegExp['+i+']: '+result+' ('+elapsed+'ms)','ok');
+        if(elapsed > 2000) l('  → TIMEOUT suspeito: '+elapsed+'ms > 2000ms','w');
+      } catch(e2){ l('CRASH RegExp['+i+']: '+e2.name,'e'); }
+    });
+    // Named groups (ES2018) — pode ter bugs de bounds em WebKit mais antigo
+    try {
+      var named = /(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})/;
+      var m = named.exec('2023-09-15');
+      if(m && m.groups) l('Named groups: year='+m.groups.year,'ok');
+    } catch(e2){ l('Named groups: '+e2.name,'w'); }
+  } catch(e){ l('CRASH RegExp: '+e.name,'e'); }
+}
+
+function t7(){
+  sep('Number Conversion — JSC Edge Cases (bounds check bypass)');
+  l('Conversões de número que podem fazer bypass de bounds checks...','w');
+  try {
+    // JSC check de bounds usa int32 internamente em alguns caminhos
+    // Valores que passam de float64 para int32 de forma inesperada
+    var tricky = [
+      2147483648,      // 2^31 — overflow signed int32
+      4294967296,      // 2^32
+      2147483647.9,    // just below 2^31
+      -0,              // negative zero
+      1e308,           // perto de MAX_SAFE
+      9007199254740991,// MAX_SAFE_INTEGER
+      9007199254740992,// MAX_SAFE_INTEGER + 1
+      0.1 + 0.2,       // floating point imprecision
+    ];
+    var arr = new Array(10);
+    tricky.forEach(function(v){
+      try {
+        var idx = v >>> 0; // conversão para uint32
+        if(idx < arr.length){
+          arr[idx] = v;
+          l('arr['+idx+'] = '+v+' (uint32 conv ok)','ok');
+        } else {
+          l('idx='+idx+' out of arr.length='+arr.length+' (skipped)','i');
+        }
+      } catch(e2){ l('CRASH number conv '+v+': '+e2.name,'e'); }
+    });
+    // Integer overflow em index computation
+    try {
+      var buf = new ArrayBuffer(8);
+      var view = new Uint8Array(buf);
+      // offset = (2^32) mod bufferSize deve ser 0 — não deve dar OOB
+      var offset = (4294967296) % buf.byteLength;
+      view[offset] = 0xff;
+      l('uint32 wrap index: offset='+offset+' ok','ok');
+    } catch(e2){ l('CRASH uint32 wrap: '+e2.name,'e'); }
+  } catch(e){ l('CRASH number: '+e.name,'e'); }
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ CVE-2024-44308 — Google TAG EXPLOITED IN-THE-WILD (BZ#283063)','e');
+  l('JSC memory mishandling — "improved checks" — PS4 afetado (26 meses de gap)','w');
+  t1(); setTimeout(t2,400); setTimeout(t3,800); setTimeout(t4,1200);
+  setTimeout(t5,1600); setTimeout(t6,2000); setTimeout(t7,3500);
+}
+</script>
+</body>
+</html>

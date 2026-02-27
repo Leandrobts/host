@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>CVE-2024-27856 — Cluster 3 Pesquisadores (BZ#268765)</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030206;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#ff8800;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.src{background:#060400;border:2px solid #664400;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#cc8855;line-height:1.8}
+.src strong{color:#ff9944;display:block;margin-bottom:4px}
+#log{background:#060608;border:1px solid #1a1008;border-radius:5px;padding:10px;min-height:200px;white-space:pre;overflow-y:auto;max-height:420px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.w{color:#ffaa00}.e{color:#ff4444}.i{color:#4488ff}.sep{color:#333}
+.btn{display:inline-block;margin-top:10px;margin-right:5px;padding:7px 13px;background:#110800;border:1px solid #442200;border-radius:4px;color:#cc6600;cursor:pointer;font:11px 'Courier New',monospace}
+.btn:hover{border-color:#ff8800;color:#ffaa44}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+</style>
+</head>
+<body>
+<h1>⚠️ CVE-2024-27856 — 3 Pesquisadores Simultâneos: Motyl+Lee+ajajfxhj (BZ#268765)</h1>
+<p class="meta">Crédito: Motyl (Immunity) + Junsung Lee (ZDI) + ajajfxhj · Safari 17.5 Mai/2024 · ACE</p>
+<div class="src">
+<strong>📋 ANÁLISE — BZ#268765 · 3 Pesquisadores → Alta Severidade</strong>
+CVE: CVE-2024-27856 · Fix: Safari 17.5 (Mai/2024) → apareceu também no WSA-2025-0001<br>
+Impacto: "Processing a file may lead to unexpected app termination or arbitrary code execution"<br>
+Fix: "The issue was addressed with improved checks"<br>
+<br>
+3 PESQUISADORES SIMULTÂNEOS = sinal de bug muito acessível e severo:<br>
+  • Maksymilian Motyl (Immunity Systems) — DOM/parsing specialist<br>
+  • Junsung Lee (ZDI) — TrendMicro ZDI, browser exploitation<br>
+  • ajajfxhj — pesquisador independente (encontrou CVE-2024-54551 também)<br>
+<br>
+"Processing a FILE" = não é só web content → HTML/SVG/PDF/imagem aberta localmente<br>
+Afeta: WebKit quando abre arquivos no Finder/Files → vector diferente<br>
+Candidatos: SVG com scripts inline · HTML local com resources · JPEG/PNG com ICC profile<br>
+GAP PS4: 8 meses (Set/2023 → Mai/2024)
+</div>
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="t1()">① SVG com Scripts Inline</button>
+  <button class="btn" onclick="t2()">② Blob URL + File-like</button>
+  <button class="btn" onclick="t3()">③ Data URL Complexa</button>
+  <button class="btn" onclick="t4()">④ iframe Srcdoc Local</button>
+  <button class="btn" onclick="t5()">⑤ Object/Embed Element</button>
+  <button class="btn" onclick="t6()">⑥ CSS @import + File</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+t+' ───','sep')}
+function gc(){try{var a=[];for(var i=0;i<15;i++)a.push(new ArrayBuffer(1024*1024*2));a=null}catch(e){}}
+
+function t1(){
+  sep('SVG com Scripts Inline — "Processing a file"');
+  l('SVG com scripts e event handlers inline processados como arquivo...','w');
+  try {
+    var svgNS='http://www.w3.org/2000/svg';
+    // SVG com estrutura complexa incluindo scripts e eventos
+    var svgStrings=[
+      // SVG com animação SMIL
+      '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="100" height="100" fill="red"><animate attributeName="width" from="100" to="200" dur="1s" fill="freeze"/></rect><use href="#nonexistent" x="0" y="0"/></svg>',
+      // SVG com filter complexo
+      '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><defs><filter id="f"><feGaussianBlur stdDeviation="5"/><feColorMatrix type="saturate" values="2"/><feDisplacementMap in="SourceGraphic" scale="10"/></filter></defs><rect width="200" height="200" fill="blue" filter="url(#f)"/></svg>',
+      // SVG com markers e paths
+      '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><defs><marker id="m" markerWidth="10" markerHeight="10" refX="5" refY="5"><circle cx="5" cy="5" r="4" fill="red"/></marker></defs><line x1="0" y1="0" x2="200" y2="200" stroke="black" marker-start="url(#m)" marker-end="url(#m)"/></svg>',
+    ];
+    svgStrings.forEach(function(svgStr, i){
+      try {
+        var blob=new Blob([svgStr], {type:'image/svg+xml'});
+        var url=URL.createObjectURL(blob);
+        var img=new Image();
+        img.onload=function(){
+          try {
+            var canvas=document.createElement('canvas');
+            canvas.width=200; canvas.height=200;
+            var ctx=canvas.getContext('2d');
+            ctx.drawImage(img,0,0);
+            var id=ctx.getImageData(0,0,1,1);
+            l('SVG blob '+i+': decoded, pixel[0]='+id.data[0],'ok');
+          } catch(e2){ l('SVG draw '+i+': '+e2.name,'e'); }
+          URL.revokeObjectURL(url);
+        };
+        img.onerror=function(){ l('SVG blob '+i+': load error','w'); URL.revokeObjectURL(url); };
+        img.src=url;
+      } catch(e2){ l('CRASH SVG blob '+i+': '+e2.name,'e'); }
+    });
+    l('SVG file processing iniciado...','i');
+  } catch(e){ l('CRASH: '+e.name,'e'); }
+}
+
+function t2(){
+  sep('Blob URL + File-like Processing');
+  l('Blobs com tipos MIME incomuns processados como arquivos...','w');
+  try {
+    var types=[
+      {mime:'text/html', content:'<html><body><script>document.title="blob-exec"<\/script></body></html>'},
+      {mime:'application/xhtml+xml', content:'<html xmlns="http://www.w3.org/1999/xhtml"><body><p>xhtml blob</p></body></html>'},
+      {mime:'image/svg+xml', content:'<svg xmlns="http://www.w3.org/2000/svg"><text y="20">SVG blob text</text></svg>'},
+      {mime:'application/xml', content:'<root><item id="1">data</item><item id="2">data2</item></root>'},
+    ];
+    types.forEach(function(t, i){
+      try {
+        var blob=new Blob([t.content], {type:t.mime});
+        var url=URL.createObjectURL(blob);
+        var iframe=document.createElement('iframe');
+        iframe.style.cssText='display:none;width:200px;height:100px';
+        iframe.src=url;
+        iframe.onload=function(){
+          try {
+            var title=iframe.contentDocument?iframe.contentDocument.title:'(inaccessible)';
+            l('Blob iframe '+i+' ('+t.mime+'): loaded, title="'+title+'"','ok');
+          } catch(e2){ l('Blob iframe '+i+' access: '+e2.name,'w'); }
+          if(iframe.parentNode) document.body.removeChild(iframe);
+          URL.revokeObjectURL(url);
+          gc();
+        };
+        iframe.onerror=function(){ 
+          l('Blob iframe '+i+': load error','w');
+          if(iframe.parentNode) document.body.removeChild(iframe);
+          URL.revokeObjectURL(url);
+        };
+        document.body.appendChild(iframe);
+      } catch(e2){ l('CRASH blob '+i+': '+e2.name,'e'); }
+    });
+    l('Blob URL processing iniciado...','i');
+  } catch(e){ l('CRASH: '+e.name,'e'); }
+}
+
+function t3(){
+  sep('Data URL Complexa — File Processing Pattern');
+  l('Data URLs com conteúdo complexo simulating file open...','w');
+  try {
+    var cases=[
+      // HTML data URL com meta charset
+      'data:text/html;charset=utf-8,<html><meta charset="utf-8"><body><p>'+encodeURIComponent('UTF-8 content: €£¥')+'</p></body></html>',
+      // SVG data URL com animação
+      'data:image/svg+xml;base64,'+btoa('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><circle cx="50" cy="50" r="40" fill="green"><animateTransform attributeName="transform" type="rotate" from="0 50 50" to="360 50 50" dur="2s" repeatCount="indefinite"/></circle></svg>'),
+      // XML data URL
+      'data:application/xml,<?xml version="1.0"?><root attr="value"><child><![CDATA[data]]></child></root>',
+    ];
+    cases.forEach(function(url, i){
+      try {
+        var iframe=document.createElement('iframe');
+        iframe.style.display='none';
+        iframe.src=url;
+        iframe.onload=function(){
+          try {
+            var doc=iframe.contentDocument;
+            l('DataURL iframe '+i+': loaded, doc='+(doc?'ok':'null'),'ok');
+          } catch(e2){ l('DataURL iframe '+i+' access: '+e2.name,'w'); }
+          if(iframe.parentNode) document.body.removeChild(iframe);
+          gc();
+        };
+        document.body.appendChild(iframe);
+      } catch(e2){ l('CRASH dataurl '+i+': '+e2.name,'e'); }
+    });
+    l('Data URL processing iniciado...','i');
+  } catch(e){ l('CRASH: '+e.name,'e'); }
+}
+
+function t4(){
+  sep('iframe srcdoc — Local File Simulation');
+  l('srcdoc com HTML complexo que simula abertura de arquivo local...','w');
+  try {
+    var complexDoc=[
+      '<!DOCTYPE html><html><head>',
+      '<style>',
+      '@keyframes spin { to { transform: rotate(360deg); } }',
+      '.spin { animation: spin 2s infinite; }',
+      'table { border-collapse: collapse; }',
+      'td { border: 1px solid black; padding: 4px; }',
+      '</style></head><body>',
+      '<table>',
+      Array(20).fill(0).map(function(_,i){
+        return '<tr><td>'+i+'</td><td>data '+i+'</td><td class="spin">spin</td></tr>';
+      }).join(''),
+      '</table>',
+      '<svg width="100" height="100"><rect width="100" height="100" fill="red" class="spin"/></svg>',
+      '</body></html>'
+    ].join('');
+    var iframe=document.createElement('iframe');
+    iframe.style.cssText='width:300px;height:200px';
+    iframe.srcdoc=complexDoc;
+    iframe.onload=function(){
+      try {
+        var doc=iframe.contentDocument;
+        var rows=doc?doc.querySelectorAll('tr').length:0;
+        l('srcdoc loaded: '+rows+' table rows','ok');
+        // Acessa e modifica o conteúdo
+        if(doc){
+          doc.querySelectorAll('td').forEach(function(td,i){
+            if(i%3===0) td.style.background='blue';
+          });
+        }
+      } catch(e2){ l('srcdoc access: '+e2.name,'w'); }
+      if(iframe.parentNode) document.body.removeChild(iframe);
+      gc();
+    };
+    document.body.appendChild(iframe);
+    l('srcdoc iframe criado...','i');
+  } catch(e){ l('CRASH srcdoc: '+e.name,'e'); }
+}
+
+function t5(){
+  sep('Object/Embed Element — File Format Processing');
+  l('Elementos object/embed com tipos MIME de arquivo...','w');
+  try {
+    var svgBlob=new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="purple"/><text y="50" fill="white">OBJ</text></svg>'], {type:'image/svg+xml'});
+    var svgUrl=URL.createObjectURL(svgBlob);
+    // Testa <object>
+    var obj=document.createElement('object');
+    obj.type='image/svg+xml';
+    obj.data=svgUrl;
+    obj.width='100'; obj.height='100';
+    obj.onload=function(){ l('<object> SVG: loaded','ok'); };
+    obj.onerror=function(){ l('<object> SVG: error (ok em contextos restritos)','w'); };
+    document.body.appendChild(obj);
+    setTimeout(function(){
+      if(obj.parentNode) document.body.removeChild(obj);
+      URL.revokeObjectURL(svgUrl);
+      l('Object/embed: cleanup ok','ok');
+    }, 500);
+    l('<object type=image/svg+xml>: inserido...','i');
+  } catch(e){ l('CRASH object/embed: '+e.name,'e'); }
+}
+
+function t6(){
+  sep('CSS @import Simulation');
+  l('CSS com @import e recursos externos (data URLs)...','w');
+  try {
+    var importedCss='data:text/css,'+encodeURIComponent([
+      '.imported-cls { color: red; font-weight: bold; }',
+      '.imported-cls::before { content: "IMPORTED"; display: block; }',
+      '@keyframes imported-anim { from { opacity: 0; } to { opacity: 1; } }',
+    ].join('\n'));
+    var link=document.createElement('link');
+    link.rel='stylesheet';
+    link.href=importedCss;
+    link.onload=function(){
+      l('CSS @import (link): loaded','ok');
+      var el=document.createElement('div');
+      el.className='imported-cls';
+      el.textContent='imported styled';
+      document.body.appendChild(el);
+      el.offsetHeight;
+      var cs=window.getComputedStyle(el);
+      l('imported style color: '+cs.color,'ok');
+      document.body.removeChild(el);
+    };
+    link.onerror=function(){ l('CSS import: load error (ok em contextos seguros)','w'); };
+    document.head.appendChild(link);
+    setTimeout(function(){
+      if(link.parentNode) document.head.removeChild(link);
+      l('CSS import cleanup: ok','ok');
+    }, 500);
+    l('CSS import iniciado...','i');
+  } catch(e){ l('CRASH CSS import: '+e.name,'e'); }
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ CVE-2024-27856 — 3 Pesquisadores simultâneos (BZ#268765)','w');
+  l('"Processing a file" → SVG · Blob URL · Data URL · srcdoc · Object · CSS','i');
+  t1(); setTimeout(t2,600); setTimeout(t3,1200); setTimeout(t4,1800);
+  setTimeout(t5,2400); setTimeout(t6,3000);
+}
+</script>
+</body>
+</html>

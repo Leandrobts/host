@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>CVE-2024-44185/42956 — Gary Kwong + Demon.Team</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030206;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#4488ff;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.src{background:#000510;border:2px solid #224488;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#4488aa;line-height:1.8}
+.src strong{color:#4488ff;display:block;margin-bottom:4px}
+#log{background:#060608;border:1px solid #0a1020;border-radius:5px;padding:10px;min-height:200px;white-space:pre;overflow-y:auto;max-height:420px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.w{color:#ffaa00}.e{color:#ff4444}.i{color:#4488ff}.sep{color:#333}
+.btn{display:inline-block;margin-top:10px;margin-right:5px;padding:7px 13px;background:#000510;border:1px solid #112244;border-radius:4px;color:#336699;cursor:pointer;font:11px 'Courier New',monospace}
+.btn:hover{border-color:#4488ff;color:#66aaff}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+</style>
+</head>
+<body>
+<h1>🔵 CVE-2024-44185 (Gary Kwong) + CVE-2023-42956 (Demon.Team)</h1>
+<p class="meta">Gary Kwong BZ#276097 · Demon.Team BZ#263989 · Ambos no-JIT WebCore</p>
+<div class="src">
+<strong>📋 CVE-2024-44185 — Gary Kwong (BZ#276097) · Safari 17.6</strong>
+Impacto: "Processing maliciously crafted web content may lead to an unexpected process crash"<br>
+Fix: "The issue was addressed with improved checks" — diferente de UAF (validation bug)<br>
+Gary Kwong tem histórico em WebKit layout engine e compositor bugs<br>
+Entry adicionada retroativamente (Out/2024) → bug encontrado antes de Jul/2024<br>
+<br>
+<strong>📋 CVE-2023-42956 — SungKwon Lee Demon.Team (BZ#263989) · Safari 17.4</strong>
+Impacto: "Processing web content may lead to a denial-of-service"<br>
+Fix: "The issue was addressed with improved memory handling"<br>
+Demon.Team especializa em bugs de browser DoS → memory exhaustion, OOM, infinite loop<br>
+Afeta antes de 2.44.0 → PS4 branch Set/2023 = vulnerável<br>
+GAP PS4: Ambos = 6-10 meses de bugs não corrigidos
+</div>
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="t1()">① Layout Compositor Check (Kwong)</button>
+  <button class="btn" onclick="t2()">② Stacking Context Bug</button>
+  <button class="btn" onclick="t3()">③ Layer Composite Stress</button>
+  <button class="btn" onclick="t4()">④ Memory Exhaustion DoS (Demon)</button>
+  <button class="btn" onclick="t5()">⑤ OOM Layout Stress</button>
+  <button class="btn" onclick="t6()">⑥ Recursive DOM Depth</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+t+' ───','sep')}
+function gc(){try{var a=[];for(var i=0;i<15;i++)a.push(new ArrayBuffer(1024*1024*2));a=null}catch(e){}}
+
+function t1(){
+  sep('Layout Compositor Check — Gary Kwong (BZ#276097)');
+  l('Bugs de validação no compositor de layers WebKit...','w');
+  try {
+    var host=document.createElement('div');
+    host.style.cssText='position:relative;width:400px;height:400px;transform:translateZ(0);isolation:isolate';
+    document.body.appendChild(host);
+    // Cria camadas de composição aninhadas (will-change, transform, filter)
+    var layers=[];
+    for(var i=0;i<20;i++){
+      var el=document.createElement('div');
+      el.style.cssText=[
+        'position:absolute',
+        'width:'+(300-i*10)+'px',
+        'height:'+(300-i*10)+'px',
+        'top:'+(i*5)+'px',
+        'left:'+(i*5)+'px',
+        'will-change:transform',
+        'transform:rotate('+(i*18)+'deg) scale('+(1-i*0.04)+')',
+        'background:rgba('+i*12+',100,'+(200-i*8)+',0.3)',
+        'filter:blur('+(i*0.2)+'px)',
+        'mix-blend-mode:'+ ['normal','multiply','screen','overlay','darken'][i%5],
+        'opacity:'+(0.9-i*0.02),
+      ].join(';');
+      host.appendChild(el);
+      layers.push(el);
+    }
+    host.offsetHeight;
+    // Muda mix-blend-mode e will-change em runtime → força re-composite
+    layers.forEach(function(el,i){
+      el.style.mixBlendMode=['lighten','color-dodge','hard-light'][i%3];
+      el.style.willChange=(i%2?'opacity':'transform');
+    });
+    host.offsetHeight;
+    // Remove layers alternadas durante composite
+    layers.forEach(function(el,i){
+      if(i%3===0 && el.parentNode) host.removeChild(el);
+    });
+    host.offsetHeight;
+    document.body.removeChild(host);
+    l('Compositor layers: sem crash','ok');
+  } catch(e){ l('CRASH compositor: '+e.name,'e'); }
+}
+
+function t2(){
+  sep('Stacking Context Bug — Gary Kwong Pattern');
+  l('Stacking contexts aninhados com z-index e opacity...','w');
+  try {
+    var style=document.createElement('style');
+    style.textContent=[
+      '.sc { position:relative; z-index:1; isolation:isolate; }',
+      '.sc .child { position:absolute; z-index:auto; }',
+      '.sc.fixed { position:fixed; }',
+      '.sc.sticky { position:sticky; top:0; }',
+      '.backdrop { backdrop-filter:blur(10px); }',
+    ].join('\n');
+    document.head.appendChild(style);
+    var host=document.createElement('div');
+    host.style.cssText='width:300px;height:300px;overflow:auto;position:relative';
+    document.body.appendChild(host);
+    // Cria hierarquia de stacking contexts
+    function makeStackingContext(parent, depth){
+      if(depth>6) return;
+      var el=document.createElement('div');
+      el.className='sc'+(depth%3===0?' fixed':'')+(depth%4===0?' backdrop':'');
+      el.style.cssText='width:'+Math.max(20, 250-depth*30)+'px;height:'+Math.max(20, 250-depth*30)+'px;background:rgba('+depth*40+',0,'+(255-depth*30)+',0.2);z-index:'+depth;
+      parent.appendChild(el);
+      for(var i=0;i<3;i++) makeStackingContext(el, depth+1);
+    }
+    makeStackingContext(host, 0);
+    host.offsetHeight;
+    // Altera z-index dinamicamente
+    host.querySelectorAll('.sc').forEach(function(el,i){
+      el.style.zIndex=(i%3===0)?'auto':String(i*2);
+    });
+    host.offsetHeight;
+    document.body.removeChild(host);
+    document.head.removeChild(style);
+    l('Stacking context: sem crash','ok');
+  } catch(e){ l('CRASH stacking: '+e.name,'e'); }
+}
+
+function t3(){
+  sep('Layer Composite Stress');
+  l('Muitas layers com animações simultâneas...','w');
+  try {
+    var host=document.createElement('div');
+    host.style.cssText='position:fixed;top:-500px;left:-500px;width:500px;height:500px';
+    document.body.appendChild(host);
+    var anims=[];
+    for(var i=0;i<30;i++){
+      var el=document.createElement('div');
+      el.style.cssText='position:absolute;width:50px;height:50px;background:hsl('+i*12+',70%,50%);will-change:transform';
+      host.appendChild(el);
+      var anim=el.animate([
+        {transform:'translate(0,0) rotate(0deg)', opacity:1},
+        {transform:'translate('+i*10+'px,'+i*5+'px) rotate('+i*30+'deg)', opacity:0.5}
+      ],{duration:1000+i*50, iterations:Infinity, direction:'alternate'});
+      anims.push({el:el, anim:anim});
+    }
+    setTimeout(function(){
+      // Cancela todas as animações e remove elementos
+      anims.forEach(function(a){ try{ a.anim.cancel(); }catch(e2){} });
+      anims.forEach(function(a){ if(a.el.parentNode) host.removeChild(a.el); });
+      gc();
+      document.body.removeChild(host);
+      l('Layer composite stress: sem crash','ok');
+    },300);
+    l('30 layers animadas...','i');
+  } catch(e){ l('CRASH layer: '+e.name,'e'); }
+}
+
+function t4(){
+  sep('Memory Exhaustion DoS — Demon.Team (BZ#263989)');
+  l('Demon.Team DoS: conteúdo que causa memory exhaustion controlada...','w');
+  try {
+    var host=document.createElement('div');
+    document.body.appendChild(host);
+    // Cria muitos elementos com CSS complexo que força alocações de layout
+    var start=performance.now();
+    for(var i=0;i<500;i++){
+      var el=document.createElement('div');
+      el.style.cssText=[
+        'display:inline-flex',
+        'flex-direction:'+(i%2?'column':'row'),
+        'width:'+(10+i%50)+'px',
+        'height:'+(10+i%30)+'px',
+        'background:hsl('+i*0.7+',50%,50%)',
+        'border:'+(i%3)+'px solid black',
+        'padding:'+(i%5)+'px',
+        'margin:'+(i%4)+'px',
+        'box-shadow:'+(i%2?'2px 2px 4px rgba(0,0,0,0.3)':'none'),
+      ].join(';');
+      el.textContent=i;
+      host.appendChild(el);
+    }
+    var layoutTime=performance.now()-start;
+    l('500 elementos criados em '+layoutTime.toFixed(1)+'ms','i');
+    host.offsetHeight;
+    gc();
+    var postGC=performance.now()-start;
+    l('Post-GC: '+postGC.toFixed(1)+'ms total','ok');
+    // Remove e verifica
+    while(host.firstChild) host.removeChild(host.firstChild);
+    document.body.removeChild(host);
+    l('Memory exhaustion DoS: sem crash','ok');
+  } catch(e){ l('CRASH DoS: '+e.name,'e'); }
+}
+
+function t5(){
+  sep('OOM Layout Stress');
+  l('OOM trigger com CSS que multiplica a complexidade de layout...','w');
+  try {
+    var host=document.createElement('div');
+    host.style.cssText='display:grid;grid-template-columns:repeat(20,1fr);width:600px';
+    document.body.appendChild(host);
+    // Cria grid gigante com conteúdo
+    var start=performance.now();
+    for(var i=0;i<200;i++){
+      var el=document.createElement('div');
+      // Cada elemento tem um sub-grid
+      var subgrid=document.createElement('div');
+      subgrid.style.cssText='display:flex;flex-wrap:wrap;width:100%';
+      for(var j=0;j<5;j++){
+        var child=document.createElement('span');
+        child.textContent=i+'.'+j;
+        child.style.cssText='font-size:8px;padding:1px;background:hsl('+j*72+',60%,50%)';
+        subgrid.appendChild(child);
+      }
+      el.appendChild(subgrid);
+      host.appendChild(el);
+    }
+    var t=performance.now()-start;
+    host.offsetHeight;
+    l('Grid+flex nested: '+t.toFixed(1)+'ms, children='+host.children.length,'ok');
+    document.body.removeChild(host);
+    l('OOM layout stress: sem crash','ok');
+  } catch(e){ l('CRASH OOM: '+e.name,'e'); }
+}
+
+function t6(){
+  sep('Recursive DOM Depth — Demon.Team DoS Pattern');
+  l('Árvore DOM com profundidade extrema...','w');
+  try {
+    var depth=500;
+    // Cria via innerHTML para testar o parser
+    var html='<div>'.repeat(depth)+'content'+'</div>'.repeat(depth);
+    var host=document.createElement('div');
+    host.innerHTML=html;
+    document.body.appendChild(host);
+    host.offsetHeight;
+    // Verifica profundidade real
+    var el=host.firstChild;
+    var realDepth=0;
+    while(el && el.firstChild){ el=el.firstChild; realDepth++; }
+    l('Profundidade DOM: alvo='+depth+' real='+realDepth,'ok');
+    // Acessa o elemento mais profundo
+    if(el){ el.style.color='red'; el.offsetTop; }
+    document.body.removeChild(host);
+    l('DOM depth stress: sem crash','ok');
+  } catch(e){ l('CRASH depth: '+e.name,'e'); }
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ CVE-2024-44185 (Gary Kwong) + CVE-2023-42956 (Demon.Team)','w');
+  l('Compositor · Stacking context · DoS · OOM · DOM depth','i');
+  t1(); setTimeout(t2,500); setTimeout(t3,1000); setTimeout(t4,1800);
+  setTimeout(t5,2400); setTimeout(t6,3000);
+}
+</script>
+</body>
+</html>

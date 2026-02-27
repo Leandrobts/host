@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>CVE-2024-27851/27808 — Nan Wang OOB + Lukas Bernhard CISPA</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030206;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#ffaa00;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.src{background:#080500;border:2px solid #665500;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#ccaa44;line-height:1.8}
+.src strong{color:#ffcc44;display:block;margin-bottom:4px}
+#log{background:#060608;border:1px solid #1a1508;border-radius:5px;padding:10px;min-height:200px;white-space:pre;overflow-y:auto;max-height:420px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.w{color:#ffaa00}.e{color:#ff4444}.i{color:#aaccff}.sep{color:#333}
+.btn{display:inline-block;margin-top:10px;margin-right:5px;padding:7px 13px;background:#0d0800;border:1px solid #443300;border-radius:4px;color:#cc9900;cursor:pointer;font:11px 'Courier New',monospace}
+.btn:hover{border-color:#ffcc00;color:#ffee44}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+</style>
+</head>
+<body>
+<h1>🟡 CVE-2024-27851 (Nan Wang OOB) + CVE-2024-27808 (CISPA Bernhard)</h1>
+<p class="meta">Safari 17.5 Mai/2024 · BZ#272106 + BZ#268221 · 8 meses de gap PS4</p>
+<div class="src">
+<strong>📋 ANÁLISE DUPLA — Safari 17.5 (Mai/2024)</strong>
+CVE-2024-27851 (BZ#272106): Nan Wang @eternalsakura13 · "improved bounds checks" → ACE<br>
+CVE-2024-27808 (BZ#268221): Lukas Bernhard (CISPA Helmholtz) · "improved memory handling" → ACE<br>
+<br>
+NAN WANG BZ#272106: OOB com impacto ACE → ponteiro para além do fim de um buffer<br>
+Mesma série de pesquisa do BZ#263682 (UAF, mesmo advisory 17.4) → componente próximo<br>
+"bounds checks" = acesso a array/buffer sem verificar tamanho → OOB read/write<br>
+<br>
+LUKAS BERNHARD CISPA: CISPA é centro de pesquisa de segurança de browser (Alemanha)<br>
+Foco acadêmico em WebKit memory safety → bugs em caminhos de código menos testados<br>
+"improved memory handling" = alocação/liberação incorreta → UAF ou double-free possível<br>
+<br>
+AMBOS: No-JIT confirmed · Gap 8 meses com branch PS4 · Candidatos fortes
+</div>
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="t1()">① Array Indexing OOB (BZ#272106)</button>
+  <button class="btn" onclick="t2()">② Typed Array + DOM</button>
+  <button class="btn" onclick="t3()">③ CSS Paint Worklet Bounds</button>
+  <button class="btn" onclick="t4()">④ Memory Handling CISPA (BZ#268221)</button>
+  <button class="btn" onclick="t5()">⑤ WebGL Buffer Bounds</button>
+  <button class="btn" onclick="t6()">⑥ Image Decode Bounds</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+t+' ───','sep')}
+function gc(){try{var a=[];for(var i=0;i<15;i++)a.push(new ArrayBuffer(1024*1024*2));a=null}catch(e){}}
+
+function t1(){
+  sep('Array Indexing OOB — CVE-2024-27851 (BZ#272106)');
+  l('Nan Wang OOB: acesso além dos bounds de arrays internos do WebCore...','w');
+  try {
+    // NodeList e HTMLCollection com índices extremos
+    var parent=document.createElement('div');
+    document.body.appendChild(parent);
+    for(var i=0;i<20;i++){
+      var el=document.createElement('div');
+      el.className='oob-item';
+      parent.appendChild(el);
+    }
+    var col=parent.getElementsByClassName('oob-item');
+    var nl=parent.childNodes;
+    l('Collection length: '+col.length+', NodeList: '+nl.length,'i');
+
+    // Acessa via índices de diferentes formas
+    var idxTests=[-1, 0, 10, 19, 20, 21, 100, 0x7fffffff, 0xffffffff];
+    idxTests.forEach(function(idx){
+      try {
+        var c=col[idx];
+        var n=nl[idx];
+        var ci=col.item(idx);
+        l('idx='+idx+': col='+!!c+' nl='+!!n+' item='+!!ci,'ok');
+      } catch(e2){ l('CRASH idx='+idx+': '+e2.name,'e'); }
+    });
+
+    // querySelectorAll com seletor que retorna muitos resultados + indexação
+    var all=document.querySelectorAll('*');
+    l('querySelectorAll(*): '+all.length+' elementos','i');
+    [all.length, all.length+1, all.length+100].forEach(function(i){
+      try { var n=all[i]; l('all['+i+']: '+(n?n.tagName:'undefined'),'ok'); }
+      catch(e2){ l('CRASH all['+i+']: '+e2.name,'e'); }
+    });
+    document.body.removeChild(parent);
+    l('Array indexing OOB: sem crash','ok');
+  } catch(e){ l('CRASH: '+e.name,'e'); }
+}
+
+function t2(){
+  sep('Typed Array + DOM Interaction');
+  l('Typed arrays com conteúdo DOM para testar bounds no copying...','w');
+  try {
+    var canvas=document.createElement('canvas');
+    canvas.width=256; canvas.height=256;
+    document.body.appendChild(canvas);
+    var ctx=canvas.getContext('2d');
+    ctx.fillStyle='red'; ctx.fillRect(0,0,256,256);
+    var imageData=ctx.getImageData(0,0,256,256);
+    l('ImageData: '+imageData.data.length+' bytes','i');
+    // Acessa além dos bounds
+    var oobIdx=imageData.data.length;
+    try {
+      var v=imageData.data[oobIdx]; // OOB read
+      l('imageData.data['+oobIdx+']: '+v+' (typed array → retorna undefined normalmente)','ok');
+    } catch(e2){ l('CRASH imageData OOB: '+e2.name,'e'); }
+    // putImageData com offset que vai além do canvas
+    var smallData=ctx.getImageData(0,0,10,10);
+    try {
+      ctx.putImageData(smallData, 250, 250); // parcialmente fora do canvas
+      l('putImageData parcial fora do canvas: ok','ok');
+    } catch(e2){ l('putImageData OOB: '+e2.name,'w'); }
+    // Cria view sobre buffer com offset extremo
+    var buf=new ArrayBuffer(1024);
+    try {
+      var view=new Uint8Array(buf, buf.byteLength, 0); // offset = byteLength, length = 0
+      l('Uint8Array(buf, maxOffset, 0): ok, len='+view.length,'ok');
+    } catch(e2){ l('Uint8Array maxOffset: '+e2.name+' (esperado)','w'); }
+    document.body.removeChild(canvas);
+    l('Typed array + DOM: sem crash','ok');
+  } catch(e){ l('CRASH: '+e.name,'e'); }
+}
+
+function t3(){
+  sep('CSS Houdini Paint Worklet Bounds');
+  l('CSS.paintWorklet e Paint API com bounds incomuns...','w');
+  if(typeof CSS==='undefined'||!CSS.paintWorklet){
+    l('CSS Paint Worklet não disponível (PS4 provável)','w');
+    // Testa CSS properties API como alternativa
+    try {
+      CSS.registerProperty({
+        name: '--test-prop',
+        syntax: '<integer>',
+        inherits: false,
+        initialValue: '0'
+      });
+      l('CSS.registerProperty: ok','ok');
+    } catch(e2){ l('CSS.registerProperty: '+e2.name+' (ok se DOMException)','w'); }
+    return;
+  }
+  try {
+    CSS.paintWorklet.addModule('data:application/javascript,'+encodeURIComponent([
+      'class BoundsPainter {',
+      '  paint(ctx, geom, props) {',
+      '    ctx.fillStyle = "red";',
+      '    ctx.fillRect(0, 0, geom.width, geom.height);',
+      '    // Acessa além dos bounds da geom',
+      '    ctx.fillRect(-1000, -1000, geom.width+2000, geom.height+2000);',
+      '  }',
+      '}',
+      'registerPaint("bounds-test", BoundsPainter);'
+    ].join('\n'))).then(function(){
+      var el=document.createElement('div');
+      el.style.cssText='width:200px;height:200px;background:paint(bounds-test)';
+      document.body.appendChild(el);
+      el.offsetHeight;
+      document.body.removeChild(el);
+      l('Paint worklet bounds: sem crash','ok');
+    }).catch(function(e){ l('Paint worklet error: '+e.message,'w'); });
+  } catch(e){ l('CRASH paint: '+e.name,'e'); }
+}
+
+function t4(){
+  sep('Memory Handling CISPA — CVE-2024-27808 (BZ#268221)');
+  l('Lukas Bernhard CISPA: alocação/liberação em caminhos incomuns do WebCore...','w');
+  try {
+    // CISPA foca em caminhos de código menos testados — testar APIs menos comuns
+    // 1. PerformanceObserver com entries anormais
+    var perfObs=new PerformanceObserver(function(list){
+      var entries=list.getEntries();
+      entries.forEach(function(e){
+        try {
+          var j=e.toJSON();
+          var keys=Object.keys(j);
+          l('PerfEntry '+e.entryType+': '+keys.length+' keys','ok');
+        } catch(e2){ l('CRASH perf entry: '+e2.name,'e'); }
+      });
+    });
+    try {
+      perfObs.observe({entryTypes:['resource','navigation','paint','longtask','mark','measure']});
+    } catch(e2){ l('perfObs.observe: '+e2.name+' (ok)','w'); }
+    performance.mark('cispa-test-start');
+    // 2. Allocation stress em layouts complexos
+    var host=document.createElement('div');
+    host.style.cssText='display:grid;grid-template-columns:repeat(10,1fr);width:500px';
+    document.body.appendChild(host);
+    for(var i=0;i<100;i++){
+      var el=document.createElement('div');
+      el.style.cssText=[
+        'grid-column: '+(i%10+1)+' / '+(i%10+2),
+        'grid-row: '+Math.floor(i/10+1)+' / '+Math.floor(i/10+2),
+        'background:hsl('+i*3.6+',70%,50%)',
+        'contain: layout style'
+      ].join(';');
+      host.appendChild(el);
+    }
+    host.offsetHeight;
+    gc();
+    performance.measure('cispa-test', 'cispa-test-start');
+    // Remove elementos e força re-allocation
+    while(host.firstChild) host.removeChild(host.firstChild);
+    host.offsetHeight;
+    gc();
+    document.body.removeChild(host);
+    perfObs.disconnect();
+    l('CISPA memory handling: sem crash','ok');
+  } catch(e){ l('CRASH CISPA: '+e.name,'e'); }
+}
+
+function t5(){
+  sep('WebGL Buffer Bounds');
+  l('WebGL com buffers e operações com bounds extremos...','w');
+  var canvas=document.createElement('canvas');
+  canvas.width=512; canvas.height=512;
+  document.body.appendChild(canvas);
+  var gl=canvas.getContext('webgl')||canvas.getContext('experimental-webgl');
+  if(!gl){ l('WebGL não disponível','w'); document.body.removeChild(canvas); return; }
+  try {
+    // Cria buffer e tenta acesso OOB via WebGL
+    var buf=gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(100), gl.STATIC_DRAW);
+    // bufferSubData com offset além do tamanho
+    try {
+      gl.bufferSubData(gl.ARRAY_BUFFER, 400-4, new Float32Array([1.0])); // último float
+      l('bufferSubData last float: ok','ok');
+    } catch(e2){ l('bufferSubData last: '+e2.name,'w'); }
+    try {
+      gl.bufferSubData(gl.ARRAY_BUFFER, 400, new Float32Array([1.0])); // OOB
+      l('bufferSubData OOB: executou','w');
+    } catch(e2){ l('bufferSubData OOB: '+e2.name+' (esperado)','ok'); }
+    // getBufferSubData (WebGL2)
+    var gl2=canvas.getContext('webgl2');
+    if(gl2){
+      var dest=new Float32Array(10);
+      try {
+        gl2.getBufferSubData(gl2.ARRAY_BUFFER, 0, dest, 0, 10);
+        l('getBufferSubData: ok','ok');
+      } catch(e2){ l('getBufferSubData: '+e2.name,'w'); }
+    }
+    gl.deleteBuffer(buf);
+    l('WebGL buffer bounds: sem crash','ok');
+  } catch(e){ l('CRASH WebGL: '+e.name,'e'); }
+  document.body.removeChild(canvas);
+}
+
+function t6(){
+  sep('Image Decode Bounds');
+  l('Imagens com dimensões extremas testando bounds no decode...','w');
+  var done=0; var total=6;
+  function check(){ done++; if(done>=total) l('Image decode: '+done+'/'+total+' sem crash','ok'); }
+  // SVGs com dimensões extremas
+  var cases=[
+    {w:1,h:1},
+    {w:32767,h:32767},  // max safe em alguns decoders
+    {w:32768,h:32768},  // 2^15
+    {w:65535,h:65535},  // 2^16-1
+    {w:65536,h:65536},  // 2^16
+    {w:1,h:65536},
+  ];
+  cases.forEach(function(dim){
+    try {
+      var img=new Image();
+      img.onload=function(){
+        try {
+          var canvas=document.createElement('canvas');
+          canvas.width=Math.min(dim.w,1024);
+          canvas.height=Math.min(dim.h,1024);
+          var ctx=canvas.getContext('2d');
+          ctx.drawImage(img,0,0,canvas.width,canvas.height);
+          l('Image '+dim.w+'x'+dim.h+': decoded ok','ok');
+        } catch(e2){ l('drawImage '+dim.w+'x'+dim.h+': '+e2.name,'w'); }
+        check();
+      };
+      img.onerror=function(){ l('Image '+dim.w+'x'+dim.h+': load error','w'); check(); };
+      img.src='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="'+dim.w+'" height="'+dim.h+'"><rect width="100%" height="100%" fill="red"/></svg>';
+    } catch(e){ l('CRASH img '+dim.w+'x'+dim.h+': '+e.name,'e'); check(); }
+  });
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ CVE-2024-27851 (Nan Wang) + CVE-2024-27808 (CISPA Bernhard)','w');
+  l('Safari 17.5 Mai/2024 · 8 meses de gap PS4 · Array bounds + Memory handling','i');
+  t1(); setTimeout(t2,500); setTimeout(t3,1000); setTimeout(t4,1500);
+  setTimeout(t5,2000); setTimeout(t6,2500);
+}
+</script>
+</body>
+</html>

