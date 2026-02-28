@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>04 — Custom Elements</title></head>
+<body>
+<h3>04 — Custom Elements / Lifecycle / Registry</h3>
+<div id="log" style="height:300px;overflow:auto;border:1px solid #999;padding:4px;font:11px monospace;white-space:pre"></div>
+<br>
+<button onclick="t01()">T01 connectedCallback: remover durante callback</button>
+<button onclick="t02()">T02 disconnectedCallback: reinserir durante callback</button>
+<button onclick="t03()">T03 attributeChangedCallback: setAttribute em loop</button>
+<button onclick="t04()">T04 Upgrade: elemento pré-existente no DOM + define()</button>
+<button onclick="t05()">T05 adoptedCallback: mover custom element entre docs</button>
+<button onclick="t06()">T06 Custom element com shadow DOM interno + host remove</button>
+<button onclick="t07()">T07 createElement antes e depois de customElements.define()</button>
+<button onclick="t08()">T08 Custom element: constructor exception handling</button>
+<button onclick="t09()">T09 whenDefined() promise + remoção do elemento</button>
+<button onclick="t10()">T10 Custom element extends builtin (is=)</button>
+<button onclick="t11()">T11 Formulário com custom element + validity</button>
+<button onclick="t12()">T12 Custom element em template: upgrade do clone</button>
+<button onclick="t13()">T13 Custom element: observedAttributes vazio vs cheio</button>
+<button onclick="t14()">T14 Custom element aninhado: pai remove filho no connected</button>
+<button onclick="t15()">T15 customElements.get + upgrade manual</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html">← Index</a>
+<script>
+var L=document.getElementById('log');
+function log(m){L.textContent+=m+'\n';L.scrollTop=L.scrollHeight}
+function gc(){try{var a=[];for(var i=0;i<20;i++)a.push(new ArrayBuffer(2*1024*1024));a=null}catch(e){}}
+var defined={};
+function safeDef(name,cls){
+  if(!defined[name]){
+    try{ customElements.define(name,cls); defined[name]=true; }catch(e){ log('  define exc '+name+': '+e.name); }
+  }
+}
+
+function t01(){
+  log('[T01] connectedCallback: remover o elemento dentro do callback');
+  var connCount=0;
+  safeDef('ce-t01',class extends HTMLElement{
+    connectedCallback(){
+      connCount++;
+      log('  connectedCallback #'+connCount+' isConnected='+this.isConnected);
+      // Remove a si mesmo dentro do connectedCallback
+      if(connCount<=3 && this.parentNode) this.parentNode.removeChild(this);
+      gc();
+      // Acessa props após auto-remoção
+      log('  após auto-remove: isConnected='+this.isConnected+' parentNode='+(this.parentNode?'exists':'null'));
+    }
+    disconnectedCallback(){
+      log('  disconnectedCallback: isConnected='+this.isConnected);
+    }
+  });
+  for(var i=0;i<5;i++){
+    var el=document.createElement('ce-t01');
+    document.body.appendChild(el); // dispara connectedCallback
+    if(el.parentNode) document.body.removeChild(el);
+  }
+  log('[T01] done, connCount='+connCount);
+}
+
+function t02(){
+  log('[T02] disconnectedCallback: reinserir o elemento dentro do callback');
+  var discCount=0, connCount=0;
+  safeDef('ce-t02',class extends HTMLElement{
+    connectedCallback(){ connCount++; }
+    disconnectedCallback(){
+      discCount++;
+      log('  disconnectedCallback #'+discCount+' isConnected='+this.isConnected);
+      if(discCount<=3){
+        // Reinsere dentro do disconnectedCallback
+        document.body.appendChild(this);
+        log('  reinserido: isConnected='+this.isConnected);
+        gc();
+      }
+    }
+  });
+  var el=document.createElement('ce-t02');
+  document.body.appendChild(el);
+  log('  connCount após insert: '+connCount);
+  for(var i=0;i<5;i++){
+    if(el.parentNode) document.body.removeChild(el);
+  }
+  if(el.parentNode) document.body.removeChild(el);
+  log('[T02] done: disc='+discCount+' conn='+connCount);
+}
+
+function t03(){
+  log('[T03] attributeChangedCallback: setAttribute dentro do callback (reentrante)');
+  var attrCount=0;
+  safeDef('ce-t03',class extends HTMLElement{
+    static get observedAttributes(){ return ['data-val','data-extra']; }
+    attributeChangedCallback(name,old,next){
+      attrCount++;
+      if(attrCount>20) return; // limite
+      log('  attr['+attrCount+']: '+name+' '+old+'→'+next);
+      // setAttribute dentro do callback → reentrante
+      if(name==='data-val' && attrCount<10){
+        this.setAttribute('data-extra', String(parseInt(next||0)+1));
+        this.setAttribute('data-val', String(parseInt(next||0)+1));
+      }
+      if(attrCount===5) gc();
+    }
+  });
+  var el=document.createElement('ce-t03');
+  document.body.appendChild(el);
+  el.setAttribute('data-val','0'); // dispara a cadeia
+  document.body.removeChild(el);
+  log('[T03] done: attrCount='+attrCount);
+}
+
+function t04(){
+  log('[T04] Upgrade: elemento pré-existente no DOM antes do define()');
+  // Insere elemento ANTES de definir a classe
+  var pre=document.createElement('ce-t04');
+  pre.textContent='pre-upgrade';
+  document.body.appendChild(pre);
+  log('  pre-upgrade: '+(pre instanceof HTMLElement)+' upgraded='+(pre.constructor!==HTMLElement));
+  var upgCount=0;
+  safeDef('ce-t04',class extends HTMLElement{
+    connectedCallback(){
+      upgCount++;
+      log('  upgrade connectedCallback: isConnected='+this.isConnected);
+      // Verifica que é a instância certa
+      log('  this===pre: '+(this===pre));
+    }
+  });
+  // Após define(), o pre deve ser atualizado
+  return customElements.whenDefined('ce-t04').then(function(){
+    log('  após define: upgCount='+upgCount+' pre instanceof CE: '+(pre instanceof customElements.get('ce-t04')));
+    // Remove e reinsere para ver se connectedCallback dispara de novo
+    document.body.removeChild(pre);
+    document.body.appendChild(pre);
+    gc();
+    document.body.removeChild(pre);
+    log('[T04] done: upgCount='+upgCount);
+  });
+}
+
+function t05(){
+  log('[T05] adoptedCallback: mover custom element entre documentos');
+  var frame=document.createElement('iframe');
+  frame.style.display='none';
+  document.body.appendChild(frame);
+  var adoptLog=[];
+  safeDef('ce-t05',class extends HTMLElement{
+    connectedCallback(){ adoptLog.push('connected:'+this.ownerDocument.nodeName); }
+    disconnectedCallback(){ adoptLog.push('disconnected'); }
+    adoptedCallback(oldDoc,newDoc){
+      adoptLog.push('adopted:'+oldDoc.nodeName+'→'+newDoc.nodeName);
+      log('  adoptedCallback: ownerDoc='+this.ownerDocument.nodeName);
+    }
+  });
+  var el=document.createElement('ce-t05');
+  document.body.appendChild(el);
+  var idoc=frame.contentDocument;
+  // Adota para o iframe
+  try{
+    var adopted=idoc.adoptNode(el);
+    idoc.body.appendChild(adopted);
+    log('  após adopt: '+adoptLog.join(','));
+    // Adota de volta
+    var back=document.adoptNode(adopted);
+    document.body.appendChild(back);
+    log('  após back: '+adoptLog.join(','));
+    document.body.removeChild(back);
+  }catch(e){ log('  adopt exc: '+e.name); }
+  document.body.removeChild(frame);
+  log('[T05] done: '+adoptLog.join(', '));
+}
+
+function t06(){
+  log('[T06] Custom element com shadow DOM interno + remove do host');
+  safeDef('ce-t06',class extends HTMLElement{
+    constructor(){
+      super();
+      var shadow=this.attachShadow({mode:'open'});
+      shadow.innerHTML='<style>:host{display:block;border:1px solid red}</style><slot></slot><div class="inner">CE inner</div>';
+      this._shadow=shadow;
+      this._inner=shadow.querySelector('.inner');
+    }
+    connectedCallback(){
+      log('  ce-t06 connected, inner.isConnected='+this._inner.isConnected);
+    }
+    disconnectedCallback(){
+      log('  ce-t06 disconnected, inner.isConnected='+this._inner.isConnected);
+      // Acessa shadow após desconexão
+      try{ var q=this._shadow.querySelector('.inner'); log('  shadow query pós-disc: '+(q?q.textContent:'null')); }catch(e){ log('  exc: '+e.name); }
+    }
+  });
+  var host=document.createElement('ce-t06');
+  var slotted=document.createElement('span'); slotted.textContent='slotted content';
+  host.appendChild(slotted);
+  document.body.appendChild(host);
+  host.offsetHeight;
+  var inner=host.shadowRoot?host.shadowRoot.querySelector('.inner'):null;
+  log('  inner: '+(inner?inner.textContent:'null'));
+  // Remove o host
+  document.body.removeChild(host);
+  gc();
+  // Acessa o shadow root e inner após remoção
+  try{ var sr=host.shadowRoot; log('  shadowRoot pós-remove: '+(sr?'exists':'null')); }catch(e){ log('  exc: '+e.name); }
+  if(inner) try{ log('  inner.isConnected: '+inner.isConnected+' textContent: '+inner.textContent); }catch(e){ log('  inner exc: '+e.name); }
+  log('[T06] done');
+}
+
+function t07(){
+  log('[T07] createElement antes e depois de customElements.define()');
+  // createElement de tag não definida → HTMLElement genérico
+  var pre1=document.createElement('ce-t07');
+  log('  pre-define type: '+pre1.constructor.name);
+  log('  pre-define instanceof HTMLElement: '+(pre1 instanceof HTMLElement));
+  safeDef('ce-t07',class extends HTMLElement{
+    constructor(){ super(); this._custom=true; log('  constructor called'); }
+    connectedCallback(){ log('  connected: _custom='+this._custom); }
+  });
+  // createElement após define → usa a classe
+  var post1=document.createElement('ce-t07');
+  log('  post-define type: '+post1.constructor.name+' _custom='+post1._custom);
+  // Insere ambos
+  document.body.appendChild(pre1); // deve fazer upgrade
+  document.body.appendChild(post1);
+  gc();
+  log('  pre1 após append: type='+pre1.constructor.name+' _custom='+pre1._custom);
+  document.body.removeChild(pre1);
+  document.body.removeChild(post1);
+  // new HTMLElement diretamente (deve falhar)
+  try{ var direct=new (customElements.get('ce-t07'))(); document.body.appendChild(direct); document.body.removeChild(direct); log('  new CE direct: ok'); }catch(e){ log('  new CE exc: '+e.name); }
+  log('[T07] done');
+}
+
+function t08(){
+  log('[T08] Custom element: constructor exception + estado parcial');
+  var throwInConstructor=true;
+  safeDef('ce-t08',class extends HTMLElement{
+    constructor(){
+      super();
+      this._partial='partial-state';
+      if(throwInConstructor){ throwInConstructor=false; throw new Error('constructor-error'); }
+      this._full='full-state';
+    }
+    connectedCallback(){ log('  connected: partial='+this._partial+' full='+this._full); }
+  });
+  // Primeiro createElement — constructor vai lançar
+  var el1;
+  try{
+    el1=document.createElement('ce-t08');
+    log('  el1 criado: _partial='+el1._partial);
+  }catch(e){ log('  createElement exc: '+e.name); }
+  // Segundo createElement — constructor não lança
+  var el2=document.createElement('ce-t08');
+  log('  el2: _partial='+el2._partial+' _full='+el2._full);
+  if(el1) try{ document.body.appendChild(el1); document.body.removeChild(el1); }catch(e){}
+  document.body.appendChild(el2); document.body.removeChild(el2);
+  gc();
+  log('[T08] done');
+}
+
+function t09(){
+  log('[T09] whenDefined() promise + remoção do elemento antes do define');
+  // Cria elemento da tag não definida ainda
+  var el=document.createElement('ce-t09');
+  el.textContent='waiting for define';
+  document.body.appendChild(el);
+  // whenDefined retorna promise que resolve quando a tag for definida
+  var p=customElements.whenDefined('ce-t09');
+  p.then(function(Constructor){
+    log('  whenDefined resolved: Constructor='+Constructor.name);
+    log('  el.isConnected: '+el.isConnected+' instanceof CE: '+(el instanceof Constructor));
+  }).catch(function(e){ log('  whenDefined exc: '+e.message); });
+  // Remove o elemento ANTES de definir
+  document.body.removeChild(el);
+  gc();
+  log('  el removido antes de define');
+  // Agora define a classe
+  safeDef('ce-t09',class extends HTMLElement{
+    connectedCallback(){ log('  ce-t09 connected (não devia, foi removido antes)'); }
+  });
+  // Reinsere após define (deve fazer upgrade)
+  setTimeout(function(){
+    document.body.appendChild(el);
+    var CE=customElements.get('ce-t09');
+    log('  após reinsert: instanceof CE='+(CE&&el instanceof CE)+' isConnected='+el.isConnected);
+    document.body.removeChild(el);
+    log('[T09] done');
+  },100);
+}
+
+function t10(){
+  log('[T10] Custom element extends builtin (is= attribute)');
+  // customized built-in elements podem não ser suportados em todos os browsers
+  var supported=true;
+  try{
+    safeDef('my-button-t10',class extends HTMLButtonElement{
+      constructor(){ super(); this._isCustom=true; }
+      connectedCallback(){ log('  my-button connected: disabled='+this.disabled); }
+    },{extends:'button'});
+  }catch(e){ supported=false; log('  extends builtin não suportado: '+e.name); }
+  if(supported){
+    var btn=document.createElement('button',{is:'my-button-t10'});
+    log('  btn._isCustom: '+btn._isCustom);
+    document.body.appendChild(btn);
+    btn.disabled=true;
+    document.body.removeChild(btn);
+  }
+  // Fallback: testa HTMLElement normal
+  safeDef('plain-t10',class extends HTMLElement{
+    connectedCallback(){ this.style.color='red'; }
+  });
+  var plain=document.createElement('plain-t10');
+  plain.textContent='plain custom';
+  document.body.appendChild(plain);
+  log('  plain.isConnected: '+plain.isConnected);
+  document.body.removeChild(plain);
+  gc();
+  log('[T10] done');
+}
+
+function t11(){
+  log('[T11] Form-associated custom element (se suportado)');
+  var formAssocSupported=false;
+  try{
+    var TestCls=class extends HTMLElement{
+      static get formAssociated(){ return true; }
+      constructor(){ super(); try{ this._internals=this.attachInternals(); formAssocSupported=true; }catch(e){} }
+    };
+    safeDef('ce-t11',TestCls);
+  }catch(e){}
+  if(!formAssocSupported){ log('  formAssociated não suportado'); log('[T11] done'); return; }
+  var form=document.createElement('form');
+  form.id='form-t11';
+  document.body.appendChild(form);
+  var ce=document.createElement('ce-t11');
+  form.appendChild(ce);
+  log('  ce._internals: '+(ce._internals?'exists':'null'));
+  if(ce._internals){
+    try{
+      ce._internals.setValidity({valueMissing:true},'required');
+      log('  setValidity: ok');
+      log('  form.checkValidity: '+form.checkValidity());
+    }catch(e){ log('  internals exc: '+e.name); }
+  }
+  // Remove o form enquanto o custom element ainda está dentro
+  document.body.removeChild(form);
+  gc();
+  if(ce._internals){
+    try{ log('  internals pós-remove form: '+(ce._internals?'exists':'null')); }catch(e){ log('  exc: '+e.name); }
+  }
+  log('[T11] done');
+}
+
+function t12(){
+  log('[T12] Custom element em template: upgrade do clone');
+  safeDef('ce-t12',class extends HTMLElement{
+    constructor(){ super(); this._id=Math.random().toFixed(4); log('  constructor: _id='+this._id); }
+    connectedCallback(){ log('  connected: _id='+this._id+' isConnected='+this.isConnected); }
+  });
+  var tmpl=document.createElement('template');
+  tmpl.innerHTML='<div><ce-t12 data-tmpl="yes"></ce-t12><span>sibling</span></div>';
+  document.body.appendChild(tmpl);
+  // O custom element dentro do template NÃO é upgraded ainda
+  var ceInTemplate=tmpl.content.querySelector('ce-t12');
+  log('  ceInTemplate._id: '+ceInTemplate._id+' (undefined se não upgradado)');
+  // Clona o template (upgrade acontece ao inserir no DOM)
+  var clone1=document.importNode(tmpl.content,true);
+  document.body.appendChild(clone1);
+  var ceInDOM=document.body.querySelector('ce-t12[data-tmpl]');
+  log('  ceInDOM._id: '+ceInDOM._id);
+  // Clona de novo
+  var clone2=document.importNode(tmpl.content,true);
+  document.body.appendChild(clone2);
+  gc();
+  var allCE=document.body.querySelectorAll('ce-t12[data-tmpl]');
+  log('  total CE no DOM: '+allCE.length);
+  allCE.forEach(function(ce){ if(ce.parentNode) ce.parentNode.removeChild(ce); });
+  if(tmpl.parentNode) document.body.removeChild(tmpl);
+  log('[T12] done');
+}
+
+function t13(){
+  log('[T13] observedAttributes: mudança de atributos não observados vs observados');
+  var calls=[];
+  safeDef('ce-t13',class extends HTMLElement{
+    static get observedAttributes(){ return ['data-watched','aria-label']; }
+    attributeChangedCallback(name,old,val){
+      calls.push(name+':'+old+'→'+val);
+    }
+  });
+  var el=document.createElement('ce-t13');
+  document.body.appendChild(el);
+  // Atributos observados
+  el.setAttribute('data-watched','A');
+  el.setAttribute('data-watched','B');
+  el.setAttribute('aria-label','test');
+  // Atributos NÃO observados (não deve disparar callback)
+  el.setAttribute('data-unwatched','X');
+  el.className='foo';
+  el.id='bar';
+  log('  calls (só observados): '+calls.join(' | '));
+  log('  calls.length (deve ser 3): '+calls.length);
+  // Remove e muda atributos fora do DOM
+  document.body.removeChild(el);
+  gc();
+  el.setAttribute('data-watched','C'); // fora do DOM — ainda dispara?
+  el.setAttribute('data-watched','D');
+  log('  calls após remove: '+calls.length+' último: '+calls[calls.length-1]);
+  // Reinsere
+  document.body.appendChild(el);
+  el.setAttribute('data-watched','E');
+  log('  calls após reinsert: '+calls.length);
+  document.body.removeChild(el);
+  log('[T13] done');
+}
+
+function t14(){
+  log('[T14] Custom element aninhado: pai remove filho no connectedCallback');
+  safeDef('ce-t14-parent',class extends HTMLElement{
+    connectedCallback(){
+      log('  parent connected');
+      // Remove o filho (ce-t14-child) dentro do próprio connectedCallback
+      var child=this.querySelector('ce-t14-child');
+      if(child && child.parentNode){ this.removeChild(child); gc(); log('  child removed in parent.connected'); }
+    }
+  });
+  safeDef('ce-t14-child',class extends HTMLElement{
+    connectedCallback(){ log('  child connected: isConnected='+this.isConnected); }
+    disconnectedCallback(){ log('  child disconnected'); }
+  });
+  var parent=document.createElement('ce-t14-parent');
+  var child=document.createElement('ce-t14-child');
+  child.textContent='child-content';
+  parent.appendChild(child);
+  document.body.appendChild(parent); // dispara connected em ambos
+  gc();
+  log('  child.isConnected após parent.connected: '+child.isConnected);
+  // Reinsere o child
+  parent.appendChild(child);
+  log('  child.isConnected após reinsert: '+child.isConnected);
+  document.body.removeChild(parent);
+  log('[T14] done');
+}
+
+function t15(){
+  log('[T15] customElements.get() + upgrade() manual');
+  // Insere elemento não definido
+  var el=document.createElement('ce-t15');
+  el.textContent='not-yet-defined';
+  document.body.appendChild(el);
+  var CE_before=customElements.get('ce-t15');
+  log('  get antes de define: '+(CE_before?CE_before.name:'undefined'));
+  safeDef('ce-t15',class extends HTMLElement{
+    connectedCallback(){ log('  ce-t15 connected after upgrade'); }
+  });
+  var CE_after=customElements.get('ce-t15');
+  log('  get após define: '+(CE_after?CE_after.name:'undefined'));
+  // upgrade() força upgrade de um nó específico
+  try{
+    customElements.upgrade(el);
+    log('  upgrade manual: ok, instanceof CE='+(el instanceof CE_after));
+  }catch(e){ log('  upgrade exc: '+e.name); }
+  // upgrade() em nó fora do DOM
+  var el2=document.createElement('ce-t15');
+  // NÃO insere no DOM
+  try{
+    customElements.upgrade(el2);
+    log('  upgrade fora DOM: ok, instanceof CE='+(el2 instanceof CE_after));
+  }catch(e){ log('  upgrade fora DOM exc: '+e.name); }
+  document.body.removeChild(el);
+  gc();
+  log('[T15] done');
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 04 — Custom Elements / Lifecycle / Registry ===');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){
+    if(i>=tests.length){log('=== FIM ===');return;}
+    var result;
+    try{ result=tests[i](); }catch(e){ log('CRASH T'+(i+1)+': '+e.name+' '+e.message); }
+    i++;
+    if(result && typeof result.then==='function'){
+      result.then(function(){ setTimeout(next,300); }).catch(function(e){ log('async exc: '+e.message); setTimeout(next,300); });
+    } else { setTimeout(next,300); }
+  }
+  next();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>02 — Range / Selection</title></head>
+<body>
+<h3>02 — Range / Selection / ContentEditable</h3>
+<div id="log" style="height:300px;overflow:auto;border:1px solid #999;padding:4px;font:11px monospace;white-space:pre"></div>
+<br>
+<button onclick="t01()">T01 Range: setStart/setEnd em nós removidos</button>
+<button onclick="t02()">T02 Range.surroundContents com nó parcialmente selecionado</button>
+<button onclick="t03()">T03 Selection: collapse em nó removido</button>
+<button onclick="t04()">T04 Range.extractContents + reinserir fragmento</button>
+<button onclick="t05()">T05 ContentEditable: execCommand durante mutation</button>
+<button onclick="t06()">T06 Range: compareBoundaryPoints cross-tree</button>
+<button onclick="t07()">T07 Selection.addRange + remover nó selecionado</button>
+<button onclick="t08()">T08 Range em shadow DOM: getBoundingClientRect</button>
+<button onclick="t09()">T09 ContentEditable: inserir nó via Range durante input event</button>
+<button onclick="t10()">T10 Range.cloneContents de árvore modificada mid-clone</button>
+<button onclick="t11()">T11 Selection collapse + extend em nós diferentes</button>
+<button onclick="t12()">T12 Range setStartBefore/After nó que é removido</button>
+<button onclick="t13()">T13 Multiple ranges: adicionar, sobreposição, remover</button>
+<button onclick="t14()">T14 ContentEditable: paste simulado via Range</button>
+<button onclick="t15()">T15 Range em TextNode: splitText + modificar dados</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html">← Index</a>
+<script>
+var L=document.getElementById('log');
+function log(m){L.textContent+=m+'\n';L.scrollTop=L.scrollHeight}
+function gc(){try{var a=[];for(var i=0;i<20;i++)a.push(new ArrayBuffer(2*1024*1024));a=null}catch(e){}}
+
+function t01(){
+  log('[T01] Range: setStart/setEnd em nós removidos');
+  var host=document.createElement('div');
+  host.innerHTML='<span>AAA</span><span>BBB</span><span>CCC</span>';
+  document.body.appendChild(host);
+  var spans=host.querySelectorAll('span');
+  var range=document.createRange();
+  range.setStart(spans[0].firstChild,0);
+  range.setEnd(spans[2].firstChild,3);
+  log('  range.toString: '+range.toString());
+  // Remove o nó do meio do range
+  host.removeChild(spans[1]);
+  gc();
+  try{ log('  range.toString após remove mid: '+range.toString()); }catch(e){ log('  toString exc: '+e.name); }
+  try{ log('  range.collapsed: '+range.collapsed); }catch(e){ log('  collapsed exc: '+e.name); }
+  // Move setEnd para um nó removido
+  try{
+    range.setEnd(spans[1].firstChild,2); // spans[1] está fora do DOM
+    log('  setEnd em removido: ok toString='+range.toString());
+  }catch(e){ log('  setEnd exc: '+e.name); }
+  // setStart no nó removido
+  try{
+    range.setStart(spans[1].firstChild,0);
+    log('  setStart em removido: ok');
+  }catch(e){ log('  setStart exc: '+e.name); }
+  try{ var bcr=range.getBoundingClientRect(); log('  BCR: '+bcr.width+'x'+bcr.height); }catch(e){ log('  BCR exc: '+e.name); }
+  if(host.parentNode) document.body.removeChild(host);
+  log('[T01] done');
+}
+
+function t02(){
+  log('[T02] Range.surroundContents com nó parcialmente selecionado');
+  var host=document.createElement('div');
+  host.innerHTML='Hello <b>bold text</b> world';
+  document.body.appendChild(host);
+  var range=document.createRange();
+  var textBefore=host.firstChild; // "Hello "
+  var bold=host.querySelector('b');
+  var textAfter=host.lastChild; // " world"
+  // Range que corta o meio do bold (parcialmente)
+  range.setStart(textBefore,3); // "lo "
+  range.setEnd(bold.firstChild,3); // "bol"
+  log('  range: "'+range.toString()+'"');
+  // surroundContents com range que cruza limites de elemento
+  try{
+    var wrapper=document.createElement('mark');
+    range.surroundContents(wrapper);
+    log('  surroundContents partial: ok');
+  }catch(e){ log('  surroundContents exc: '+e.name+' (esperado para range parcial)'); }
+  // Range que abrange o elemento inteiro
+  range.setStart(host,0);
+  range.setEnd(host,host.childNodes.length);
+  try{
+    var wrapper2=document.createElement('section');
+    range.surroundContents(wrapper2);
+    log('  surroundContents full: ok');
+    host.offsetHeight;
+  }catch(e){ log('  surroundContents2 exc: '+e.name); }
+  if(host.parentNode) document.body.removeChild(host);
+  log('[T02] done');
+}
+
+function t03(){
+  log('[T03] Selection: collapse em nó removido');
+  var host=document.createElement('div');
+  host.innerHTML='<p>paragraph one</p><p>paragraph two</p>';
+  document.body.appendChild(host);
+  var ps=host.querySelectorAll('p');
+  var sel=window.getSelection();
+  // Faz seleção normal
+  sel.collapse(ps[0].firstChild,4);
+  log('  collapsed: '+sel.isCollapsed+' anchorNode: '+sel.anchorNode.textContent.slice(0,10));
+  // Remove o nó onde está o cursor
+  host.removeChild(ps[0]);
+  gc();
+  // Acessa a selection após o nó âncora ser removido
+  try{
+    log('  anchorNode pós-remove: '+(sel.anchorNode?sel.anchorNode.isConnected:'null'));
+    log('  anchorOffset: '+sel.anchorOffset);
+    log('  isCollapsed: '+sel.isCollapsed);
+    log('  rangeCount: '+sel.rangeCount);
+  }catch(e){ log('  selection exc: '+e.name); }
+  // Tenta colapsar em outro nó
+  try{ sel.collapse(ps[1].firstChild,0); log('  collapse em p[1]: ok'); }catch(e){ log('  collapse exc: '+e.name); }
+  // Tenta colapsar no nó removido
+  try{ sel.collapse(ps[0].firstChild,0); log('  collapse no removido: ok'); }catch(e){ log('  collapse removed exc: '+e.name); }
+  sel.removeAllRanges();
+  if(host.parentNode) document.body.removeChild(host);
+  log('[T03] done');
+}
+
+function t04(){
+  log('[T04] Range.extractContents + reinserir + modificar durante extração');
+  var host=document.createElement('div');
+  host.innerHTML='<div>A<span>B<em>C</em>D</span>E</div>';
+  document.body.appendChild(host);
+  var innerDiv=host.querySelector('div');
+  var range=document.createRange();
+  range.setStart(innerDiv.firstChild,0); // antes do "A"
+  range.setEnd(innerDiv,innerDiv.childNodes.length); // até o fim do div
+  log('  range: "'+range.toString()+'"');
+  // Extrai o conteúdo (move para um DocumentFragment)
+  try{
+    var frag=range.extractContents();
+    log('  extracted frag.childNodes: '+frag.childNodes.length);
+    log('  host após extract: "'+host.textContent+'"');
+    // Modifica o frag antes de reinserir
+    var em=frag.querySelector('em');
+    if(em){ em.textContent='MODIFIED'; }
+    gc();
+    // Reinsere o frag
+    host.appendChild(frag);
+    log('  host após reinserção: "'+host.textContent+'"');
+    // frag agora está vazio (nodes foram movidos)
+    log('  frag.childNodes após insert: '+frag.childNodes.length);
+  }catch(e){ log('  extract exc: '+e.name); }
+  if(host.parentNode) document.body.removeChild(host);
+  log('[T04] done');
+}
+
+function t05(){
+  log('[T05] ContentEditable: execCommand durante mutation observer');
+  var editor=document.createElement('div');
+  editor.contentEditable='true';
+  editor.innerHTML='<p>editable content here</p>';
+  document.body.appendChild(editor);
+  var mutations=[];
+  var obs=new MutationObserver(function(muts){
+    mutations.push(muts.length);
+    // Dentro do callback: tenta execCommand (pode causar re-entrada)
+    try{ document.execCommand('bold',false,null); }catch(e){}
+  });
+  obs.observe(editor,{childList:true,subtree:true,characterData:true});
+  // Seleciona todo o conteúdo
+  var sel=window.getSelection();
+  var range=document.createRange();
+  range.selectNodeContents(editor);
+  sel.removeAllRanges();
+  sel.addRange(range);
+  // Executa commands que disparam mutations
+  try{ document.execCommand('bold',false,null); }catch(e){}
+  try{ document.execCommand('italic',false,null); }catch(e){}
+  try{ document.execCommand('underline',false,null); }catch(e){}
+  try{ document.execCommand('insertText',false,'INSERTED'); }catch(e){}
+  obs.disconnect();
+  sel.removeAllRanges();
+  log('  mutations batches: '+mutations.join(','));
+  log('  editor.innerHTML: '+editor.innerHTML.slice(0,80));
+  if(editor.parentNode) document.body.removeChild(editor);
+  log('[T05] done');
+}
+
+function t06(){
+  log('[T06] Range.compareBoundaryPoints entre árvores diferentes');
+  var host1=document.createElement('div');
+  var host2=document.createElement('div');
+  host1.innerHTML='<span>AAA</span>';
+  host2.innerHTML='<span>BBB</span>';
+  document.body.appendChild(host1);
+  document.body.appendChild(host2);
+  var r1=document.createRange();
+  var r2=document.createRange();
+  r1.selectNodeContents(host1);
+  r2.selectNodeContents(host2);
+  // compareBoundaryPoints entre ranges em árvores diferentes (ambas no DOM)
+  try{
+    var cmp=r1.compareBoundaryPoints(Range.START_TO_START,r2);
+    log('  compare r1 vs r2 (ambos no DOM): '+cmp);
+  }catch(e){ log('  compare exc: '+e.name); }
+  // Remove host2 e compara de novo
+  document.body.removeChild(host2);
+  gc();
+  try{
+    var cmp2=r1.compareBoundaryPoints(Range.START_TO_START,r2);
+    log('  compare após remove host2: '+cmp2);
+  }catch(e){ log('  compare pós-remove exc: '+e.name); }
+  // Range em DocumentFragment
+  var frag=document.createDocumentFragment();
+  var fragEl=document.createElement('p'); fragEl.textContent='frag'; frag.appendChild(fragEl);
+  var r3=document.createRange();
+  r3.selectNodeContents(frag);
+  try{
+    var cmp3=r1.compareBoundaryPoints(Range.START_TO_START,r3);
+    log('  compare com frag range: '+cmp3);
+  }catch(e){ log('  compare frag exc: '+e.name); }
+  if(host1.parentNode) document.body.removeChild(host1);
+  log('[T06] done');
+}
+
+function t07(){
+  log('[T07] Selection.addRange + remover nó selecionado');
+  var host=document.createElement('div');
+  host.innerHTML='<p id="p1">first paragraph</p><p id="p2">second paragraph</p><p id="p3">third paragraph</p>';
+  document.body.appendChild(host);
+  var p1=document.getElementById('p1');
+  var p2=document.getElementById('p2');
+  var p3=document.getElementById('p3');
+  var sel=window.getSelection();
+  sel.removeAllRanges();
+  // Cria range que abrange p1 e p2
+  var range=document.createRange();
+  range.setStart(p1.firstChild,0);
+  range.setEnd(p2.firstChild,6);
+  sel.addRange(range);
+  log('  selecionado: "'+sel.toString().slice(0,30)+'"');
+  log('  rangeCount: '+sel.rangeCount);
+  // Remove o p1 (início da seleção)
+  host.removeChild(p1);
+  gc();
+  try{
+    log('  pós-remove p1: rangeCount='+sel.rangeCount);
+    if(sel.rangeCount>0){
+      var r=sel.getRangeAt(0);
+      log('  range.collapsed: '+r.collapsed);
+      log('  range.toString: "'+r.toString().slice(0,30)+'"');
+    }
+  }catch(e){ log('  exc: '+e.name); }
+  // Remove p2 (fim da seleção)
+  host.removeChild(p2);
+  gc();
+  try{
+    log('  pós-remove p2: rangeCount='+sel.rangeCount);
+    log('  sel.toString: "'+sel.toString().slice(0,20)+'"');
+  }catch(e){ log('  exc2: '+e.name); }
+  sel.removeAllRanges();
+  if(host.parentNode) document.body.removeChild(host);
+  log('[T07] done');
+}
+
+function t08(){
+  log('[T08] Range em shadow DOM: getBoundingClientRect');
+  var host=document.createElement('div');
+  document.body.appendChild(host);
+  var shadow=host.attachShadow({mode:'open'});
+  shadow.innerHTML='<p>shadow <span id="si">inner span</span> text</p>';
+  var si=shadow.getElementById('si');
+  host.offsetHeight;
+  var range=document.createRange();
+  range.selectNodeContents(si);
+  try{
+    var bcr=range.getBoundingClientRect();
+    log('  shadow range BCR: '+bcr.width.toFixed(1)+'x'+bcr.height.toFixed(1)+' @'+bcr.left.toFixed(1)+','+bcr.top.toFixed(1));
+  }catch(e){ log('  BCR exc: '+e.name); }
+  try{
+    var rects=range.getClientRects();
+    log('  getClientRects: '+rects.length+' rects');
+  }catch(e){ log('  getClientRects exc: '+e.name); }
+  // Remove o elemento dentro do shadow
+  si.parentNode.removeChild(si);
+  gc();
+  try{ var bcr2=range.getBoundingClientRect(); log('  BCR pós-remove shadow el: '+bcr2.width+'x'+bcr2.height); }catch(e){ log('  BCR exc: '+e.name); }
+  // Remove o host inteiro
+  document.body.removeChild(host);
+  gc();
+  try{ var bcr3=range.getBoundingClientRect(); log('  BCR pós-remove host: '+bcr3.width+'x'+bcr3.height); }catch(e){ log('  BCR exc3: '+e.name); }
+  log('[T08] done');
+}
+
+function t09(){
+  log('[T09] ContentEditable: inserir nó via Range durante input event');
+  var editor=document.createElement('div');
+  editor.contentEditable='true';
+  editor.textContent='type here';
+  document.body.appendChild(editor);
+  var inputCount=0;
+  editor.addEventListener('input',function(e){
+    inputCount++;
+    if(inputCount>3) return;
+    // Obtém a seleção atual
+    var sel=window.getSelection();
+    if(sel.rangeCount===0) return;
+    var range=sel.getRangeAt(0).cloneRange();
+    // Insere um elemento no range durante o input event
+    try{
+      var span=document.createElement('span');
+      span.textContent='[INS]';
+      range.collapse(false);
+      range.insertNode(span);
+      log('  inserted span during input #'+inputCount);
+    }catch(e){ log('  insertNode exc: '+e.name); }
+  });
+  // Simula input
+  editor.focus();
+  for(var i=0;i<5;i++){
+    editor.dispatchEvent(new InputEvent('input',{inputType:'insertText',data:'x',bubbles:true}));
+  }
+  log('  inputCount: '+inputCount);
+  log('  editor content: '+editor.textContent.slice(0,50));
+  window.getSelection().removeAllRanges();
+  if(editor.parentNode) document.body.removeChild(editor);
+  log('[T09] done');
+}
+
+function t10(){
+  log('[T10] Range.cloneContents de árvore modificada mid-clone');
+  var host=document.createElement('div');
+  host.innerHTML='<div><p>para1</p><p>para2</p><p>para3</p></div>';
+  document.body.appendChild(host);
+  var innerDiv=host.querySelector('div');
+  var ps=host.querySelectorAll('p');
+  var range=document.createRange();
+  range.setStart(ps[0],0);
+  range.setEnd(ps[2],ps[2].childNodes.length);
+  // Intercepta a clonagem: remove um nó do range enquanto cloneContents executa
+  // (Faz via substituição imediata após o clone para simular race)
+  var frag=range.cloneContents();
+  // Agora modifica a árvore original
+  innerDiv.removeChild(ps[1]);
+  gc();
+  // O frag clonado não deve ser afetado
+  var fragPs=frag.querySelectorAll('p');
+  log('  frag tem p: '+fragPs.length);
+  log('  frag.textContent: '+frag.textContent);
+  // Clona de novo após a modificação
+  var range2=document.createRange();
+  range2.setStart(ps[0],0);
+  range2.setEnd(ps[2],ps[2].childNodes.length);
+  try{
+    var frag2=range2.cloneContents();
+    log('  frag2 após modify: textContent="'+frag2.textContent+'"');
+  }catch(e){ log('  cloneContents2 exc: '+e.name); }
+  if(host.parentNode) document.body.removeChild(host);
+  log('[T10] done');
+}
+
+function t11(){
+  log('[T11] Selection collapse + extend em nós diferentes');
+  var host=document.createElement('div');
+  host.innerHTML='<span>AAAA</span><span>BBBB</span><span>CCCC</span>';
+  document.body.appendChild(host);
+  var spans=host.querySelectorAll('span');
+  var sel=window.getSelection();
+  // collapse em início do primeiro span
+  sel.collapse(spans[0].firstChild,0);
+  log('  collapsed: anchor='+sel.anchorOffset+' focus='+sel.focusOffset);
+  // extend para outro nó (cria seleção direcional)
+  try{
+    sel.extend(spans[2].firstChild,4);
+    log('  extended: "'+sel.toString()+'"');
+    log('  isCollapsed: '+sel.isCollapsed);
+  }catch(e){ log('  extend exc: '+e.name); }
+  // Remove o nó âncora
+  host.removeChild(spans[0]);
+  gc();
+  try{
+    log('  após remove âncora: "'+sel.toString().slice(0,20)+'"');
+    log('  anchorNode.isConnected: '+(sel.anchorNode?sel.anchorNode.isConnected:'null'));
+  }catch(e){ log('  exc: '+e.name); }
+  // Tenta extend após remove
+  try{ sel.extend(spans[1].firstChild,2); log('  extend após remove: ok "'+sel.toString()+'"'); }catch(e){ log('  extend exc: '+e.name); }
+  sel.removeAllRanges();
+  if(host.parentNode) document.body.removeChild(host);
+  log('[T11] done');
+}
+
+function t12(){
+  log('[T12] Range setStartBefore/After nó que é removido durante uso');
+  var host=document.createElement('div');
+  host.innerHTML='<em>EM</em><strong>STRONG</strong><u>U</u>';
+  document.body.appendChild(host);
+  var em=host.querySelector('em');
+  var strong=host.querySelector('strong');
+  var u=host.querySelector('u');
+  var range=document.createRange();
+  range.setStartBefore(em);
+  range.setEndAfter(strong);
+  log('  range: "'+range.toString()+'"');
+  // Remove o strong (end node)
+  host.removeChild(strong);
+  gc();
+  try{ log('  range.toString após remove end: "'+range.toString()+'"'); }catch(e){ log('  exc: '+e.name); }
+  // Tenta setEndAfter no removido
+  try{ range.setEndAfter(strong); log('  setEndAfter removido: ok'); }catch(e){ log('  setEndAfter exc: '+e.name); }
+  // setStartBefore no u (ainda no DOM)
+  try{ range.setStartBefore(u); log('  setStartBefore u: ok "'+range.toString()+'"'); }catch(e){ log('  setStartBefore exc: '+e.name); }
+  // Remove o em (start node)
+  host.removeChild(em);
+  gc();
+  try{ log('  range.collapsed pós remove-start: '+range.collapsed); }catch(e){ log('  collapsed exc: '+e.name); }
+  if(host.parentNode) document.body.removeChild(host);
+  log('[T12] done');
+}
+
+function t13(){
+  log('[T13] Multiple ranges: adicionar sobreposição e remover');
+  var host=document.createElement('div');
+  host.innerHTML='<p>AAAA</p><p>BBBB</p><p>CCCC</p><p>DDDD</p>';
+  document.body.appendChild(host);
+  var ps=host.querySelectorAll('p');
+  var sel=window.getSelection();
+  sel.removeAllRanges();
+  // Cria múltiplos ranges (alguns browsers só suportam 1)
+  var ranges=[];
+  ps.forEach(function(p,i){
+    var r=document.createRange();
+    r.selectNodeContents(p);
+    try{ sel.addRange(r); ranges.push(r); }catch(e){}
+  });
+  log('  rangeCount: '+sel.rangeCount);
+  // Remove nós que estão em ranges
+  host.removeChild(ps[1]);
+  gc();
+  log('  rangeCount após remove p[1]: '+sel.rangeCount);
+  try{ log('  sel.toString: "'+sel.toString().slice(0,30)+'"'); }catch(e){ log('  exc: '+e.name); }
+  // Remove range específico
+  try{ sel.removeRange(ranges[0]); log('  removeRange[0]: ok, count='+sel.rangeCount); }catch(e){ log('  removeRange exc: '+e.name); }
+  // getRangeAt de índice inválido
+  try{ var r=sel.getRangeAt(99); log('  getRangeAt(99): ok'); }catch(e){ log('  getRangeAt(99) exc: '+e.name); }
+  sel.removeAllRanges();
+  if(host.parentNode) document.body.removeChild(host);
+  log('[T13] done');
+}
+
+function t14(){
+  log('[T14] ContentEditable: paste simulado via Range.insertNode');
+  var editor=document.createElement('div');
+  editor.contentEditable='true';
+  editor.innerHTML='<p>Before <span id="cursor">|</span> After</p>';
+  document.body.appendChild(editor);
+  var cursor=document.getElementById('cursor');
+  var sel=window.getSelection();
+  var range=document.createRange();
+  range.setStartAfter(cursor);
+  range.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(range);
+  // Simula paste: cria um fragment complexo e insere via Range
+  var pasteContent=document.createDocumentFragment();
+  var bold=document.createElement('b'); bold.textContent='PASTED-BOLD';
+  var text=document.createTextNode(' plain ');
+  var link=document.createElement('a'); link.href='#'; link.textContent='LINK';
+  pasteContent.appendChild(bold);
+  pasteContent.appendChild(text);
+  pasteContent.appendChild(link);
+  try{
+    range.insertNode(pasteContent);
+    editor.offsetHeight;
+    log('  paste insert: ok');
+    log('  editor: '+editor.textContent.slice(0,60));
+  }catch(e){ log('  insertNode exc: '+e.name); }
+  // Remove o cursor enquanto ainda está selecionado
+  if(cursor.parentNode) cursor.parentNode.removeChild(cursor);
+  gc();
+  try{ log('  sel após remove cursor: "'+sel.toString().slice(0,30)+'"'); }catch(e){ log('  exc: '+e.name); }
+  sel.removeAllRanges();
+  if(editor.parentNode) document.body.removeChild(editor);
+  log('[T14] done');
+}
+
+function t15(){
+  log('[T15] Range em TextNode: splitText + data modification');
+  var host=document.createElement('div');
+  host.textContent='Hello World Goodbye';
+  document.body.appendChild(host);
+  var text=host.firstChild; // TextNode
+  var range=document.createRange();
+  range.setStart(text,6);   // após "Hello "
+  range.setEnd(text,11);    // até "World"
+  log('  range: "'+range.toString()+'"');
+  // splitText: divide o TextNode em dois
+  var after=text.splitText(6); // cria "World Goodbye"
+  log('  após splitText: text="'+text.data+'" after="'+after.data+'"');
+  log('  range após split: "'+range.toString()+'"');
+  // Modifica os dados dos text nodes
+  text.data='MODIFIED ';
+  gc();
+  log('  range após modify data: "'+range.toString()+'"');
+  // Remove o text node de início do range
+  host.removeChild(text);
+  gc();
+  try{ log('  range.collapsed pós-remove text: '+range.collapsed); }catch(e){ log('  collapsed exc: '+e.name); }
+  try{ log('  range.toString pós-remove: "'+range.toString()+'"'); }catch(e){ log('  toString exc: '+e.name); }
+  // splitText no segundo text node
+  var after2=after.splitText(5); // "World" + " Goodbye"
+  log('  after.data: "'+after.data+'" after2.data: "'+after2.data+'"');
+  // range ainda aponta para after (que foi dividido)
+  try{ log('  range após 2º split: "'+range.toString()+'"'); }catch(e){ log('  exc: '+e.name); }
+  if(host.parentNode) document.body.removeChild(host);
+  log('[T15] done');
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 02 — Range / Selection / ContentEditable ===');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){ if(i>=tests.length){log('=== FIM ===');return;} try{tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);} i++; setTimeout(next,300); }
+  next();
+}
+</script>
+</body>
+</html>

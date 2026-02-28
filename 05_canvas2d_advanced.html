@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>05 — Canvas 2D Avançado</title></head>
+<body>
+<h3>05 — Canvas 2D Avançado / Gradient / Path2D / Filter</h3>
+<div id="log" style="height:300px;overflow:auto;border:1px solid #999;padding:4px;font:11px monospace;white-space:pre"></div>
+<br>
+<button onclick="t01()">T01 createLinearGradient: stops extremos e out-of-range</button>
+<button onclick="t02()">T02 createRadialGradient: raios negativos e iguais</button>
+<button onclick="t03()">T03 Path2D: addPath com transform matrix extrema</button>
+<button onclick="t04()">T04 Path2D: operações após canvas resize</button>
+<button onclick="t05()">T05 Canvas filter: blur + manipulação durante draw</button>
+<button onclick="t06()">T06 drawImage: canvas para canvas com crop negativo</button>
+<button onclick="t07()">T07 Canvas: save/restore + clip + transform concorrente</button>
+<button onclick="t08()">T08 Canvas toBlobURL: acessar após revokeObjectURL</button>
+<button onclick="t09()">T09 Canvas 2D: isPointInPath/Stroke com paths complexos</button>
+<button onclick="t10()">T10 createConicalGradient / conic-gradient via canvas</button>
+<button onclick="t11()">T11 Canvas: putImageData com ArrayBuffer compartilhado</button>
+<button onclick="t12()">T12 Canvas: globalAlpha extremo + composite em loop</button>
+<button onclick="t13()">T13 Path2D de string SVG: dados malformados</button>
+<button onclick="t14()">T14 Canvas: getContext após resize (contexto perdido?)</button>
+<button onclick="t15()">T15 Canvas: fillStyle com gradiente em nó removido</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html">← Index</a>
+<script>
+var L=document.getElementById('log');
+function log(m){L.textContent+=m+'\n';L.scrollTop=L.scrollHeight}
+function gc(){try{var a=[];for(var i=0;i<20;i++)a.push(new ArrayBuffer(2*1024*1024));a=null}catch(e){}}
+function mkC(w,h){ var c=document.createElement('canvas'); c.width=w||256; c.height=h||256; return c; }
+function px(ctx,x,y){ var d=ctx.getImageData(x,y,1,1).data; return d[0]+','+d[1]+','+d[2]+','+d[3]; }
+
+function t01(){
+  log('[T01] createLinearGradient: stops extremos e out-of-range');
+  var c=mkC(256,256); var ctx=c.getContext('2d');
+  var cases=[
+    [0,0,256,0],         // horizontal normal
+    [0,0,0,0],           // ponto (comprimento zero)
+    [-100,-100,356,356], // fora do canvas
+    [NaN,0,256,0],       // NaN em x0
+    [0,0,Infinity,0],    // Infinity em x1
+    [0,0,256,256],       // diagonal
+  ];
+  cases.forEach(function(args,i){
+    try{
+      var grad=ctx.createLinearGradient.apply(ctx,args);
+      // addColorStop com offsets fora de [0,1]
+      try{ grad.addColorStop(-0.5,'red'); log('  ['+i+'] addColorStop(-0.5): ok'); }catch(e){ log('  ['+i+'] stop-0.5 exc: '+e.name); }
+      try{ grad.addColorStop(0,'red'); }catch(e){}
+      try{ grad.addColorStop(0.5,'blue'); }catch(e){}
+      try{ grad.addColorStop(1,'green'); }catch(e){}
+      try{ grad.addColorStop(1.5,'yellow'); log('  ['+i+'] addColorStop(1.5): ok'); }catch(e){ log('  ['+i+'] stop1.5 exc: '+e.name); }
+      try{ grad.addColorStop(NaN,'purple'); log('  ['+i+'] addColorStop(NaN): ok'); }catch(e){ log('  ['+i+'] stopNaN exc: '+e.name); }
+      ctx.fillStyle=grad;
+      ctx.fillRect(0,0,256,256);
+      log('  grad['+i+'] args=['+args.join(',').slice(0,20)+']: ok px='+px(ctx,128,128));
+    }catch(e){ log('  grad['+i+'] exc: '+e.name); }
+  });
+  gc();
+  log('[T01] done');
+}
+
+function t02(){
+  log('[T02] createRadialGradient: raios negativos, zero, iguais');
+  var c=mkC(256,256); var ctx=c.getContext('2d');
+  var cases=[
+    [128,128,0,128,128,100],   // r0=0 (degenerado)
+    [128,128,50,128,128,50],   // r0===r1 (anel sem espessura)
+    [128,128,100,128,128,0],   // r1=0
+    [128,128,50,200,200,80],   // circles descentradas
+    [128,128,-10,128,128,100], // r0 negativo
+    [128,128,50,128,128,-10],  // r1 negativo
+    [NaN,128,50,128,128,100],  // NaN cx0
+    [128,128,Infinity,128,128,100], // Infinity r0
+    [128,128,50,128,128,Infinity],  // Infinity r1
+  ];
+  cases.forEach(function(args,i){
+    try{
+      var grad=ctx.createRadialGradient.apply(ctx,args);
+      grad.addColorStop(0,'rgba(255,0,0,1)');
+      grad.addColorStop(1,'rgba(0,0,255,0)');
+      ctx.fillStyle=grad;
+      ctx.fillRect(0,0,256,256);
+      log('  radial['+i+']: ok center='+px(ctx,128,128));
+    }catch(e){ log('  radial['+i+'] exc: '+e.name); }
+  });
+  log('[T02] done');
+}
+
+function t03(){
+  log('[T03] Path2D: addPath com DOMMatrix extrema');
+  var base=new Path2D();
+  base.moveTo(0,0); base.lineTo(100,0); base.lineTo(50,100); base.closePath();
+  var dst=mkC(256,256); var ctx=dst.getContext('2d');
+  var matrices=[
+    new DOMMatrix([1,0,0,1,50,50]),                // translate normal
+    new DOMMatrix([2,0,0,2,0,0]),                   // scale 2x
+    new DOMMatrix([0,1,-1,0,128,128]),              // rotate 90°
+    new DOMMatrix([1e10,0,0,1e10,0,0]),             // scale extremo
+    new DOMMatrix([0,0,0,0,0,0]),                   // matrix singular
+    new DOMMatrix([NaN,0,0,1,0,0]),                 // NaN
+    new DOMMatrix([Infinity,0,0,1,0,0]),             // Infinity
+    new DOMMatrix([-1,0,0,-1,256,256]),             // flip
+  ];
+  matrices.forEach(function(m,i){
+    try{
+      var combined=new Path2D();
+      combined.addPath(base,m);
+      ctx.beginPath();
+      ctx.stroke(combined);
+      ctx.fill(combined);
+      log('  addPath['+i+']: ok');
+    }catch(e){ log('  addPath['+i+'] exc: '+e.name); }
+  });
+  gc();
+  log('[T03] done');
+}
+
+function t04(){
+  log('[T04] Path2D: operações após canvas resize (context reset)');
+  var c=mkC(200,200); var ctx=c.getContext('2d');
+  // Cria path e desenha
+  var path=new Path2D();
+  path.arc(100,100,80,0,Math.PI*2);
+  ctx.fillStyle='red'; ctx.fill(path);
+  var px1=px(ctx,100,100);
+  log('  antes resize: center='+px1);
+  // Resize do canvas (reset o contexto)
+  c.width=400; c.height=400;
+  // ctx ainda válido mas estado foi resetado (fillStyle='black', transform=identity, etc.)
+  log('  fillStyle após resize: "'+ctx.fillStyle+'" (deve ser #000000)');
+  // Usa o path antigo com o contexto resetado
+  try{
+    ctx.fillStyle='blue';
+    ctx.fill(path); // path continua válido?
+    var px2=px(ctx,100,100);
+    log('  fill com path antigo pós-resize: '+px2);
+  }catch(e){ log('  fill exc: '+e.name); }
+  // Cria novo path após resize
+  var newPath=new Path2D();
+  newPath.rect(0,0,400,400);
+  ctx.fillStyle='green';
+  ctx.fill(newPath);
+  var px3=px(ctx,200,200);
+  log('  fill novo path pós-resize: '+px3);
+  gc();
+  log('[T04] done');
+}
+
+function t05(){
+  log('[T05] Canvas filter: aplicar filter + drawImage durante filter');
+  var c=mkC(256,256); var ctx=c.getContext('2d');
+  ctx.fillStyle='red'; ctx.fillRect(0,0,128,128);
+  ctx.fillStyle='blue'; ctx.fillRect(128,0,128,128);
+  ctx.fillStyle='green'; ctx.fillRect(0,128,128,128);
+  ctx.fillStyle='yellow'; ctx.fillRect(128,128,128,128);
+  // Aplica filter
+  var filters=[
+    'blur(5px)',
+    'brightness(2)',
+    'contrast(200%)',
+    'grayscale(100%)',
+    'hue-rotate(90deg)',
+    'invert(100%)',
+    'opacity(0.5)',
+    'saturate(300%)',
+    'sepia(100%)',
+    'blur(0px) brightness(1) contrast(1)', // combinado neutro
+    'blur(999px)',  // blur extremo
+    'brightness(0)', // brightness zero
+    'none',
+  ];
+  filters.forEach(function(f,i){
+    try{
+      ctx.filter=f;
+      var dst=mkC(64,64);
+      var dCtx=dst.getContext('2d');
+      dCtx.filter=f;
+      dCtx.drawImage(c,0,0,64,64);
+      var center=px(dCtx,32,32);
+      if(i<5 || i===filters.length-1) log('  filter "'+f.slice(0,20)+'": ok center='+center);
+    }catch(e){ log('  filter['+i+'] exc: '+e.name); }
+  });
+  ctx.filter='none';
+  gc();
+  log('[T05] done');
+}
+
+function t06(){
+  log('[T06] drawImage canvas→canvas com crop negativo e oversize');
+  var src=mkC(128,128); var sCtx=src.getContext('2d');
+  sCtx.fillStyle='red'; sCtx.fillRect(0,0,64,64);
+  sCtx.fillStyle='blue'; sCtx.fillRect(64,0,64,64);
+  sCtx.fillStyle='green'; sCtx.fillRect(0,64,64,64);
+  sCtx.fillStyle='yellow'; sCtx.fillRect(64,64,64,64);
+  var dst=mkC(256,256); var dCtx=dst.getContext('2d');
+  // drawImage(image,sx,sy,sw,sh,dx,dy,dw,dh)
+  var crops=[
+    [0,0,128,128,  0,0,256,256],   // normal
+    [-64,-64,256,256,  0,0,256,256], // src origin negativa
+    [32,32,128,128,  -32,-32,320,320], // src+dst parcialmente fora
+    [0,0,-128,-128,  0,0,256,256],  // sw,sh negativos
+    [64,64,0,0,  0,0,256,256],      // sw=sh=0
+    [0,0,128,128,  0,0,0,0],        // dw=dh=0
+    [0,0,128,128,  128,128,-128,-128], // dw,dh negativos (flip)
+    [0,0,1,1,  0,0,256,256],        // scale up extremo 1px→256px
+  ];
+  crops.forEach(function(args,i){
+    try{
+      dCtx.clearRect(0,0,256,256);
+      dCtx.drawImage.apply(dCtx,[src].concat(args));
+      log('  crop['+i+']: ok center='+px(dCtx,128,128));
+    }catch(e){ log('  crop['+i+'] exc: '+e.name); }
+  });
+  gc();
+  log('[T06] done');
+}
+
+function t07(){
+  log('[T07] Canvas: save/restore + clip + transform estados concorrentes');
+  var c=mkC(512,512); var ctx=c.getContext('2d');
+  // Constrói pilha profunda alternando clips e transforms
+  var depth=0;
+  function pushState(n){
+    if(n<=0) return;
+    ctx.save(); depth++;
+    ctx.translate(n,n);
+    ctx.scale(1-n*0.01, 1-n*0.01);
+    ctx.beginPath();
+    ctx.arc(0,0,200-n*3,0,Math.PI*2);
+    ctx.clip();
+    ctx.fillStyle='rgba('+(n*5)+','+(255-n*5)+',128,0.3)';
+    ctx.fillRect(-200,-200,400,400);
+    pushState(n-1);
+  }
+  pushState(40);
+  log('  pilha profundidade: '+depth);
+  var px1=px(ctx,256,256);
+  log('  center após 40 saves: '+px1);
+  // Restore além do stack
+  for(var i=0;i<depth+20;i++) ctx.restore();
+  try{
+    ctx.fillStyle='rgba(255,0,0,0.5)';
+    ctx.fillRect(0,0,512,512);
+    log('  fill após over-restore: ok center='+px(ctx,256,256));
+  }catch(e){ log('  fill exc: '+e.name); }
+  gc();
+  log('[T07] done');
+}
+
+function t08(){
+  log('[T08] Canvas toBlob/toDataURL + revokeObjectURL');
+  var c=mkC(128,128); var ctx=c.getContext('2d');
+  ctx.fillStyle='purple'; ctx.fillRect(0,0,128,128);
+  ctx.fillStyle='white'; ctx.font='20px sans-serif'; ctx.fillText('BLOB',20,70);
+  // toDataURL
+  try{
+    var dataURL=c.toDataURL('image/png');
+    log('  toDataURL: '+dataURL.slice(0,30)+'... len='+dataURL.length);
+    var dataURL2=c.toDataURL('image/jpeg',0.5);
+    log('  toDataURL jpeg: len='+dataURL2.length);
+  }catch(e){ log('  toDataURL exc: '+e.name); }
+  // toBlob + createObjectURL + revokeObjectURL
+  c.toBlob(function(blob){
+    if(!blob){ log('  blob null'); log('[T08] done'); return; }
+    log('  blob size: '+blob.size+' type: '+blob.type);
+    try{
+      var url=URL.createObjectURL(blob);
+      log('  objectURL: '+url.slice(0,30)+'...');
+      // Usa o URL
+      var img=new Image();
+      img.onload=function(){ log('  img.onload: '+img.width+'x'+img.height); };
+      img.onerror=function(){ log('  img.onerror'); };
+      img.src=url;
+      // Revoga IMEDIATAMENTE (antes de img carregar)
+      URL.revokeObjectURL(url);
+      log('  revoked');
+      // Tenta criar outro img com o mesmo URL revogado
+      var img2=new Image();
+      img2.src=url;
+      gc();
+    }catch(e){ log('  objectURL exc: '+e.name); }
+    // Redimensiona o canvas enquanto o blob ainda referencia
+    c.width=0; c.height=0;
+    gc();
+    log('[T08] done');
+  },'image/png');
+}
+
+function t09(){
+  log('[T09] isPointInPath / isPointInStroke com paths complexos');
+  var c=mkC(256,256); var ctx=c.getContext('2d');
+  // Path com self-intersection
+  ctx.beginPath();
+  ctx.moveTo(50,50); ctx.lineTo(200,50); ctx.lineTo(50,200); ctx.lineTo(200,200); ctx.closePath();
+  // isPointInPath com fillRule
+  var testPoints=[[128,128],[50,50],[0,0],[256,256],[128,50],[NaN,128],[Infinity,128]];
+  testPoints.forEach(function(pt,i){
+    try{
+      var nonzero=ctx.isPointInPath(pt[0],pt[1],'nonzero');
+      var evenodd=ctx.isPointInPath(pt[0],pt[1],'evenodd');
+      var stroke=ctx.isPointInStroke(pt[0],pt[1]);
+      if(i<5) log('  pt['+pt+']: nz='+nonzero+' eo='+evenodd+' stroke='+stroke);
+    }catch(e){ log('  isPointIn['+i+'] exc: '+e.name); }
+  });
+  // Path2D version
+  var path2d=new Path2D();
+  path2d.arc(128,128,80,0,Math.PI*2);
+  testPoints.forEach(function(pt,i){
+    try{
+      var r=ctx.isPointInPath(path2d,pt[0],pt[1]);
+      if(i<3) log('  path2d pt['+pt+']: '+r);
+    }catch(e){ log('  path2d exc: '+e.name); }
+  });
+  // Com transform ativo
+  ctx.save();
+  ctx.translate(128,128); ctx.scale(0.5,0.5);
+  try{
+    var transformed=ctx.isPointInPath(path2d,0,0);
+    log('  isPointInPath com transform: '+transformed);
+  }catch(e){ log('  transform exc: '+e.name); }
+  ctx.restore();
+  gc();
+  log('[T09] done');
+}
+
+function t10(){
+  log('[T10] createConicGradient (se suportado) + fallback pattern');
+  var c=mkC(256,256); var ctx=c.getContext('2d');
+  // conic gradient (pode não estar disponível em WebKit 605.1.15)
+  if(typeof ctx.createConicGradient==='function'){
+    try{
+      var conic=ctx.createConicGradient(0,128,128);
+      conic.addColorStop(0,'red');
+      conic.addColorStop(0.25,'yellow');
+      conic.addColorStop(0.5,'green');
+      conic.addColorStop(0.75,'blue');
+      conic.addColorStop(1,'red');
+      ctx.fillStyle=conic;
+      ctx.fillRect(0,0,256,256);
+      log('  createConicGradient: ok center='+px(ctx,128,128));
+      // Parâmetros extremos
+      var conic2=ctx.createConicGradient(NaN,128,128);
+      conic2.addColorStop(0,'red'); conic2.addColorStop(1,'blue');
+      ctx.fillStyle=conic2;
+      ctx.fillRect(0,0,256,256);
+      log('  createConicGradient(NaN): ok');
+    }catch(e){ log('  conicGradient exc: '+e.name); }
+  } else {
+    log('  createConicGradient não disponível — testando padrão alternativo');
+    // Simula gradiente cônico via arcos
+    for(var deg=0;deg<360;deg+=5){
+      var rad=deg*Math.PI/180;
+      ctx.beginPath();
+      ctx.moveTo(128,128);
+      ctx.arc(128,128,100,rad,rad+5*Math.PI/180);
+      ctx.closePath();
+      ctx.fillStyle='hsl('+deg+',80%,50%)';
+      ctx.fill();
+    }
+    log('  conic simulado: ok center='+px(ctx,128,128));
+  }
+  gc();
+  log('[T10] done');
+}
+
+function t11(){
+  log('[T11] Canvas: putImageData com buffer grande + modificação');
+  var c=mkC(512,512); var ctx=c.getContext('2d');
+  // Cria ImageData grande
+  try{
+    var id=ctx.createImageData(512,512);
+    log('  id.data.length: '+id.data.length+' ('+id.data.length/1024/1024+' MB)');
+    // Preenche com padrão
+    for(var y=0;y<512;y++){
+      for(var x=0;x<512;x++){
+        var idx=(y*512+x)*4;
+        id.data[idx]=x%256;
+        id.data[idx+1]=y%256;
+        id.data[idx+2]=128;
+        id.data[idx+3]=255;
+      }
+    }
+    ctx.putImageData(id,0,0);
+    log('  putImageData 512x512: ok center='+px(ctx,256,256));
+    // Modifica o id após putImageData e aplica de novo
+    for(var i=0;i<id.data.length;i+=4){ id.data[i]=255-id.data[i]; }
+    ctx.putImageData(id,0,0);
+    log('  putImageData inverted: ok center='+px(ctx,256,256));
+    gc();
+    // putImageData com offset para cada quadrante
+    ctx.putImageData(id,0,0,0,0,256,256);
+    ctx.putImageData(id,0,0,256,0,256,256);
+    ctx.putImageData(id,0,0,0,256,256,256);
+    ctx.putImageData(id,0,0,256,256,256,256);
+    log('  4 quadrantes: ok');
+  }catch(e){ log('  exc: '+e.name); }
+  log('[T11] done');
+}
+
+function t12(){
+  log('[T12] Canvas: globalAlpha extremo + composite em loop acumulado');
+  var c=mkC(256,256); var ctx=c.getContext('2d');
+  ctx.fillStyle='rgb(128,128,128)'; ctx.fillRect(0,0,256,256);
+  var alphas=[0,0.001,0.01,0.1,0.5,0.9,0.99,0.999,1,1.001,-0.1,NaN,Infinity];
+  alphas.forEach(function(a,i){
+    try{
+      ctx.globalAlpha=a;
+      var actual=ctx.globalAlpha;
+      ctx.fillStyle='rgba(255,0,0,0.5)';
+      ctx.fillRect(i*18,0,16,256);
+      if(i<6) log('  alpha='+a+' actual='+actual+' px='+px(ctx,i*18+8,128));
+    }catch(e){ log('  alpha['+a+'] exc: '+e.name); }
+  });
+  ctx.globalAlpha=1;
+  // Acumula compositing em loop (pode vazar memória ou causar overflow)
+  var ops=['source-over','destination-over','lighter','xor','multiply','screen'];
+  ctx.globalAlpha=0.1;
+  for(var j=0;j<200;j++){
+    ctx.globalCompositeOperation=ops[j%ops.length];
+    ctx.fillStyle='hsl('+(j*1.8)+',80%,50%)';
+    ctx.fillRect(0,0,256,256);
+    if(j===100) gc();
+  }
+  ctx.globalAlpha=1;
+  ctx.globalCompositeOperation='source-over';
+  log('  composite loop 200x: ok final='+px(ctx,128,128));
+  log('[T12] done');
+}
+
+function t13(){
+  log('[T13] Path2D de string SVG: dados malformados e extremos');
+  var c=mkC(256,256); var ctx=c.getContext('2d');
+  var paths=[
+    'M 10,10 L 100,100 L 100,10 Z',             // válido
+    '',                                            // vazio
+    'M',                                           // M sem coordenadas
+    'L 100,100',                                   // L sem moveto
+    'M 10,10 L abc,xyz',                           // coords inválidas
+    'M 10,10 X 50,50',                            // comando inválido
+    'M 10,10 L 100,100 L 200,200 '.repeat(500),   // muito longo
+    'M 0,0 '+Array(1000).fill('L 1,0 L 0,1').join(' '), // 2000 segmentos
+    'M 1e20,1e20 L -1e20,-1e20',                  // coords extremas
+    'M NaN,NaN L 100,100',                         // NaN
+    'M Infinity,0 L 0,Infinity',                   // Infinity
+    'M 0,0 A 0,0 0 0 0 100,100',                  // arco raio zero
+    'M 0,0 A -50,-50 0 0 0 100,100',              // arco raio negativo
+  ];
+  paths.forEach(function(d,i){
+    try{
+      var p=new Path2D(d);
+      ctx.beginPath();
+      ctx.stroke(p);
+      ctx.fill(p,'evenodd');
+      log('  path['+i+'] ('+d.slice(0,25)+'...): ok');
+    }catch(e){ log('  path['+i+'] exc: '+e.name); }
+  });
+  gc();
+  log('[T13] done');
+}
+
+function t14(){
+  log('[T14] Canvas: getContext após resize (perde e recupera contexto)');
+  var c=mkC(200,200); document.body.appendChild(c);
+  var ctx1=c.getContext('2d');
+  ctx1.fillStyle='red'; ctx1.fillRect(0,0,200,200);
+  log('  ctx1 px antes resize: '+px(ctx1,100,100));
+  // Resize: invalida o contexto (conteúdo apagado)
+  c.width=400;
+  log('  ctx1 fillStyle após resize: "'+ctx1.fillStyle+'"');
+  log('  ctx1 px após resize: '+px(ctx1,100,100)+' (deve ser 0,0,0,0)');
+  // getContext de novo — deve retornar o MESMO objeto
+  var ctx2=c.getContext('2d');
+  log('  ctx1===ctx2: '+(ctx1===ctx2));
+  ctx2.fillStyle='blue'; ctx2.fillRect(0,0,400,400);
+  log('  ctx2 px: '+px(ctx2,200,200));
+  // Tenta getContext('webgl') — deve falhar (não suportado) ou retornar null
+  var ctxGL=c.getContext('webgl');
+  log('  getContext webgl: '+(ctxGL?'ok (inesperado!)':'null (esperado)'));
+  // getContext('2d') após getContext('webgl') tentativa
+  var ctx3=c.getContext('2d');
+  log('  ctx3 (2d após webgl tentativa): '+(ctx3?'ok':'null'));
+  // Resize para zero
+  c.width=0; c.height=0;
+  try{ var ctx4=c.getContext('2d'); log('  ctx4 (0x0): '+(ctx4?'ok':'null')); }catch(e){ log('  ctx4 exc: '+e.name); }
+  document.body.removeChild(c);
+  gc();
+  // Usa ctx1 após canvas removido do DOM
+  try{ ctx1.fillRect(0,0,10,10); log('  ctx1.fillRect pós-remove: ok'); }catch(e){ log('  exc: '+e.name); }
+  log('[T14] done');
+}
+
+function t15(){
+  log('[T15] Canvas: fillStyle com gradiente de canvas removido do DOM');
+  var c=mkC(256,256);
+  document.body.appendChild(c);
+  var ctx=c.getContext('2d');
+  // Cria gradiente antes de remover
+  var grad=ctx.createLinearGradient(0,0,256,0);
+  grad.addColorStop(0,'red');
+  grad.addColorStop(0.5,'green');
+  grad.addColorStop(1,'blue');
+  ctx.fillStyle=grad;
+  ctx.fillRect(0,0,256,256);
+  log('  fill com grad connected: '+px(ctx,0,128)+' → '+px(ctx,128,128)+' → '+px(ctx,255,128));
+  // Remove o canvas do DOM
+  document.body.removeChild(c);
+  gc();
+  // Usa o gradiente com o canvas desconectado
+  try{
+    ctx.fillStyle=grad;
+    ctx.fillRect(0,0,256,256);
+    log('  fill pós-remove: '+px(ctx,128,128));
+  }catch(e){ log('  fill exc: '+e.name); }
+  // Cria outro canvas e tenta usar o gradiente lá
+  var c2=mkC(256,256);
+  var ctx2=c2.getContext('2d');
+  try{
+    ctx2.fillStyle=grad; // gradiente de outro canvas (e removido)
+    ctx2.fillRect(0,0,256,256);
+    log('  cross-canvas grad: '+px(ctx2,128,128));
+  }catch(e){ log('  cross exc: '+e.name); }
+  // Cria gradiente radial e faz o mesmo
+  var radGrad=ctx.createRadialGradient(128,128,0,128,128,128);
+  radGrad.addColorStop(0,'white');
+  radGrad.addColorStop(1,'black');
+  ctx.fillStyle=radGrad;
+  try{ ctx.fillRect(0,0,256,256); log('  radial grad pós-remove: ok center='+px(ctx,128,128)); }catch(e){ log('  radial exc: '+e.name); }
+  gc();
+  log('[T15] done');
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 05 — Canvas 2D Avançado / Gradient / Path2D ===');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){ if(i>=tests.length){log('=== FIM ===');return;} try{tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);} i++; setTimeout(next,300); }
+  next();
+}
+</script>
+</body>
+</html>

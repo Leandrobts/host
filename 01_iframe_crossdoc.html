@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>01 — iframe / Cross-Document</title></head>
+<body>
+<h3>01 — iframe / Cross-Document / Adoption</h3>
+<div id="log" style="height:300px;overflow:auto;border:1px solid #999;padding:4px;font:11px monospace;white-space:pre"></div>
+<br>
+<button onclick="t01()">T01 iframe.contentDocument após remove do iframe</button>
+<button onclick="t02()">T02 adoptNode: mover árvore inteira com event listeners</button>
+<button onclick="t03()">T03 importNode vs adoptNode: side-by-side</button>
+<button onclick="t04()">T04 iframe srcdoc: DOM access durante load</button>
+<button onclick="t05()">T05 Cross-doc event: listener em doc do iframe + remove frame</button>
+<button onclick="t06()">T06 document.write() em iframe + acesso pós-write</button>
+<button onclick="t07()">T07 iframe: mudar src durante load</button>
+<button onclick="t08()">T08 Nó adotado de volta: ownerDocument chain</button>
+<button onclick="t09()">T09 iframe contentWindow: acesso após frame destruído</button>
+<button onclick="t10()">T10 createDocument: operações em documento detachado</button>
+<button onclick="t11()">T11 DocumentFragment: inserir, remover, reinserir</button>
+<button onclick="t12()">T12 cloneNode de iframe: acesso ao clone</button>
+<button onclick="t13()">T13 document.createTreeWalker cross-doc</button>
+<button onclick="t14()">T14 iframe: resize + layout access durante remove</button>
+<button onclick="t15()">T15 adoptNode com shadow root: shadow segue o host?</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html">← Index</a>
+<script>
+var L=document.getElementById('log');
+function log(m){L.textContent+=m+'\n';L.scrollTop=L.scrollHeight}
+function gc(){try{var a=[];for(var i=0;i<20;i++)a.push(new ArrayBuffer(2*1024*1024));a=null}catch(e){}}
+function mkFrame(src){
+  var f=document.createElement('iframe');
+  f.style.cssText='width:200px;height:100px;visibility:hidden';
+  if(src) f.srcdoc=src;
+  document.body.appendChild(f);
+  return f;
+}
+
+function t01(){
+  log('[T01] iframe.contentDocument após removeChild do iframe');
+  var frame=mkFrame('<html><body><div id="inner">hello</div></body></html>');
+  setTimeout(function(){
+    var idoc=frame.contentDocument;
+    var inner=idoc.getElementById('inner');
+    log('  inner before remove: '+inner.textContent);
+    // Remove o iframe
+    document.body.removeChild(frame);
+    gc();
+    // Acessa o contentDocument e seus nós após remoção
+    try{ var body=idoc.body; log('  idoc.body após remove: '+(body?body.tagName:'null')); }catch(e){ log('  body exc: '+e.name); }
+    try{ var txt=inner.textContent; log('  inner.textContent stale: '+txt); }catch(e){ log('  inner exc: '+e.name); }
+    try{ var cs=window.getComputedStyle(inner); log('  inner cs: '+cs.display); }catch(e){ log('  cs exc: '+e.name); }
+    try{ var found=idoc.getElementById('inner'); log('  getElementById pós-remove: '+(found?found.textContent:'null')); }catch(e){ log('  getElementById exc: '+e.name); }
+    gc();
+    log('[T01] done');
+  },200);
+}
+
+function t02(){
+  log('[T02] adoptNode: mover árvore com event listeners entre docs');
+  var frame=mkFrame('');
+  setTimeout(function(){
+    var idoc=frame.contentDocument;
+    // Cria árvore no doc principal com listeners
+    var root=document.createElement('div');
+    var child=document.createElement('span');
+    child.textContent='adoptable';
+    root.appendChild(child);
+    document.body.appendChild(root);
+    var fired=[];
+    child.addEventListener('test',function(e){ fired.push('main:'+child.ownerDocument.URL.slice(-5)); });
+    root.addEventListener('test',function(e){ fired.push('root:'+root.ownerDocument.URL.slice(-5)); });
+    // Dispara antes da adoção
+    child.dispatchEvent(new CustomEvent('test',{bubbles:true}));
+    log('  pre-adopt fired: '+fired.join(','));
+    fired=[];
+    // Adota para o iframe
+    var adopted=idoc.adoptNode(root);
+    idoc.body.appendChild(adopted);
+    // Tenta disparar evento no nó adotado
+    try{
+      child.dispatchEvent(new CustomEvent('test',{bubbles:true}));
+      log('  post-adopt fired: '+fired.join(','));
+    }catch(e){ log('  dispatch exc: '+e.name); }
+    // Remove o iframe
+    document.body.removeChild(frame);
+    gc();
+    // Ainda tenta disparar
+    try{
+      child.dispatchEvent(new CustomEvent('test',{bubbles:true}));
+      log('  post-frame-remove fired: '+fired.join(','));
+    }catch(e){ log('  exc: '+e.name); }
+    log('[T02] done');
+  },200);
+}
+
+function t03(){
+  log('[T03] importNode vs adoptNode: ownership e refs simultâneas');
+  var frame=mkFrame('');
+  setTimeout(function(){
+    var idoc=frame.contentDocument;
+    var orig=document.createElement('div');
+    orig.innerHTML='<b>bold</b><i>italic</i>';
+    orig.setAttribute('data-orig','yes');
+    document.body.appendChild(orig);
+    // importNode: cria cópia, orig permanece
+    var imported=idoc.importNode(orig,true);
+    idoc.body.appendChild(imported);
+    log('  orig.isConnected: '+orig.isConnected+' imported.isConnected: '+imported.isConnected);
+    log('  orig.ownerDocument===document: '+(orig.ownerDocument===document));
+    log('  imported.ownerDocument===idoc: '+(imported.ownerDocument===idoc));
+    // adoptNode: move orig, desconecta do doc principal
+    var adopted=idoc.adoptNode(orig);
+    log('  após adoptNode: orig.isConnected='+orig.isConnected+' orig.ownerDocument===idoc: '+(orig.ownerDocument===idoc));
+    // Acessa o imported (que é uma cópia, não foi movido)
+    var impB=imported.querySelector('b');
+    log('  imported still has b: '+(impB?impB.textContent:'null'));
+    // Modifica o adopted no contexto do iframe
+    adopted.textContent='modified in iframe';
+    // Remove o iframe — adopted some
+    document.body.removeChild(frame);
+    gc();
+    try{ log('  adopted.textContent pós-frame: '+adopted.textContent); }catch(e){ log('  exc: '+e.name); }
+    if(orig.parentNode) document.body.removeChild(orig);
+    log('[T03] done');
+  },200);
+}
+
+function t04(){
+  log('[T04] iframe srcdoc: DOM access enquanto ainda carrega');
+  var frame=document.createElement('iframe');
+  frame.style.cssText='width:300px;height:100px;visibility:hidden';
+  // srcdoc com conteúdo pesado
+  frame.srcdoc='<!DOCTYPE html><html><head></head><body>'+'<div class="heavy">'.repeat(200)+'content'+'</div>'.repeat(200)+'</body></html>';
+  document.body.appendChild(frame);
+  // Acessa contentDocument IMEDIATAMENTE (antes de carregar)
+  var idoc=frame.contentDocument;
+  try{
+    var readyState=idoc.readyState;
+    log('  readyState imediato: '+readyState);
+    var body=idoc.body;
+    log('  body imediato: '+(body?body.tagName:'null'));
+    // Tenta querySelector antes do load
+    var div=idoc.querySelector('.heavy');
+    log('  .heavy imediato: '+(div?'found':'null'));
+  }catch(e){ log('  access exc: '+e.name); }
+  setTimeout(function(){
+    try{
+      var readyState2=idoc.readyState;
+      log('  readyState após 100ms: '+readyState2);
+      var divs=idoc.querySelectorAll('.heavy');
+      log('  .heavy count: '+divs.length);
+    }catch(e){ log('  late exc: '+e.name); }
+    // Remove durante possível rendering
+    document.body.removeChild(frame);
+    gc();
+    try{ log('  idoc.readyState pós-remove: '+idoc.readyState); }catch(e){ log('  pós-remove exc: '+e.name); }
+    log('[T04] done');
+  },100);
+}
+
+function t05(){
+  log('[T05] Cross-doc event listener no contentWindow + remove frame');
+  var frame=mkFrame('');
+  setTimeout(function(){
+    var cw=frame.contentWindow;
+    var idoc=frame.contentDocument;
+    var fired=[];
+    // Adiciona listener no contentWindow
+    cw.addEventListener('resize',function(){ fired.push('resize'); });
+    // Adiciona listener no idoc
+    idoc.addEventListener('DOMContentLoaded',function(){ fired.push('dcl'); });
+    // Cria nó no idoc e adiciona listener
+    var el=idoc.createElement('div');
+    idoc.body.appendChild(el);
+    el.addEventListener('custom',function(){ fired.push('el-custom'); });
+    // Dispara evento no elemento do iframe
+    el.dispatchEvent(new CustomEvent('custom',{bubbles:true}));
+    log('  fired before remove: '+fired.join(','));
+    // Remove o iframe
+    document.body.removeChild(frame);
+    gc();
+    // Tenta acionar listeners após remoção
+    try{ el.dispatchEvent(new CustomEvent('custom',{bubbles:true})); log('  fired post-remove: '+fired.join(',')); }catch(e){ log('  exc: '+e.name); }
+    // Acessa cw após remoção
+    try{ var loc=cw.location; log('  cw.location pós-remove: ok'); }catch(e){ log('  cw.location exc: '+e.name); }
+    log('[T05] done');
+  },200);
+}
+
+function t06(){
+  log('[T06] document.write() em iframe + acesso pós-write');
+  var frame=mkFrame('');
+  setTimeout(function(){
+    var idoc=frame.contentDocument;
+    // document.write substitui o documento
+    try{
+      idoc.open();
+      idoc.write('<html><body><div id="written">written content</div></body></html>');
+      idoc.close();
+    }catch(e){ log('  write exc: '+e.name); }
+    // Acessa o nó criado por document.write
+    try{
+      var el=idoc.getElementById('written');
+      log('  written el: '+(el?el.textContent:'null'));
+    }catch(e){ log('  getElementById exc: '+e.name); }
+    // document.write de novo (substitui novamente)
+    try{
+      idoc.open();
+      idoc.write('<div id="written2">second write</div>');
+      // NÃO chama close — documento fica em aberto
+    }catch(e){ log('  write2 exc: '+e.name); }
+    var el2;
+    try{ el2=idoc.getElementById('written2'); log('  written2: '+(el2?el2.textContent:'null')); }catch(e){}
+    // Agora fecha e remove
+    try{ idoc.close(); }catch(e){}
+    document.body.removeChild(frame);
+    gc();
+    // Acessa el após frame removido
+    try{ log('  el.textContent pós-remove: '+(el?el.textContent:'null')); }catch(e){ log('  exc: '+e.name); }
+    log('[T06] done');
+  },200);
+}
+
+function t07(){
+  log('[T07] iframe: mudar src/srcdoc durante load');
+  var frame=document.createElement('iframe');
+  frame.style.cssText='width:200px;height:100px;visibility:hidden';
+  frame.srcdoc='<body><div id="first">first</div></body>';
+  document.body.appendChild(frame);
+  var idoc1=frame.contentDocument;
+  // Muda srcdoc imediatamente (antes do load completo)
+  frame.srcdoc='<body><div id="second">second</div></body>';
+  var idoc2=frame.contentDocument;
+  log('  idoc1===idoc2: '+(idoc1===idoc2));
+  setTimeout(function(){
+    var idoc3=frame.contentDocument;
+    log('  idoc3===idoc2: '+(idoc3===idoc2));
+    try{
+      var el=idoc3.getElementById('second');
+      log('  second: '+(el?el.textContent:'null'));
+      // O primeiro doc ainda acessível?
+      var el1=idoc1.getElementById('first');
+      log('  first in old doc: '+(el1?el1.textContent:'null'));
+    }catch(e){ log('  exc: '+e.name); }
+    // Remove
+    document.body.removeChild(frame);
+    gc();
+    try{ log('  idoc1 readyState: '+idoc1.readyState); }catch(e){ log('  exc: '+e.name); }
+    log('[T07] done');
+  },300);
+}
+
+function t08(){
+  log('[T08] Nó adotado de volta: ownerDocument chain ida e volta');
+  var frame=mkFrame('');
+  setTimeout(function(){
+    var idoc=frame.contentDocument;
+    var el=document.createElement('div');
+    el.innerHTML='<span id="child">child</span>';
+    document.body.appendChild(el);
+    var child=el.querySelector('#child');
+    // Salva listeners
+    var fired=[];
+    child.addEventListener('ping',function(){ fired.push('child-ping:'+child.ownerDocument.nodeName); });
+    // Adota para iframe
+    var adopted=idoc.adoptNode(el);
+    idoc.body.appendChild(adopted);
+    log('  1: ownerDoc===idoc: '+(el.ownerDocument===idoc));
+    // Adota de volta
+    var back=document.adoptNode(adopted);
+    document.body.appendChild(back);
+    log('  2: ownerDoc===document: '+(el.ownerDocument===document));
+    // Adota para iframe de novo
+    var fwd=idoc.adoptNode(back);
+    // Não insere no iframe — fica em limbo
+    gc();
+    log('  3: isConnected='+el.isConnected+' ownerDoc===idoc: '+(el.ownerDocument===idoc));
+    // Dispara evento no nó em limbo
+    try{ child.dispatchEvent(new CustomEvent('ping',{bubbles:true})); log('  ping: '+fired.join(',')); }catch(e){ log('  exc: '+e.name); }
+    document.body.removeChild(frame);
+    gc();
+    log('[T08] done');
+  },200);
+}
+
+function t09(){
+  log('[T09] iframe contentWindow: acesso após frame destruído');
+  var frame=mkFrame('');
+  var cw, idoc, innerEl;
+  setTimeout(function(){
+    cw=frame.contentWindow;
+    idoc=frame.contentDocument;
+    innerEl=idoc.createElement('div');
+    innerEl.textContent='inside';
+    idoc.body.appendChild(innerEl);
+    log('  cw.document===idoc: '+(cw.document===idoc));
+    // Remove o frame
+    document.body.removeChild(frame);
+    gc();
+    // Acessa contentWindow após remoção
+    try{ var doc2=cw.document; log('  cw.document pós-remove: '+(doc2?doc2.nodeName:'null')); }catch(e){ log('  cw.document exc: '+e.name); }
+    try{ var loc=cw.location.href; log('  cw.location.href: '+loc.slice(0,30)); }catch(e){ log('  cw.location exc: '+e.name); }
+    try{ var hist=cw.history; hist.back(); log('  cw.history.back: ok'); }catch(e){ log('  history exc: '+e.name); }
+    // innerEl ainda acessível?
+    try{ log('  innerEl.isConnected: '+innerEl.isConnected); }catch(e){ log('  innerEl exc: '+e.name); }
+    try{ var cs=cw.getComputedStyle(innerEl); log('  cw.getComputedStyle pós-remove: '+cs.display); }catch(e){ log('  cs exc: '+e.name); }
+    log('[T09] done');
+  },200);
+}
+
+function t10(){
+  log('[T10] createDocument: operações em documento standalone');
+  // Cria documento fora do DOM principal
+  var xmlDoc=document.implementation.createDocument(null,'root',null);
+  var htmlDoc=document.implementation.createHTMLDocument('Test Doc');
+  // Operações no htmlDoc (nunca inserido em nenhum frame)
+  var div=htmlDoc.createElement('div');
+  div.innerHTML='<p>paragraph</p><span>span</span>';
+  htmlDoc.body.appendChild(div);
+  log('  htmlDoc.body children: '+htmlDoc.body.children.length);
+  // MutationObserver em documento standalone
+  var fired=[];
+  var obs=new MutationObserver(function(muts){ muts.forEach(function(m){ fired.push(m.type); }); });
+  obs.observe(htmlDoc.body,{childList:true,subtree:true,attributes:true});
+  div.setAttribute('data-x','1');
+  var newEl=htmlDoc.createElement('b'); div.appendChild(newEl);
+  obs.disconnect();
+  log('  mutations em doc standalone: '+fired.join(','));
+  // Tenta adotar nó do htmlDoc para o documento principal
+  try{
+    var adopted=document.adoptNode(div);
+    document.body.appendChild(adopted);
+    log('  adotado para main: '+adopted.isConnected);
+    document.body.removeChild(adopted);
+  }catch(e){ log('  adopt exc: '+e.name); }
+  gc();
+  // htmlDoc ainda funciona?
+  try{ var q=htmlDoc.querySelector('p'); log('  htmlDoc.querySelector p: '+(q?q.textContent:'null')); }catch(e){ log('  exc: '+e.name); }
+  log('[T10] done');
+}
+
+function t11(){
+  log('[T11] DocumentFragment: inserir parcial, remover, reinserir');
+  var frag=document.createDocumentFragment();
+  var nodes=[];
+  for(var i=0;i<10;i++){
+    var el=document.createElement('div');
+    el.textContent='frag-'+i;
+    el.id='frag-el-'+i;
+    frag.appendChild(el);
+    nodes.push(el);
+  }
+  log('  frag.childNodes: '+frag.childNodes.length);
+  // Insere o frag no body (esvazia o frag)
+  document.body.appendChild(frag);
+  log('  frag.childNodes após append: '+frag.childNodes.length+' (deve ser 0)');
+  // Os nós agora estão no body
+  log('  nodes[0].isConnected: '+nodes[0].isConnected);
+  // Remove os nós de volta para o frag
+  nodes.forEach(function(n){ frag.appendChild(n); });
+  log('  frag.childNodes após re-add: '+frag.childNodes.length);
+  log('  nodes[0].isConnected após re-add: '+nodes[0].isConnected);
+  gc();
+  // Acessa propriedades dos nós no frag (não conectados)
+  nodes.forEach(function(n,i){
+    try{ var oh=n.offsetHeight; if(i<2) log('  n['+i+'].offsetHeight: '+oh); }catch(e){}
+  });
+  // Insere metade de volta no body, mantém outra no frag
+  for(var j=0;j<5;j++) document.body.appendChild(nodes[j]);
+  // Os outros 5 ficam no frag — mas o frag não está no body
+  log('  nodes[0].isConnected: '+nodes[0].isConnected+' nodes[7].isConnected: '+nodes[7].isConnected);
+  // GC e acesso
+  gc();
+  nodes.forEach(function(n){ if(n.parentNode) n.parentNode.removeChild(n); });
+  log('[T11] done');
+}
+
+function t12(){
+  log('[T12] cloneNode de iframe + acesso ao clone');
+  var frame=mkFrame('<body><div id="ci">cloneable</div></body>');
+  setTimeout(function(){
+    var idoc=frame.contentDocument;
+    // Clona o iframe (não clona o contentDocument)
+    try{
+      var clone=frame.cloneNode(true);
+      document.body.appendChild(clone);
+      log('  clone.contentDocument===frame.contentDocument: '+(clone.contentDocument===frame.contentDocument));
+      var cloneDoc=clone.contentDocument;
+      log('  clone contentDoc: '+(cloneDoc?cloneDoc.readyState:'null'));
+      // Tenta acessar o elemento do iframe original via clone
+      if(cloneDoc){
+        var el=cloneDoc.getElementById('ci');
+        log('  clone getElementById: '+(el?el.textContent:'null'));
+      }
+      document.body.removeChild(clone);
+    }catch(e){ log('  clone exc: '+e.name); }
+    // Clona um nó do contentDocument
+    try{
+      var innerEl=idoc.getElementById('ci');
+      var innerClone=innerEl.cloneNode(true);
+      // innerClone.ownerDocument é idoc — pode inserir no documento principal?
+      document.body.appendChild(innerClone); // deve auto-adotar ou lançar
+      log('  innerClone.isConnected: '+innerClone.isConnected+' ownerDoc===doc: '+(innerClone.ownerDocument===document));
+      document.body.removeChild(innerClone);
+    }catch(e){ log('  innerClone exc: '+e.name); }
+    document.body.removeChild(frame);
+    gc();
+    log('[T12] done');
+  },200);
+}
+
+function t13(){
+  log('[T13] TreeWalker / NodeIterator cross-doc após adoção');
+  var frame=mkFrame('');
+  setTimeout(function(){
+    var idoc=frame.contentDocument;
+    // Cria árvore no iframe
+    idoc.body.innerHTML='<div><p>p1</p><span>s1</span></div><div><p>p2</p></div>';
+    var walker=idoc.createTreeWalker(idoc.body,NodeFilter.SHOW_ELEMENT,null);
+    var collected=[];
+    var node;
+    while((node=walker.nextNode())) collected.push(node.tagName);
+    log('  walker tags: '+collected.join(','));
+    // Adota o body content para o documento principal
+    var divs=Array.from(idoc.querySelectorAll('div'));
+    divs.forEach(function(d){ document.body.appendChild(document.adoptNode(d)); });
+    gc();
+    // Walker ainda tem referência interna ao idoc.body
+    try{
+      walker.currentNode=idoc.body;
+      var next=walker.nextNode();
+      log('  walker após adopt: '+(next?next.tagName:'null'));
+    }catch(e){ log('  walker exc: '+e.name); }
+    document.body.removeChild(frame);
+    divs.forEach(function(d){ if(d.parentNode) document.body.removeChild(d); });
+    gc();
+    log('[T13] done');
+  },200);
+}
+
+function t14(){
+  log('[T14] iframe: resize + layout access durante animação de remoção');
+  var frame=mkFrame('<body style="margin:0"><div style="width:100%;height:100%;background:red">content</div></body>');
+  setTimeout(function(){
+    var idoc=frame.contentDocument;
+    var inner=idoc.querySelector('div');
+    // Lê layout do iframe
+    log('  frame.offsetWidth: '+frame.offsetWidth);
+    try{ log('  inner.offsetWidth: '+inner.offsetWidth); }catch(e){}
+    // Redimensiona o iframe em loop e lê layout
+    for(var i=0;i<5;i++){
+      frame.style.width=(200+i*20)+'px';
+      frame.style.height=(100+i*10)+'px';
+      frame.offsetWidth; // força reflow
+      try{ var iw=inner.offsetWidth; }catch(e){}
+    }
+    // Remove durante o redimensionamento
+    document.body.removeChild(frame);
+    gc();
+    // Acessa layout de inner após frame removido
+    try{ var iw2=inner.offsetWidth; log('  inner.offsetWidth pós-remove: '+iw2); }catch(e){ log('  exc: '+e.name); }
+    try{ var bcr=inner.getBoundingClientRect(); log('  BCR pós-remove: '+bcr.width+'x'+bcr.height); }catch(e){ log('  BCR exc: '+e.name); }
+    log('[T14] done');
+  },200);
+}
+
+function t15(){
+  log('[T15] adoptNode com shadow root: shadow segue o host para outro doc?');
+  var frame=mkFrame('');
+  setTimeout(function(){
+    var idoc=frame.contentDocument;
+    // Cria host com shadow no doc principal
+    var host=document.createElement('div');
+    document.body.appendChild(host);
+    var shadow=host.attachShadow({mode:'open'});
+    shadow.innerHTML='<slot></slot><div class="shadow-content">shadow</div>';
+    var slotted=document.createElement('span'); slotted.textContent='slotted'; host.appendChild(slotted);
+    host.offsetHeight;
+    log('  antes adopt: host.shadowRoot='+(host.shadowRoot?'exists':'null'));
+    log('  slotted.assignedSlot: '+(slotted.assignedSlot?'exists':'null'));
+    // Adota o host (e seu shadow?) para o iframe
+    try{
+      var adopted=idoc.adoptNode(host);
+      idoc.body.appendChild(adopted);
+      log('  após adopt: adopted.shadowRoot='+(adopted.shadowRoot?'exists':'null'));
+      var sc=adopted.shadowRoot?adopted.shadowRoot.querySelector('.shadow-content'):null;
+      log('  shadow-content.ownerDoc===idoc: '+(sc&&sc.ownerDocument===idoc));
+      log('  slotted.isConnected: '+slotted.isConnected);
+      // O slotted ficou no doc principal ou foi junto?
+      log('  slotted.ownerDocument===idoc: '+(slotted.ownerDocument===idoc));
+    }catch(e){ log('  adopt exc: '+e.name); }
+    document.body.removeChild(frame);
+    gc();
+    log('[T15] done');
+  },200);
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 01 — iframe / Cross-Document / Adoption ===');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){ if(i>=tests.length){log('=== FIM ===');return;} try{tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);} i++; setTimeout(next,400); }
+  next();
+}
+</script>
+</body>
+</html>

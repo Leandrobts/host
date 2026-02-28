@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>03 — CSS Animations / Transitions</title></head>
+<body>
+<h3>03 — CSS Animations / Transitions / Keyframes</h3>
+<div id="log" style="height:300px;overflow:auto;border:1px solid #999;padding:4px;font:11px monospace;white-space:pre"></div>
+<br>
+<button onclick="t01()">T01 animationend: remove elemento antes de disparar</button>
+<button onclick="t02()">T02 Web Animations API: play/pause em nó removido</button>
+<button onclick="t03()">T03 Transition: remove durante transição + stale CSSStyleDeclaration</button>
+<button onclick="t04()">T04 Animation: currentTime negativo e além da duração</button>
+<button onclick="t05()">T05 animate(): KeyframeEffect em elemento desconectado</button>
+<button onclick="t06()">T06 getAnimations() em shadow DOM após remove host</button>
+<button onclick="t07()">T07 Animation.commitStyles() em nó removido</button>
+<button onclick="t08()">T08 CSS @keyframes: redefine regra durante animação ativa</button>
+<button onclick="t09()">T09 AnimationEvent: target removido no handler</button>
+<button onclick="t10()">T10 Transition em pseudo-elemento ::before</button>
+<button onclick="t11()">T11 animate() com Infinity iterations + cancel</button>
+<button onclick="t12()">T12 Staggered animations: remove elementos em sequência</button>
+<button onclick="t13()">T13 Animation.effect = null: troca de effect em runtime</button>
+<button onclick="t14()">T14 CSS animation-play-state toggle + remove</button>
+<button onclick="t15()">T15 Animation finish event: remove antes do finish</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html">← Index</a>
+<script>
+var L=document.getElementById('log');
+function log(m){L.textContent+=m+'\n';L.scrollTop=L.scrollHeight}
+function gc(){try{var a=[];for(var i=0;i<20;i++)a.push(new ArrayBuffer(2*1024*1024));a=null}catch(e){}}
+
+function mkStyle(css){ var s=document.createElement('style'); s.textContent=css; document.head.appendChild(s); return s; }
+
+function t01(){
+  log('[T01] animationend: remove elemento antes de disparar');
+  var s=mkStyle('@keyframes ae01{from{opacity:0}to{opacity:1}}.ae01{animation:ae01 0.1s forwards}');
+  var els=[];
+  var ended=0;
+  for(var i=0;i<10;i++){
+    var el=document.createElement('div');
+    el.className='ae01'; el.textContent='el'+i;
+    document.body.appendChild(el);
+    el.addEventListener('animationend',function(e){
+      ended++;
+      // Remove o próprio elemento NO animationend
+      if(e.target.parentNode) e.target.parentNode.removeChild(e.target);
+      gc();
+      // Acessa props após remoção no handler
+      log('  animationend: target.isConnected='+e.target.isConnected+' animName='+e.animationName);
+      try{ var ct=e.target.getAnimations(); log('  getAnimations pós-remove: '+ct.length); }catch(e2){ log('  exc: '+e2.name); }
+    });
+    els.push(el);
+  }
+  // Remove metade ANTES do animationend
+  setTimeout(function(){
+    els.forEach(function(el,i){ if(i%2===0 && el.parentNode) document.body.removeChild(el); });
+    gc();
+  },30);
+  setTimeout(function(){
+    // Limpa remanescentes
+    els.forEach(function(el){ if(el.parentNode) document.body.removeChild(el); });
+    document.head.removeChild(s);
+    log('[T01] done, ended: '+ended);
+  },300);
+}
+
+function t02(){
+  log('[T02] Web Animations API: play/pause em nó removido');
+  var host=document.createElement('div');
+  host.style.cssText='width:100px;height:100px;background:red';
+  document.body.appendChild(host);
+  var anim=host.animate(
+    [{transform:'translateX(0)',opacity:1},{transform:'translateX(200px)',opacity:0}],
+    {duration:2000,iterations:Infinity,easing:'linear'}
+  );
+  log('  playState: '+anim.playState+' currentTime: '+anim.currentTime);
+  // Remove o elemento durante animação
+  document.body.removeChild(host);
+  gc();
+  // Tenta play/pause/reverse no elemento removido
+  try{ anim.pause(); log('  pause pós-remove: ok, state='+anim.playState); }catch(e){ log('  pause exc: '+e.name); }
+  try{ anim.play(); log('  play pós-remove: ok, state='+anim.playState); }catch(e){ log('  play exc: '+e.name); }
+  try{ anim.reverse(); log('  reverse pós-remove: ok, state='+anim.playState); }catch(e){ log('  reverse exc: '+e.name); }
+  try{ log('  currentTime pós-remove: '+anim.currentTime); }catch(e){ log('  currentTime exc: '+e.name); }
+  try{ anim.currentTime=500; log('  set currentTime=500: ok'); }catch(e){ log('  set currentTime exc: '+e.name); }
+  try{ anim.finish(); log('  finish pós-remove: ok, state='+anim.playState); }catch(e){ log('  finish exc: '+e.name); }
+  try{ anim.cancel(); log('  cancel pós-remove: ok, state='+anim.playState); }catch(e){ log('  cancel exc: '+e.name); }
+  log('[T02] done');
+}
+
+function t03(){
+  log('[T03] Transition: remove durante transição + stale CSSStyleDeclaration');
+  var s=mkStyle('.tr03{transition:all 0.5s ease;width:50px;height:50px;background:blue;opacity:1}.tr03.go{width:200px;opacity:0;background:red}');
+  var els=[];
+  var staleStyles=[];
+  for(var i=0;i<10;i++){
+    var el=document.createElement('div');
+    el.className='tr03'; el.textContent=i;
+    document.body.appendChild(el);
+    staleStyles.push(window.getComputedStyle(el));
+    els.push(el);
+  }
+  document.body.offsetHeight;
+  // Inicia transição
+  els.forEach(function(el){ el.classList.add('go'); });
+  document.body.offsetHeight; // transição iniciada
+  // Remove DURANTE a transição
+  els.forEach(function(el,i){
+    if(i%2===0 && el.parentNode) document.body.removeChild(el);
+  });
+  gc();
+  // Acessa computed styles stale (de elementos removidos)
+  staleStyles.forEach(function(cs,i){
+    try{
+      var w=cs.width; var op=cs.opacity; var bg=cs.backgroundColor;
+      if(i<3) log('  stale['+i+']: w='+w+' op='+op);
+    }catch(e){ log('  stale['+i+'] exc: '+e.name); }
+  });
+  // Limpa
+  els.forEach(function(el){ if(el.parentNode) document.body.removeChild(el); });
+  document.head.removeChild(s);
+  log('[T03] done');
+}
+
+function t04(){
+  log('[T04] Animation: currentTime fora dos bounds (negativo, além, NaN)');
+  var host=document.createElement('div');
+  document.body.appendChild(host);
+  var anim=host.animate(
+    [{opacity:0},{opacity:1}],
+    {duration:1000,fill:'both',iterations:3}
+  );
+  anim.pause();
+  var cases=[
+    -1,          // negativo
+    -1000,       // muito negativo
+    0,           // início
+    500,         // meio
+    1000,        // fim de uma iteração
+    2500,        // meio da segunda iteração
+    3000,        // fim total
+    3500,        // além do fim (fill:both → clamp)
+    NaN,         // NaN
+    Infinity,    // Infinity
+    -Infinity,
+  ];
+  cases.forEach(function(t,i){
+    try{
+      anim.currentTime=t;
+      var ct=anim.currentTime;
+      var effect=anim.effect;
+      var progress=effect?effect.getComputedTiming().progress:null;
+      log('  currentTime='+t+' → '+ct+' progress='+progress);
+    }catch(e){ log('  case['+t+'] exc: '+e.name); }
+  });
+  if(host.parentNode) document.body.removeChild(host);
+  log('[T04] done');
+}
+
+function t05(){
+  log('[T05] animate(): KeyframeEffect em elemento desconectado');
+  // Cria elemento fora do DOM
+  var el=document.createElement('div');
+  el.style.cssText='width:50px;height:50px;background:green';
+  // NÃO insere no DOM
+  var anim=el.animate(
+    [{transform:'rotate(0deg)'},{transform:'rotate(360deg)'}],
+    {duration:1000,iterations:Infinity}
+  );
+  log('  anim em desconectado: playState='+anim.playState);
+  gc();
+  // Agora insere no DOM
+  document.body.appendChild(el);
+  document.body.offsetHeight;
+  log('  após inserção: playState='+anim.playState+' currentTime='+anim.currentTime);
+  // Remove de novo
+  document.body.removeChild(el);
+  gc();
+  log('  após 2ª remoção: playState='+anim.playState);
+  // Cria novo effect e substitui
+  try{
+    var newEffect=new KeyframeEffect(el,[{opacity:0},{opacity:1}],{duration:500});
+    anim.effect=newEffect;
+    log('  effect substituído: ok playState='+anim.playState);
+  }catch(e){ log('  effect exc: '+e.name); }
+  log('[T05] done');
+}
+
+function t06(){
+  log('[T06] getAnimations() em shadow DOM após remove host');
+  var s=mkStyle('@keyframes sd06{from{opacity:0}to{opacity:1}}.sa06{animation:sd06 2s infinite}');
+  var host=document.createElement('div');
+  document.body.appendChild(host);
+  var shadow=host.attachShadow({mode:'open'});
+  // Injeta style e elementos animados no shadow
+  var shadowStyle=document.createElement('style');
+  shadowStyle.textContent='@keyframes sd06i{from{transform:scale(1)}to{transform:scale(1.5)}}.sa06i{animation:sd06i 1s infinite}';
+  shadow.appendChild(shadowStyle);
+  var animEls=[];
+  for(var i=0;i<5;i++){
+    var el=document.createElement('div');
+    el.className='sa06i'; shadow.appendChild(el); animEls.push(el);
+  }
+  document.body.offsetHeight;
+  var anims=document.getAnimations({subtree:true});
+  log('  getAnimations subtree: '+anims.length);
+  var shadowAnims=animEls[0].getAnimations();
+  log('  el[0].getAnimations: '+shadowAnims.length);
+  // Remove o host
+  document.body.removeChild(host);
+  gc();
+  // getAnimations após remoção
+  try{ var a2=document.getAnimations({subtree:true}); log('  getAnimations pós-remove: '+a2.length); }catch(e){ log('  exc: '+e.name); }
+  // Animações dos elementos no shadow destruído
+  shadowAnims.forEach(function(a,i){
+    try{ log('  shadowAnim['+i+'] playState='+a.playState+' currentTime='+a.currentTime); }catch(e){ log('  exc['+i+']: '+e.name); }
+  });
+  document.head.removeChild(s);
+  log('[T06] done');
+}
+
+function t07(){
+  log('[T07] Animation.commitStyles() em nó removido');
+  var host=document.createElement('div');
+  host.style.cssText='width:100px;height:100px;background:blue';
+  document.body.appendChild(host);
+  var anim=host.animate(
+    [{width:'100px',opacity:1},{width:'300px',opacity:0.5}],
+    {duration:1000,fill:'both'}
+  );
+  anim.currentTime=500; // meio da animação
+  anim.pause();
+  document.body.offsetHeight;
+  // commitStyles com elemento conectado (deve funcionar)
+  try{ anim.commitStyles(); log('  commitStyles connected: ok style.width='+host.style.width); }catch(e){ log('  commitStyles exc: '+e.name); }
+  // Remove o elemento
+  document.body.removeChild(host);
+  gc();
+  // commitStyles em elemento removido
+  try{ anim.commitStyles(); log('  commitStyles pós-remove: ok'); }catch(e){ log('  commitStyles removed exc: '+e.name); }
+  // Cancela e tenta commitStyles
+  anim.cancel();
+  try{ anim.commitStyles(); log('  commitStyles após cancel: ok'); }catch(e){ log('  commitStyles cancelled exc: '+e.name); }
+  log('[T07] done');
+}
+
+function t08(){
+  log('[T08] CSS @keyframes: redefine regra durante animação ativa');
+  var s=mkStyle('@keyframes kf08{from{transform:translateX(0)}to{transform:translateX(100px)}}.animated08{animation:kf08 2s infinite linear}');
+  var el=document.createElement('div');
+  el.className='animated08'; el.style.cssText='width:50px;height:50px;background:purple';
+  document.body.appendChild(el);
+  document.body.offsetHeight;
+  var anim=el.getAnimations()[0];
+  log('  anim playState: '+(anim?anim.playState:'none'));
+  // Redefine os keyframes via CSSOM
+  var sheet=s.sheet;
+  try{
+    // Remove a regra @keyframes existente
+    for(var i=0;i<sheet.cssRules.length;i++){
+      if(sheet.cssRules[i].name==='kf08'){ sheet.deleteRule(i); break; }
+    }
+    // Insere nova regra @keyframes com frames diferentes
+    sheet.insertRule('@keyframes kf08{0%{transform:rotate(0deg);opacity:0}50%{transform:rotate(180deg);opacity:1}100%{transform:rotate(360deg);opacity:0}}',0);
+    document.body.offsetHeight;
+    var anims=el.getAnimations();
+    log('  anims após redefine: '+anims.length);
+    if(anims[0]) log('  playState: '+anims[0].playState);
+  }catch(e){ log('  redefine exc: '+e.name); }
+  // Remove elemento durante animação com keyframes redefinidos
+  document.body.removeChild(el);
+  gc();
+  document.head.removeChild(s);
+  log('[T08] done');
+}
+
+function t09(){
+  log('[T09] AnimationEvent (animationstart/end/iteration): target removido no handler');
+  var s=mkStyle('@keyframes ae09{from{left:0}to{left:50px}}.anim09{position:relative;animation:ae09 0.1s 3 forwards}');
+  var fired={start:0,iteration:0,end:0};
+  var el=document.createElement('div');
+  el.className='anim09'; el.style.cssText='width:20px;height:20px;background:orange';
+  document.body.appendChild(el);
+  el.addEventListener('animationstart',function(e){
+    fired.start++;
+    log('  animationstart: target.isConnected='+e.target.isConnected);
+  });
+  el.addEventListener('animationiteration',function(e){
+    fired.iteration++;
+    // Remove o target durante animationiteration
+    if(e.target.parentNode) e.target.parentNode.removeChild(e.target);
+    gc();
+    log('  animationiteration: target.isConnected='+e.target.isConnected+' elapsedTime='+e.elapsedTime.toFixed(2));
+  });
+  el.addEventListener('animationend',function(e){
+    fired.end++;
+    log('  animationend (deveria não disparar se removido): target.isConnected='+e.target.isConnected);
+  });
+  setTimeout(function(){
+    if(el.parentNode) document.body.removeChild(el);
+    document.head.removeChild(s);
+    log('[T09] done: start='+fired.start+' iteration='+fired.iteration+' end='+fired.end);
+  },600);
+}
+
+function t10(){
+  log('[T10] Transition em ::before pseudo-element');
+  var s=mkStyle('.tr10::before{content:"";display:block;width:20px;height:20px;background:red;transition:width 0.3s,background 0.3s}.tr10.go::before{width:200px;background:blue}');
+  var els=[];
+  for(var i=0;i<8;i++){
+    var el=document.createElement('div');
+    el.className='tr10'; document.body.appendChild(el); els.push(el);
+  }
+  document.body.offsetHeight;
+  var pseudoStyles=els.map(function(el){ return window.getComputedStyle(el,'::before'); });
+  // Dispara transição
+  els.forEach(function(el){ el.classList.add('go'); });
+  document.body.offsetHeight;
+  // Remove metade durante transição
+  els.forEach(function(el,i){ if(i%2===0 && el.parentNode) document.body.removeChild(el); });
+  gc();
+  // Acessa computed style de ::before de elementos removidos
+  pseudoStyles.forEach(function(cs,i){
+    try{ var w=cs.width; var bg=cs.backgroundColor; if(i<4) log('  pseudo['+i+']: w='+w+' bg='+bg.slice(0,20)); }catch(e){ log('  exc['+i+']: '+e.name); }
+  });
+  els.forEach(function(el){ if(el.parentNode) document.body.removeChild(el); });
+  document.head.removeChild(s);
+  log('[T10] done');
+}
+
+function t11(){
+  log('[T11] animate() com Infinity iterations + cancel/finish race');
+  var host=document.createElement('div');
+  host.style.cssText='width:50px;height:50px;background:cyan';
+  document.body.appendChild(host);
+  var anim=host.animate(
+    [{transform:'scale(1)'},{transform:'scale(2)'}],
+    {duration:500,iterations:Infinity,fill:'both'}
+  );
+  log('  playState: '+anim.playState);
+  // Tenta finish em animação Infinity (deve lançar exceção)
+  try{ anim.finish(); log('  finish Infinity: ok state='+anim.playState); }catch(e){ log('  finish Infinity exc: '+e.name+' (esperado)'); }
+  // Cancel funciona
+  try{
+    anim.play(); // retoma
+    anim.cancel();
+    log('  cancel: ok state='+anim.playState);
+  }catch(e){ log('  cancel exc: '+e.name); }
+  // Nova animação com iterations finito + finish
+  var anim2=host.animate(
+    [{opacity:1},{opacity:0}],
+    {duration:200,iterations:1,fill:'forwards'}
+  );
+  anim2.ready.then(function(){
+    anim2.finish();
+    log('  anim2 após finish: state='+anim2.playState+' currentTime='+anim2.currentTime);
+    // Remove elemento após finish
+    document.body.removeChild(host);
+    gc();
+    try{ log('  currentTime pós-remove: '+anim2.currentTime); }catch(e){ log('  exc: '+e.name); }
+    log('[T11] done');
+  }).catch(function(e){ log('[T11] ready exc: '+e.message); });
+}
+
+function t12(){
+  log('[T12] Staggered animations: remove elementos em sequência durante execução');
+  var s=mkStyle('@keyframes stagger12{from{transform:translateY(0);opacity:1}to{transform:translateY(50px);opacity:0}}.st12{animation:stagger12 0.5s both}');
+  var els=[];
+  for(var i=0;i<15;i++){
+    var el=document.createElement('div');
+    el.className='st12';
+    el.style.animationDelay=(i*0.03)+'s';
+    el.style.cssText+=';width:20px;height:20px;display:inline-block;background:hsl('+(i*24)+',80%,50%)';
+    document.body.appendChild(el);
+    els.push(el);
+  }
+  document.body.offsetHeight;
+  // Remove progressivamente durante as animações
+  var removeIdx=0;
+  var interval=setInterval(function(){
+    if(removeIdx>=els.length){ clearInterval(interval); return; }
+    var el=els[removeIdx++];
+    if(el.parentNode){
+      var anims=el.getAnimations();
+      document.body.removeChild(el);
+      gc();
+      // Acessa animações do elemento removido
+      anims.forEach(function(a){
+        try{ var ct=a.currentTime; }catch(e){}
+      });
+    }
+  },30);
+  setTimeout(function(){
+    clearInterval(interval);
+    els.forEach(function(el){ if(el.parentNode) document.body.removeChild(el); });
+    document.head.removeChild(s);
+    log('[T12] done');
+  },800);
+}
+
+function t13(){
+  log('[T13] Animation.effect = null: troca de effect em runtime');
+  var host=document.createElement('div');
+  host.style.cssText='width:50px;height:50px;background:lime';
+  document.body.appendChild(host);
+  var effect1=new KeyframeEffect(host,[{transform:'rotate(0deg)'},{transform:'rotate(360deg)'}],{duration:1000,iterations:Infinity});
+  var effect2=new KeyframeEffect(host,[{opacity:1},{opacity:0}],{duration:500,iterations:Infinity});
+  var anim=new Animation(effect1,document.timeline);
+  anim.play();
+  log('  effect1: playState='+anim.playState+' currentTime='+anim.currentTime);
+  // Troca o effect durante play
+  try{
+    anim.effect=effect2;
+    log('  effect2: playState='+anim.playState+' currentTime='+anim.currentTime);
+  }catch(e){ log('  effect swap exc: '+e.name); }
+  // Effect = null (remove o efeito)
+  try{
+    anim.effect=null;
+    log('  effect=null: playState='+anim.playState);
+  }catch(e){ log('  effect null exc: '+e.name); }
+  // Restaura um effect em elemento removido
+  document.body.removeChild(host);
+  gc();
+  try{
+    anim.effect=effect1;
+    log('  effect restaurado em removido: ok');
+    anim.play();
+    log('  play após restore: '+anim.playState);
+  }catch(e){ log('  restore exc: '+e.name); }
+  anim.cancel();
+  log('[T13] done');
+}
+
+function t14(){
+  log('[T14] CSS animation-play-state toggle + remove mid-toggle');
+  var s=mkStyle('@keyframes aps14{from{left:0}to{left:100px}}.aps14{position:relative;animation:aps14 1s linear infinite}');
+  var els=[];
+  for(var i=0;i<8;i++){
+    var el=document.createElement('div');
+    el.className='aps14'; el.style.cssText='width:20px;height:20px;display:inline-block;background:navy';
+    document.body.appendChild(el); els.push(el);
+  }
+  document.body.offsetHeight;
+  // Toggle play-state em loop
+  for(var round=0;round<10;round++){
+    var paused=round%2===0?'paused':'running';
+    els.forEach(function(el){ el.style.animationPlayState=paused; });
+    document.body.offsetHeight;
+    if(round===4){
+      // Remove durante toggle
+      els.forEach(function(el,i){ if(i%2===0 && el.parentNode) document.body.removeChild(el); });
+      gc();
+    }
+  }
+  // Acessa animation play state de elementos removidos
+  els.forEach(function(el,i){
+    try{
+      var anims=el.getAnimations();
+      var ps=el.style.animationPlayState;
+      if(i<4) log('  el['+i+'] connected='+el.isConnected+' playState='+ps+' anims='+anims.length);
+    }catch(e){ log('  exc['+i+']: '+e.name); }
+  });
+  els.forEach(function(el){ if(el.parentNode) document.body.removeChild(el); });
+  document.head.removeChild(s);
+  log('[T14] done');
+}
+
+function t15(){
+  log('[T15] Animation finish/cancel events: remove antes do evento');
+  var host=document.createElement('div');
+  host.style.cssText='width:50px;height:50px;background:gold';
+  document.body.appendChild(host);
+  var fired={finish:0,cancel:0,remove:0};
+  var anim=host.animate(
+    [{transform:'translateX(0)'},{transform:'translateX(100px)'}],
+    {duration:200,iterations:1,fill:'forwards'}
+  );
+  anim.addEventListener('finish',function(e){
+    fired.finish++;
+    log('  finish event: target.isConnected='+(anim.effect&&anim.effect.target?anim.effect.target.isConnected:'N/A'));
+    // Remove durante o finish event
+    if(host.parentNode) document.body.removeChild(host);
+    gc();
+    fired.remove++;
+  });
+  anim.addEventListener('cancel',function(e){
+    fired.cancel++;
+    log('  cancel event');
+  });
+  // Segunda animação: cancel antes do finish
+  var host2=document.createElement('div');
+  document.body.appendChild(host2);
+  var anim2=host2.animate([{opacity:1},{opacity:0}],{duration:200});
+  anim2.addEventListener('finish',function(){ log('  anim2 finish (não devia disparar)'); });
+  // Cancela antes de terminar
+  setTimeout(function(){ anim2.cancel(); document.body.removeChild(host2); gc(); },50);
+  setTimeout(function(){
+    log('  eventos: '+JSON.stringify(fired));
+    if(host.parentNode) document.body.removeChild(host);
+    log('[T15] done');
+  },500);
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 03 — CSS Animations / Transitions / Keyframes ===');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){ if(i>=tests.length){log('=== FIM ===');return;} try{tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);} i++; setTimeout(next,500); }
+  next();
+}
+</script>
+</body>
+</html>
