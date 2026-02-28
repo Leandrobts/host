@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>05 — Web APIs / Observers / Async</title></head>
+<body>
+<h3>05 — Web APIs / Observers / Async</h3>
+<div id="log" style="height:300px;overflow:auto;border:1px solid #999;padding:4px;font:11px monospace;white-space:pre"></div>
+<br>
+<button onclick="t01()">T01 IntersectionObserver remove target no callback</button>
+<button onclick="t02()">T02 ResizeObserver remove target no callback</button>
+<button onclick="t03()">T03 Web Animations: cancel + acesso posterior</button>
+<button onclick="t04()">T04 CustomEvent em elemento removido mid-chain</button>
+<button onclick="t05()">T05 Promise resolve após elemento removido</button>
+<button onclick="t06()">T06 Generator: GC entre yields com DOM refs</button>
+<button onclick="t07()">T07 Async/Await: elemento removido entre awaits</button>
+<button onclick="t08()">T08 WeakRef: target coletado + deref</button>
+<button onclick="t09()">T09 FinalizationRegistry callback com DOM</button>
+<button onclick="t10()">T10 Proxy: GC do target durante trap</button>
+<button onclick="t11()">T11 MessageChannel + nó DOM removido</button>
+<button onclick="t12()">T12 queueMicrotask + remove entre tarefas</button>
+<button onclick="t13()">T13 requestAnimationFrame + remove durante frame</button>
+<button onclick="t14()">T14 EventTarget: removeEventListener durante dispatch</button>
+<button onclick="t15()">T15 AbortController + fetch/event cascade</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html">← Index</a>
+
+<script>
+var L=document.getElementById('log');
+function log(m){L.textContent+=m+'\n';L.scrollTop=L.scrollHeight}
+function gc(){try{var a=[];for(var i=0;i<20;i++)a.push(new ArrayBuffer(2*1024*1024));a=null}catch(e){}}
+
+function t01(){
+  log('[T01] IntersectionObserver: remove target dentro do callback');
+  var host=document.createElement('div');
+  host.style.cssText='height:200px;overflow:auto;position:fixed;bottom:-300px;left:0;width:300px';
+  document.body.appendChild(host);
+  var targets=[];
+  for(var i=0;i<20;i++){
+    var el=document.createElement('div');
+    el.style.height='60px';
+    host.appendChild(el);
+    targets.push(el);
+  }
+  var cbCount=0;
+  var obs=new IntersectionObserver(function(entries){
+    cbCount++;
+    entries.forEach(function(entry){
+      // Remove o target DENTRO do callback + GC
+      if(entry.target.parentNode) entry.target.parentNode.removeChild(entry.target);
+      gc();
+      // Acessa propriedades da entry após remoção do target
+      try{
+        var ratio=entry.intersectionRatio;
+        var isInt=entry.isIntersecting;
+        var rect=entry.boundingClientRect;
+        var target=entry.target;
+        log('  entry target conectado: '+target.isConnected+' ratio: '+ratio.toFixed(2));
+      }catch(e){ log('  exc in callback: '+e.name); }
+    });
+  },{root:host,threshold:[0,0.5,1.0]});
+  targets.forEach(function(t){ obs.observe(t); });
+  // Scroll para disparar intersections
+  host.scrollTop=0;
+  setTimeout(function(){
+    host.scrollTop=300;
+    setTimeout(function(){
+      obs.disconnect();
+      if(host.parentNode) document.body.removeChild(host);
+      log('[T01] done, callbacks: '+cbCount);
+    },400);
+  },100);
+}
+
+function t02(){
+  log('[T02] ResizeObserver: remove target e resize no callback');
+  var host=document.createElement('div');
+  document.body.appendChild(host);
+  var els=[];
+  for(var i=0;i<10;i++){
+    var el=document.createElement('div');
+    el.style.cssText='width:50px;height:30px';
+    host.appendChild(el);
+    els.push(el);
+  }
+  var cbCount=0;
+  var obs=new ResizeObserver(function(entries){
+    cbCount++;
+    entries.forEach(function(entry){
+      try{
+        var w=entry.contentRect.width;
+        var h=entry.contentRect.height;
+        var target=entry.target;
+        // Altera tamanho no callback (dispara novo resize)
+        if(w<200){ target.style.width=(w+10)+'px'; }
+        // Remove alguns targets dentro do callback
+        if(h<60 && target.parentNode){ host.removeChild(target); gc(); }
+        log('  resize: '+w.toFixed(0)+'x'+h.toFixed(0)+' connected:'+target.isConnected);
+      }catch(e){ log('  exc: '+e.name); }
+    });
+  });
+  els.forEach(function(el){ obs.observe(el); });
+  setTimeout(function(){
+    obs.disconnect();
+    if(host.parentNode) document.body.removeChild(host);
+    log('[T02] done, callbacks: '+cbCount);
+  },600);
+}
+
+function t03(){
+  log('[T03] Web Animations: cancel/pause + acesso a currentTime');
+  var host=document.createElement('div');
+  document.body.appendChild(host);
+  var anims=[];
+  for(var i=0;i<20;i++){
+    var el=document.createElement('div');
+    el.style.cssText='width:50px;height:50px;background:red';
+    host.appendChild(el);
+    var a=el.animate([
+      {transform:'translateX(0)',opacity:1},
+      {transform:'translateX(100px)',opacity:0}
+    ],{duration:2000,iterations:Infinity});
+    anims.push({el:el,anim:a});
+  }
+  document.body.offsetHeight;
+  setTimeout(function(){
+    // Remove elementos enquanto animações correm
+    anims.forEach(function(r,i){
+      if(i%2===0 && r.el.parentNode) host.removeChild(r.el);
+    });
+    gc();
+    // Acessa animações de elementos removidos
+    anims.forEach(function(r,i){
+      try{
+        var t=r.anim.currentTime;
+        var s=r.anim.playState;
+        var effect=r.anim.effect;
+        if(effect){ var timing=effect.getTiming(); }
+        r.anim.pause();
+        r.anim.cancel();
+        log('  anim['+i+'] state='+s+' time='+t);
+      }catch(e){ log('  anim['+i+'] exc: '+e.name); }
+    });
+    if(host.parentNode) document.body.removeChild(host);
+    log('[T03] done');
+  },150);
+}
+
+function t04(){
+  log('[T04] CustomEvent chain: cada handler remove o próximo elemento');
+  var elements=[];
+  for(var i=0;i<15;i++){
+    var el=document.createElement('div');
+    el.textContent='el'+i;
+    document.body.appendChild(el);
+    elements.push(el);
+  }
+  var fired=0;
+  elements.forEach(function(el,i){
+    el.addEventListener('chain-event',function(e){
+      fired++;
+      // Remove o elemento SEGUINTE dentro do handler
+      var next=elements[i+1];
+      if(next && next.parentNode) next.parentNode.removeChild(next);
+      gc();
+      // Dispara o evento no próximo (que pode já ter sido removido)
+      if(next){
+        try{
+          next.dispatchEvent(new CustomEvent('chain-event',{detail:fired}));
+        }catch(e2){ log('  dispatch em removido: '+e2.name); }
+      }
+      // Acessa currentTarget pós-handler (pode estar stale)
+      var ct=e.currentTarget;
+      if(ct) log('  handler '+i+': target conectado='+ct.isConnected);
+    });
+  });
+  // Dispara na raiz
+  if(elements[0].parentNode) elements[0].dispatchEvent(new CustomEvent('chain-event',{detail:0}));
+  setTimeout(function(){
+    elements.forEach(function(el){ if(el.parentNode) el.parentNode.removeChild(el); });
+    log('[T04] done, fired: '+fired);
+  },100);
+}
+
+function t05(){
+  log('[T05] Promise resolve: elemento removido antes de .then()');
+  var results=[];
+  for(var i=0;i<20;i++){
+    (function(idx){
+      var el=document.createElement('div');
+      el.textContent='p'+idx;
+      document.body.appendChild(el);
+      var p=new Promise(function(resolve){
+        // Resolve imediatamente com referência ao elemento
+        resolve({el:el,idx:idx});
+      });
+      // Remove o elemento ANTES de .then() ser executado
+      document.body.removeChild(el);
+      if(idx%3===0) gc();
+      p.then(function(data){
+        try{
+          // Acessa elemento que foi removido antes desta callback
+          var isConn=data.el.isConnected;
+          var txt=data.el.textContent;
+          var cs=window.getComputedStyle(data.el);
+          var w=cs.width;
+          results.push({idx:data.idx,connected:isConn});
+        }catch(e){ log('  promise['+idx+'] exc: '+e.name); }
+      });
+    })(i);
+  }
+  setTimeout(function(){
+    log('  promises resolvidas: '+results.length);
+    var connected=results.filter(function(r){ return r.connected; }).length;
+    log('  ainda conectados: '+connected+'/'+results.length);
+    log('[T05] done');
+  },200);
+}
+
+function t06(){
+  log('[T06] Generator: DOM refs entre yields com GC');
+  function* domGen(){
+    var nodes=[];
+    for(var i=0;i<20;i++){
+      var el=document.createElement('div');
+      el.textContent='gen'+i;
+      document.body.appendChild(el);
+      nodes.push(el);
+      yield {el:el,idx:i,nodes_so_far:nodes.length};
+    }
+    // Remove todos dentro do generator
+    nodes.forEach(function(n){ if(n.parentNode) document.body.removeChild(n); });
+    gc();
+    // Ainda tenta acessar os nós removidos dentro do generator
+    for(var j=0;j<nodes.length;j++){
+      yield {el:nodes[j],idx:j+100,removed:true};
+    }
+  }
+  var gen=domGen();
+  var result, count=0;
+  while(!(result=gen.next()).done && count<50){
+    count++;
+    var val=result.value;
+    try{
+      var conn=val.el.isConnected;
+      var tag=val.el.tagName;
+      if(count%5===0){
+        gc();
+        log('  yield['+count+']: idx='+val.idx+' connected='+conn);
+      }
+    }catch(e){ log('  yield['+count+'] exc: '+e.name); }
+  }
+  log('[T06] done, yields: '+count);
+}
+
+function t07(){
+  log('[T07] Async/Await: elemento removido entre awaits');
+  async function asyncTest(){
+    var el=document.createElement('div');
+    el.textContent='async-test';
+    document.body.appendChild(el);
+    var cs1=window.getComputedStyle(el);
+    log('  before await: connected='+el.isConnected+' width='+cs1.width);
+    await new Promise(function(r){ setTimeout(r,10); });
+    // Remove o elemento depois do primeiro await
+    if(el.parentNode) document.body.removeChild(el);
+    gc();
+    await new Promise(function(r){ setTimeout(r,10); });
+    // Acessa o elemento após segundo await (removido e pós-GC)
+    try{
+      var conn=el.isConnected;
+      var cs2=window.getComputedStyle(el);
+      log('  after await+remove: connected='+conn+' width='+cs2.width);
+    }catch(e){ log('  async exc: '+e.name); }
+    await new Promise(function(r){ setTimeout(r,10); });
+    // Tenta reinserir
+    try{
+      document.body.appendChild(el);
+      log('  reinserted: connected='+el.isConnected);
+      var cs3=window.getComputedStyle(el);
+      log('  reinserted width: '+cs3.width);
+      document.body.removeChild(el);
+    }catch(e){ log('  reinsert exc: '+e.name); }
+    log('[T07] done');
+  }
+  asyncTest().catch(function(e){ log('[T07] async crash: '+e.name+' '+e.message); });
+}
+
+function t08(){
+  log('[T08] WeakRef: target DOM node coletado + deref');
+  var refs=[];
+  for(var i=0;i<20;i++){
+    (function(){
+      var el=document.createElement('div');
+      el.textContent='weakref'+i;
+      document.body.appendChild(el);
+      var wr=new WeakRef(el);
+      document.body.removeChild(el);
+      refs.push(wr);
+    })();
+  }
+  // GC agressivo para coletar os elementos
+  gc(); gc(); gc();
+  var alive=0, dead=0;
+  refs.forEach(function(wr,i){
+    try{
+      var el=wr.deref();
+      if(el){
+        alive++;
+        // Tenta acessar o elemento (pode estar coletado mas ref ainda viva)
+        var tag=el.tagName;
+        var txt=el.textContent;
+        var cs=window.getComputedStyle(el);
+      } else { dead++; }
+    }catch(e){ log('  deref['+i+'] exc: '+e.name); }
+  });
+  log('  WeakRef: alive='+alive+' dead='+dead);
+  log('[T08] done');
+}
+
+function t09(){
+  log('[T09] FinalizationRegistry: callback com referências DOM');
+  if(typeof FinalizationRegistry==='undefined'){ log('  FinalizationRegistry não disponível'); log('[T09] done'); return; }
+  var callbackFired=0;
+  var reg=new FinalizationRegistry(function(heldValue){
+    callbackFired++;
+    log('  finalizer fired: '+heldValue);
+    // Tenta criar e manipular DOM dentro do finalizer
+    try{
+      var el=document.createElement('div');
+      el.textContent='from-finalizer';
+      document.body.appendChild(el);
+      var cs=window.getComputedStyle(el);
+      document.body.removeChild(el);
+    }catch(e){ log('  finalizer DOM exc: '+e.name); }
+  });
+  // Registra elementos que serão coletados
+  for(var i=0;i<10;i++){
+    (function(idx){
+      var el=document.createElement('div');
+      el.textContent='target'+idx;
+      document.body.appendChild(el);
+      reg.register(el,'held-value-'+idx);
+      document.body.removeChild(el);
+    })(i);
+  }
+  gc(); gc();
+  setTimeout(function(){
+    log('  finalizers disparados: '+callbackFired+' (depende do GC)');
+    log('[T09] done');
+  },500);
+}
+
+function t10(){
+  log('[T10] Proxy: GC do target + acesso via Proxy');
+  var proxies=[];
+  for(var i=0;i<20;i++){
+    (function(){
+      var target={value:i,el:null};
+      var el=document.createElement('div');
+      el.textContent='proxy'+i;
+      target.el=el;
+      document.body.appendChild(el);
+      var proxy=new Proxy(target,{
+        get:function(t,prop){
+          gc(); // GC durante every trap
+          return t[prop];
+        },
+        set:function(t,prop,val){
+          gc();
+          t[prop]=val;
+          return true;
+        }
+      });
+      // Remove o el e null o target ref
+      document.body.removeChild(el);
+      target.el=null;
+      proxies.push({proxy:proxy,target:target});
+    })();
+  }
+  gc(); gc();
+  proxies.forEach(function(r,i){
+    try{
+      var v=r.proxy.value; // get trap → GC
+      r.proxy.value=v+1;   // set trap → GC
+      var el=r.proxy.el;   // deve ser null
+      log('  proxy['+i+'] value: '+r.proxy.value+' el: '+el);
+    }catch(e){ log('  proxy['+i+'] exc: '+e.name); }
+  });
+  log('[T10] done');
+}
+
+function t11(){
+  log('[T11] MessageChannel: DOM node na mensagem, removido antes de receber');
+  var ch=new MessageChannel();
+  var received=[];
+  ch.port2.onmessage=function(e){
+    received.push(e.data);
+    try{
+      var el=e.data.el;
+      var conn=el?el.isConnected:null;
+      log('  received: idx='+e.data.idx+' el connected='+conn);
+      if(el){ var cs=window.getComputedStyle(el); }
+    }catch(e2){ log('  message exc: '+e2.name); }
+  };
+  ch.port2.start();
+  // Envia mensagens com refs a elementos, remove antes da entrega
+  for(var i=0;i<10;i++){
+    var el=document.createElement('div');
+    el.textContent='msg'+i;
+    document.body.appendChild(el);
+    ch.port1.postMessage({idx:i, el:el}); // structured clone (el não é clonable → erro)
+    document.body.removeChild(el);
+    gc();
+  }
+  setTimeout(function(){
+    log('  recebidas: '+received.length);
+    ch.port1.close(); ch.port2.close();
+    log('[T11] done');
+  },200);
+}
+
+function t12(){
+  log('[T12] queueMicrotask: DOM remove entre microtasks');
+  var el=document.createElement('div');
+  el.textContent='microtask-target';
+  document.body.appendChild(el);
+  var order=[];
+  // Enfileira microtasks que acessam o elemento
+  queueMicrotask(function(){
+    order.push('m1');
+    log('  m1: connected='+el.isConnected+' tag='+el.tagName);
+  });
+  // Remove entre microtasks (vai acontecer depois de todas as microtasks desta tarefa)
+  if(el.parentNode) document.body.removeChild(el);
+  gc();
+  queueMicrotask(function(){
+    order.push('m2');
+    log('  m2: connected='+el.isConnected);
+    // Enfileira mais uma
+    queueMicrotask(function(){
+      order.push('m3');
+      log('  m3: connected='+el.isConnected);
+      var cs=window.getComputedStyle(el);
+      log('  m3 computed display: '+cs.display);
+      log('[T12] done, order: '+order.join('→'));
+    });
+  });
+}
+
+function t13(){
+  log('[T13] requestAnimationFrame: remove elemento DURANTE o frame callback');
+  var host=document.createElement('div');
+  document.body.appendChild(host);
+  var els=[];
+  for(var i=0;i<10;i++){
+    var el=document.createElement('div');
+    el.style.cssText='width:'+i*10+'px;height:10px;background:red';
+    host.appendChild(el);
+    els.push(el);
+  }
+  var frameCount=0;
+  function frame(timestamp){
+    frameCount++;
+    if(frameCount>5){ 
+      if(host.parentNode) document.body.removeChild(host);
+      log('[T13] done, frames: '+frameCount);
+      return;
+    }
+    // Remove elemento no frame
+    if(els[frameCount-1] && els[frameCount-1].parentNode){
+      host.removeChild(els[frameCount-1]);
+    }
+    gc();
+    // Acessa layout de elementos restantes (força reflow no frame)
+    els.forEach(function(el){
+      try{ var w=el.offsetWidth; }catch(e2){}
+    });
+    log('  frame '+frameCount+': children='+host.children.length);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+function t14(){
+  log('[T14] removeEventListener do listener DURANTE o próprio dispatch');
+  var el=document.createElement('div');
+  el.textContent='rmeoveListener-test';
+  document.body.appendChild(el);
+  var count=0;
+  function handler(e){
+    count++;
+    // Remove a si mesmo durante o dispatch
+    el.removeEventListener('test-ev',handler);
+    log('  handler chamado: count='+count+' (deve ser apenas 1)');
+    // Dispara novamente (handler já removido, não deve re-disparar)
+    el.dispatchEvent(new CustomEvent('test-ev'));
+    log('  re-dispatch count: '+count);
+  }
+  el.addEventListener('test-ev',handler);
+  el.dispatchEvent(new CustomEvent('test-ev'));
+  log('  final count: '+count);
+  // Adiciona múltiplos listeners que se removem
+  var handlers=[];
+  var counts=[];
+  for(var i=0;i<5;i++){
+    (function(idx){
+      var h=function(e){ counts[idx]=(counts[idx]||0)+1; el.removeEventListener('multi-ev',h); };
+      handlers.push(h);
+      counts.push(0);
+      el.addEventListener('multi-ev',h);
+    })(i);
+  }
+  el.dispatchEvent(new CustomEvent('multi-ev'));
+  el.dispatchEvent(new CustomEvent('multi-ev')); // segunda dispara com listeners já removidos
+  log('  multi-ev counts: '+counts.join(','));
+  if(el.parentNode) document.body.removeChild(el);
+  log('[T14] done');
+}
+
+function t15(){
+  log('[T15] AbortController: abort em cascata com listeners');
+  var controllers=[];
+  var signals=[];
+  for(var i=0;i<10;i++){
+    var ctrl=new AbortController();
+    controllers.push(ctrl);
+    signals.push(ctrl.signal);
+  }
+  var el=document.createElement('div');
+  document.body.appendChild(el);
+  var abortCount=0;
+  // Adiciona listeners de abort que modificam o DOM
+  signals.forEach(function(sig,i){
+    sig.addEventListener('abort',function(){
+      abortCount++;
+      // Remove o elemento no abort callback
+      if(i===3 && el.parentNode) document.body.removeChild(el);
+      gc();
+      // Acessa o sinal abortado
+      log('  signal['+i+'] aborted='+sig.aborted+' el connected='+el.isConnected);
+      // Tenta recriar listener em sinal já abortado
+      try{
+        sig.addEventListener('abort',function(){ log('  nested abort listener on already-aborted'); });
+      }catch(e2){ log('  nested listener exc: '+e2.name); }
+    },{signal:sig}); // once via signal = auto-remove após abort
+  });
+  // Aborta todos
+  controllers.forEach(function(c,i){
+    setTimeout(function(){ c.abort('reason-'+i); },i*20);
+  });
+  setTimeout(function(){
+    log('  total aborts: '+abortCount);
+    if(el.parentNode) document.body.removeChild(el);
+    log('[T15] done');
+  },400);
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== RODANDO TODOS OS TESTES WEB APIs ===');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){
+    if(i>=tests.length){ log('=== FIM ==='); return; }
+    try{ tests[i](); }catch(e){ log('CRASH T'+(i<9?'0':'')+(i+1)+': '+e.name+' — '+e.message); }
+    i++; setTimeout(next,300);
+  }
+  next();
+}
+</script>
+</body>
+</html>

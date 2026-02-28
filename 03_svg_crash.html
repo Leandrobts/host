@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>03 — SVG Internals</title></head>
+<body>
+<h3>03 — SVG Internals</h3>
+<div id="log" style="height:300px;overflow:auto;border:1px solid #999;padding:4px;font:11px monospace;white-space:pre"></div>
+<br>
+<button onclick="t01()">T01 SVG use + symbol removido</button>
+<button onclick="t02()">T02 SVG filter feImage src removido</button>
+<button onclick="t03()">T03 SVG gradient + shape remove</button>
+<button onclick="t04()">T04 SVG marker + path remove</button>
+<button onclick="t05()">T05 SVG SMIL animate + element remove</button>
+<button onclick="t06()">T06 SVG textPath + path removido</button>
+<button onclick="t07()">T07 SVG mask + masked element remove</button>
+<button onclick="t08()">T08 SVG clipPath pós-remove do clip</button>
+<button onclick="t09()">T09 SVG foreignObject + DOM mutation</button>
+<button onclick="t10()">T10 SVG pattern + reference remove</button>
+<button onclick="t11()">T11 SVGAnimatedLength stale access</button>
+<button onclick="t12()">T12 SVG getScreenCTM pós-remove</button>
+<button onclick="t13()">T13 SVG getBBox em elemento fora do DOM</button>
+<button onclick="t14()">T14 SVG nested use (self-reference)</button>
+<button onclick="t15()">T15 SVG feComposite referência circular</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html">← Index</a>
+
+<script>
+var L=document.getElementById('log');
+function log(m){L.textContent+=m+'\n';L.scrollTop=L.scrollHeight}
+function gc(){try{var a=[];for(var i=0;i<20;i++)a.push(new ArrayBuffer(2*1024*1024));a=null}catch(e){}}
+var NS='http://www.w3.org/2000/svg';
+function mkSVG(w,h){ var s=document.createElementNS(NS,'svg'); s.setAttribute('width',w||200); s.setAttribute('height',h||200); return s; }
+function mkEl(tag,attrs){ var el=document.createElementNS(NS,tag); Object.keys(attrs||{}).forEach(function(k){ el.setAttribute(k,attrs[k]); }); return el; }
+
+function t01(){
+  log('[T01] SVG <use> referenciando <symbol> depois de removido');
+  var svg=mkSVG(); document.body.appendChild(svg);
+  var defs=mkEl('defs'); svg.appendChild(defs);
+  var sym=mkEl('symbol',{id:'sym01',viewBox:'0 0 10 10'});
+  var circ=mkEl('circle',{cx:5,cy:5,r:5,fill:'red'}); sym.appendChild(circ);
+  defs.appendChild(sym);
+  var uses=[];
+  for(var i=0;i<15;i++){
+    var u=mkEl('use',{href:'#sym01',x:i*12,y:0}); svg.appendChild(u); uses.push(u);
+  }
+  svg.getBoundingClientRect();
+  // Remove o symbol alvo
+  defs.removeChild(sym);
+  svg.getBoundingClientRect(); // re-render sem o symbol
+  gc();
+  // Tenta getBBox nos <use> com target removido
+  uses.forEach(function(u,i){
+    try{ var bb=u.getBBox(); log('  use['+i+'] bbox: '+bb.width+'x'+bb.height); }
+    catch(e){ log('  use['+i+'] getBBox exc: '+e.name); }
+  });
+  document.body.removeChild(svg);
+  log('[T01] done');
+}
+
+function t02(){
+  log('[T02] SVG feImage referenciando elemento externo removido');
+  var svg=mkSVG(); document.body.appendChild(svg);
+  var defs=mkEl('defs'); svg.appendChild(defs);
+  var filter=mkEl('filter',{id:'f02',x:0,y:0,width:'100%',height:'100%'});
+  var feImg=mkEl('feImage',{result:'img',preserveAspectRatio:'none'});
+  // Referencia um elemento SVG pelo ID
+  feImg.setAttribute('href','#source02');
+  filter.appendChild(feImg);
+  defs.appendChild(filter);
+  // Cria o elemento referenciado
+  var source=mkEl('rect',{id:'source02',width:50,height:50,fill:'blue'});
+  svg.appendChild(source);
+  var rect=mkEl('rect',{width:100,height:100,filter:'url(#f02)'}); svg.appendChild(rect);
+  svg.getBoundingClientRect();
+  // Remove o elemento referenciado pelo feImage
+  svg.removeChild(source);
+  svg.getBoundingClientRect();
+  gc();
+  log('  rendered sem source: ok');
+  document.body.removeChild(svg);
+  log('[T02] done');
+}
+
+function t03(){
+  log('[T03] SVG gradient referenciado por shapes após remove do gradient');
+  var svg=mkSVG(300,100); document.body.appendChild(svg);
+  var defs=mkEl('defs'); svg.appendChild(defs);
+  var grad=mkEl('linearGradient',{id:'g03',x1:'0%',y1:'0%',x2:'100%',y2:'0%'});
+  var s1=mkEl('stop',{offset:'0%','stop-color':'red'}); grad.appendChild(s1);
+  var s2=mkEl('stop',{offset:'100%','stop-color':'blue'}); grad.appendChild(s2);
+  defs.appendChild(grad);
+  var shapes=[];
+  for(var i=0;i<10;i++){
+    var r=mkEl('rect',{x:i*25,y:10,width:24,height:80,fill:'url(#g03)'}); svg.appendChild(r); shapes.push(r);
+  }
+  svg.getBoundingClientRect();
+  // Remove o gradient
+  defs.removeChild(grad);
+  svg.getBoundingClientRect();
+  gc();
+  // Tenta getPresentationAttribute e acessar fill nas shapes
+  shapes.forEach(function(r,i){
+    try{ var fill=r.getAttribute('fill'); var bb=r.getBBox(); }catch(e){ log('  exc['+i+']: '+e.name); }
+  });
+  document.body.removeChild(svg);
+  log('[T03] done');
+}
+
+function t04(){
+  log('[T04] SVG marker em path — remove o marker durante rendering');
+  var svg=mkSVG(300,200); document.body.appendChild(svg);
+  var defs=mkEl('defs'); svg.appendChild(defs);
+  var marker=mkEl('marker',{id:'m04',markerWidth:10,markerHeight:10,refX:5,refY:5,orient:'auto'});
+  var mcirc=mkEl('circle',{cx:5,cy:5,r:4,fill:'green'}); marker.appendChild(mcirc); defs.appendChild(marker);
+  var paths=[];
+  for(var i=0;i<8;i++){
+    var p=mkEl('path',{d:'M 10,'+(i*20)+' L 290,'+(i*20),stroke:'black','stroke-width':2,'marker-start':'url(#m04)','marker-end':'url(#m04)'}); svg.appendChild(p); paths.push(p);
+  }
+  svg.getBoundingClientRect();
+  // Remove o marker
+  defs.removeChild(marker);
+  svg.getBoundingClientRect();
+  gc();
+  paths.forEach(function(p,i){
+    try{ var len=p.getTotalLength(); var pt=p.getPointAtLength(len/2); log('  path['+i+'] midpoint: '+pt.x.toFixed(1)+','+pt.y.toFixed(1)); }
+    catch(e){ log('  exc['+i+']: '+e.name); }
+  });
+  document.body.removeChild(svg);
+  log('[T04] done');
+}
+
+function t05(){
+  log('[T05] SVG SMIL animate + element removido durante animação');
+  var svg=mkSVG(200,200); document.body.appendChild(svg);
+  var rects=[];
+  for(var i=0;i<8;i++){
+    var r=mkEl('rect',{x:i*20,y:0,width:18,height:50,fill:'hsl('+(i*45)+',70%,50%)'}); svg.appendChild(r);
+    var anim=mkEl('animate',{attributeName:'y',from:0,to:150,dur:'2s',repeatCount:'indefinite'}); r.appendChild(anim);
+    rects.push(r);
+  }
+  svg.getBoundingClientRect();
+  // Remove rects durante animação SMIL
+  setTimeout(function(){
+    rects.forEach(function(r,i){
+      if(i%2===0 && r.parentNode) svg.removeChild(r);
+    });
+    gc();
+    // Acessa os removidos
+    rects.forEach(function(r,i){
+      try{ var anims=r.getAnimations(); log('  rect['+i+'] anims: '+anims.length); }
+      catch(e){ log('  exc['+i+']: '+e.name); }
+    });
+    if(svg.parentNode) document.body.removeChild(svg);
+    log('[T05] done');
+  },100);
+  log('[T05] aguardando 100ms...');
+}
+
+function t06(){
+  log('[T06] SVG <textPath> referenciando <path> removido');
+  var svg=mkSVG(300,100); document.body.appendChild(svg);
+  var defs=mkEl('defs'); svg.appendChild(defs);
+  var path=mkEl('path',{id:'tp06',d:'M 10,50 Q 150,10 290,50'}); defs.appendChild(path);
+  var text=mkEl('text',{}); svg.appendChild(text);
+  var tp=mkEl('textPath',{href:'#tp06'}); tp.textContent='SVG textPath test string here!'; text.appendChild(tp);
+  svg.getBoundingClientRect();
+  // Remove o path referenciado
+  defs.removeChild(path);
+  svg.getBoundingClientRect();
+  gc();
+  try{
+    var len=tp.getComputedTextLength();
+    log('  textPath getComputedTextLength: '+len);
+    var start=tp.getStartPositionOfChar(0);
+    log('  startPos: '+start.x.toFixed(1)+','+start.y.toFixed(1));
+  }catch(e){ log('  exc: '+e.name); }
+  document.body.removeChild(svg);
+  log('[T06] done');
+}
+
+function t07(){
+  log('[T07] SVG mask + masked element removido');
+  var svg=mkSVG(200,200); document.body.appendChild(svg);
+  var defs=mkEl('defs'); svg.appendChild(defs);
+  var mask=mkEl('mask',{id:'mask07',maskUnits:'objectBoundingBox'});
+  var mr=mkEl('rect',{x:0,y:0,width:1,height:1,fill:'white'}); mask.appendChild(mr);
+  var mc=mkEl('circle',{cx:0.5,cy:0.5,r:0.4,fill:'black'}); mask.appendChild(mc);
+  defs.appendChild(mask);
+  var els=[];
+  for(var i=0;i<6;i++){
+    var r=mkEl('rect',{x:i*30,y:i*20,width:60,height:60,fill:'hsl('+(i*60)+',80%,50%)',mask:'url(#mask07)'}); svg.appendChild(r); els.push(r);
+  }
+  svg.getBoundingClientRect();
+  // Remove o mask
+  defs.removeChild(mask);
+  svg.getBoundingClientRect();
+  gc();
+  els.forEach(function(r,i){
+    try{ var bb=r.getBBox(); log('  r['+i+'] bbox: '+bb.width+'x'+bb.height); }
+    catch(e){ log('  exc['+i+']: '+e.name); }
+  });
+  document.body.removeChild(svg);
+  log('[T07] done');
+}
+
+function t08(){
+  log('[T08] SVG clipPath removido — elementos ainda referenciam');
+  var svg=mkSVG(200,200); document.body.appendChild(svg);
+  var defs=mkEl('defs'); svg.appendChild(defs);
+  var cp=mkEl('clipPath',{id:'cp08',clipPathUnits:'userSpaceOnUse'});
+  var cr=mkEl('circle',{cx:100,cy:100,r:80}); cp.appendChild(cr); defs.appendChild(cp);
+  var els=[];
+  for(var i=0;i<8;i++){
+    var r=mkEl('rect',{x:i*20,y:i*15,width:80,height:80,fill:'hsl('+(i*45)+',70%,50%)','clip-path':'url(#cp08)'}); svg.appendChild(r); els.push(r);
+  }
+  svg.getBoundingClientRect();
+  defs.removeChild(cp);
+  svg.getBoundingClientRect();
+  gc();
+  els.forEach(function(r,i){
+    try{ var cs=window.getComputedStyle(r); log('  r['+i+'] clipPath: '+r.getAttribute('clip-path')); }
+    catch(e){ log('  exc['+i+']: '+e.name); }
+  });
+  document.body.removeChild(svg);
+  log('[T08] done');
+}
+
+function t09(){
+  log('[T09] SVG foreignObject com DOM mutations internas');
+  var svg=mkSVG(300,200); document.body.appendChild(svg);
+  var fo=mkEl('foreignObject',{x:10,y:10,width:280,height:180}); svg.appendChild(fo);
+  // Cria conteúdo HTML dentro do foreignObject
+  var div=document.createElement('div');
+  div.innerHTML='<p>paragraph</p><ul><li>item 1</li><li>item 2</li></ul>';
+  fo.appendChild(div);
+  svg.getBoundingClientRect();
+  // Muda o conteúdo HTML dentro do SVG foreignObject
+  var obs=new MutationObserver(function(muts){
+    muts.forEach(function(m){
+      log('  mutation type: '+m.type+' in foreignObject');
+    });
+  });
+  obs.observe(fo,{childList:true,subtree:true});
+  div.innerHTML='<p>modified</p>';
+  div.style.color='red';
+  svg.getBoundingClientRect();
+  // Remove o foreignObject durante re-render
+  svg.removeChild(fo);
+  gc();
+  // Acessa o div que estava no foreignObject
+  try{ var cs=window.getComputedStyle(div); log('  div color stale: '+cs.color); }catch(e){ log('  exc: '+e.name); }
+  obs.disconnect();
+  document.body.removeChild(svg);
+  log('[T09] done');
+}
+
+function t10(){
+  log('[T10] SVG pattern referenciando conteúdo removido');
+  var svg=mkSVG(200,200); document.body.appendChild(svg);
+  var defs=mkEl('defs'); svg.appendChild(defs);
+  var pat=mkEl('pattern',{id:'pat10',width:20,height:20,patternUnits:'userSpaceOnUse'});
+  var pr=mkEl('rect',{width:10,height:10,fill:'red'}); pat.appendChild(pr);
+  var pc=mkEl('circle',{cx:15,cy:15,r:5,fill:'blue'}); pat.appendChild(pc);
+  defs.appendChild(pat);
+  var r=mkEl('rect',{width:200,height:200,fill:'url(#pat10)'}); svg.appendChild(r);
+  svg.getBoundingClientRect();
+  // Remove conteúdo de dentro do pattern
+  pat.removeChild(pr);
+  pat.removeChild(pc);
+  svg.getBoundingClientRect();
+  gc();
+  // Remove o próprio pattern
+  defs.removeChild(pat);
+  svg.getBoundingClientRect();
+  gc();
+  try{ var bb=r.getBBox(); log('  rect bbox sem pattern: '+bb.width+'x'+bb.height); }catch(e){ log('  exc: '+e.name); }
+  document.body.removeChild(svg);
+  log('[T10] done');
+}
+
+function t11(){
+  log('[T11] SVGAnimatedLength: acessa baseVal/animVal após elemento removido');
+  var svg=mkSVG(200,200); document.body.appendChild(svg);
+  var r=mkEl('rect',{x:10,y:20,width:100,height:50}); svg.appendChild(r);
+  // Salva referências para SVGAnimatedLength objects
+  var xAnim=r.x;
+  var yAnim=r.y;
+  var wAnim=r.width;
+  log('  x.baseVal.value: '+xAnim.baseVal.value);
+  log('  width.animVal.value: '+wAnim.animVal.value);
+  // Remove o elemento
+  svg.removeChild(r);
+  gc();
+  // Acessa os animated lengths após remoção
+  try{ log('  x.baseVal STALE: '+xAnim.baseVal.value); }catch(e){ log('  x exc: '+e.name); }
+  try{ log('  y.baseVal STALE: '+yAnim.baseVal.value); }catch(e){ log('  y exc: '+e.name); }
+  try{ log('  w.animVal STALE: '+wAnim.animVal.value); }catch(e){ log('  w exc: '+e.name); }
+  // Tenta modificar os animated lengths após remoção
+  try{ xAnim.baseVal.value=999; log('  x.baseVal.value=999: ok'); }catch(e){ log('  x write exc: '+e.name); }
+  document.body.removeChild(svg);
+  log('[T11] done');
+}
+
+function t12(){
+  log('[T12] SVGElement.getScreenCTM / getCTM pós-remove');
+  var svg=mkSVG(200,200); document.body.appendChild(svg);
+  var g=mkEl('g',{transform:'translate(50,50)'}); svg.appendChild(g);
+  var r=mkEl('rect',{x:10,y:10,width:50,height:50,transform:'rotate(30)'}); g.appendChild(r);
+  var ctm_before=r.getCTM();
+  var sctm_before=r.getScreenCTM();
+  log('  CTM a: '+ctm_before.a.toFixed(2));
+  log('  SCTM a: '+sctm_before.a.toFixed(2));
+  // Remove o grupo pai
+  svg.removeChild(g);
+  gc();
+  try{ var ctm=r.getCTM(); log('  getCTM pós-remove: '+(ctm?ctm.a:'null')); }catch(e){ log('  getCTM exc: '+e.name); }
+  try{ var sctm=r.getScreenCTM(); log('  getScreenCTM pós-remove: '+(sctm?sctm.a:'null')); }catch(e){ log('  getScreenCTM exc: '+e.name); }
+  document.body.removeChild(svg);
+  log('[T12] done');
+}
+
+function t13(){
+  log('[T13] getBBox / getBoundingClientRect em SVG fora do DOM');
+  var svg=mkSVG(200,200);
+  // NÃO insere no DOM
+  var r=mkEl('rect',{x:10,y:10,width:100,height:80}); svg.appendChild(r);
+  var g=mkEl('g',{transform:'translate(20,20)'}); svg.appendChild(g);
+  var c=mkEl('circle',{cx:50,cy:50,r:40}); g.appendChild(c);
+  gc();
+  try{ var bb=r.getBBox(); log('  rect getBBox fora DOM: '+bb.x+','+bb.y+' '+bb.width+'x'+bb.height); }catch(e){ log('  rect getBBox exc: '+e.name); }
+  try{ var bb2=c.getBBox(); log('  circle getBBox fora DOM: '+bb2.x+','+bb2.y); }catch(e){ log('  circle getBBox exc: '+e.name); }
+  try{ var bcr=svg.getBoundingClientRect(); log('  svg BCR fora DOM: '+bcr.width+'x'+bcr.height); }catch(e){ log('  svg BCR exc: '+e.name); }
+  // Agora insere e compara
+  document.body.appendChild(svg);
+  try{ var bb3=r.getBBox(); log('  rect getBBox após insert: '+bb3.width+'x'+bb3.height); }catch(e){ log('  post-insert exc: '+e.name); }
+  document.body.removeChild(svg);
+  log('[T13] done');
+}
+
+function t14(){
+  log('[T14] SVG <use> com href circular (auto-referência)');
+  var svg=mkSVG(100,100); document.body.appendChild(svg);
+  var defs=mkEl('defs'); svg.appendChild(defs);
+  var g=mkEl('g',{id:'circ14'});
+  var r=mkEl('rect',{width:50,height:50,fill:'purple'}); g.appendChild(r);
+  // Cria um <use> que referencia o próprio grupo (circular)
+  var u=mkEl('use',{href:'#circ14',x:5,y:5}); g.appendChild(u);
+  defs.appendChild(g);
+  var topUse=mkEl('use',{href:'#circ14',x:0,y:0}); svg.appendChild(topUse);
+  try{
+    svg.getBoundingClientRect();
+    log('  circular use renderizado: ok');
+    var bb=topUse.getBBox();
+    log('  getBBox: '+bb.width+'x'+bb.height);
+  }catch(e){ log('  exc circular use: '+e.name); }
+  document.body.removeChild(svg);
+  log('[T14] done');
+}
+
+function t15(){
+  log('[T15] SVG filter com referências cruzadas (feComposite in/in2)');
+  var svg=mkSVG(200,200); document.body.appendChild(svg);
+  var defs=mkEl('defs'); svg.appendChild(defs);
+  // Cria dois filtros que se referenciam mutuamente
+  var f1=mkEl('filter',{id:'f15a'});
+  var fe1=mkEl('feGaussianBlur',{stdDeviation:5,result:'blur1'}); f1.appendChild(fe1);
+  var fc1=mkEl('feComposite',{in:'blur1',in2:'url(#f15b)',operator:'over'}); f1.appendChild(fc1);
+  defs.appendChild(f1);
+  var f2=mkEl('filter',{id:'f15b'});
+  var fe2=mkEl('feColorMatrix',{type:'saturate',values:2,result:'sat2'}); f2.appendChild(fe2);
+  var fc2=mkEl('feComposite',{in:'sat2',in2:'url(#f15a)',operator:'in'}); f2.appendChild(fc2);
+  defs.appendChild(f2);
+  var r1=mkEl('rect',{width:100,height:100,fill:'red',filter:'url(#f15a)'}); svg.appendChild(r1);
+  var r2=mkEl('rect',{x:100,y:0,width:100,height:100,fill:'blue',filter:'url(#f15b)'}); svg.appendChild(r2);
+  try{
+    svg.getBoundingClientRect();
+    log('  cross-ref filters: ok');
+  }catch(e){ log('  exc render: '+e.name); }
+  // Remove f1 enquanto f2 ainda o referencia
+  defs.removeChild(f1);
+  try{ svg.getBoundingClientRect(); log('  após remove f1: ok'); }catch(e){ log('  exc após remove f1: '+e.name); }
+  gc();
+  document.body.removeChild(svg);
+  log('[T15] done');
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== RODANDO TODOS OS TESTES SVG ===');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){
+    if(i>=tests.length){ log('=== FIM ==='); return; }
+    try{ tests[i](); }catch(e){ log('CRASH T'+(i<9?'0':'')+(i+1)+': '+e.name+' — '+e.message); }
+    i++; setTimeout(next,250);
+  }
+  next();
+}
+</script>
+</body>
+</html>

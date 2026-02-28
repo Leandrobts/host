@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>PS4 WebKit Crash PoCs</title></head>
+<body>
+<h2>PS4 WebKit Crash PoCs</h2>
+<p>UA: <span id="ua"></span></p>
+<hr>
+<ul>
+  <li><a href="01_dom_lifecycle.html">01 — DOM Lifecycle / Stale Pointers</a></li>
+  <li><a href="02_css_style_layout.html">02 — CSS / Style / Layout</a></li>
+  <li><a href="03_svg_crash.html">03 — SVG Internals</a></li>
+  <li><a href="04_canvas_webgl.html">04 — Canvas / WebGL</a></li>
+  <li><a href="05_web_apis.html">05 — Web APIs / Observers / Async</a></li>
+</ul>
+<script>document.getElementById('ua').textContent=navigator.userAgent</script>
+</body>
+</html>

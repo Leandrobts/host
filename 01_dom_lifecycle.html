@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>01 — DOM Lifecycle</title></head>
+<body>
+<h3>01 — DOM Lifecycle / Stale Pointers</h3>
+<div id="log" style="height:300px;overflow:auto;border:1px solid #999;padding:4px;font:11px monospace;white-space:pre"></div>
+<br>
+<button onclick="t01()">T01 removeChild durante dispatchEvent</button>
+<button onclick="t02()">T02 replaceChild + live NodeList</button>
+<button onclick="t03()">T03 adoptNode após iframe destroy</button>
+<button onclick="t04()">T04 MutationObserver remove o observado</button>
+<button onclick="t05()">T05 TreeWalker + remove durante nextNode</button>
+<button onclick="t06()">T06 Range cobrindo nó removido</button>
+<button onclick="t07()">T07 cloneNode + GC + acesso profundo</button>
+<button onclick="t08()">T08 insertBefore com nó já removido</button>
+<button onclick="t09()">T09 Event listener em nó fora do DOM</button>
+<button onclick="t10()">T10 childNodes live durante clear</button>
+<button onclick="t11()">T11 NodeIterator + remove + previousNode</button>
+<button onclick="t12()">T12 removeChild do próprio pai no callback</button>
+<button onclick="t13()">T13 dispatchEvent em nó sendo removido</button>
+<button onclick="t14()">T14 closest() em nó fora do DOM</button>
+<button onclick="t15()">T15 getRootNode após remoção</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html">← Index</a>
+
+<script>
+var L=document.getElementById('log');
+function log(m){L.textContent+=m+'\n';L.scrollTop=L.scrollHeight}
+function gc(){try{var a=[];for(var i=0;i<20;i++)a.push(new ArrayBuffer(2*1024*1024));a=null}catch(e){}}
+
+function t01(){
+  log('[T01] removeChild durante dispatchEvent no target');
+  var p=document.createElement('div'); document.body.appendChild(p);
+  var c=document.createElement('span'); p.appendChild(c);
+  c.addEventListener('click',function(e){
+    // remove o pai (e portanto a si mesmo) durante o handling
+    if(p.parentNode) p.parentNode.removeChild(p);
+    // acessa currentTarget após remoção
+    var t=e.currentTarget;
+    log('  currentTarget tag: '+(t?t.tagName:'null'));
+    log('  parentNode: '+(t&&t.parentNode?'exists':'null'));
+  });
+  c.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+  gc();
+  log('[T01] done');
+}
+
+function t02(){
+  log('[T02] replaceChild + live NodeList iterada');
+  var p=document.createElement('div');
+  document.body.appendChild(p);
+  for(var i=0;i<30;i++){ var s=document.createElement('span'); s.textContent=i; p.appendChild(s); }
+  var nl=p.childNodes; // live
+  var snap=nl.length;
+  log('  initial length: '+snap);
+  // Itera live NodeList e faz replaceChild durante a iteração
+  for(var j=0;j<snap;j++){
+    var node=nl[j];
+    if(!node) break;
+    var replacement=document.createElement('b');
+    replacement.textContent='R'+j;
+    try{ p.replaceChild(replacement,node); }catch(e){}
+    // acessa o nó substituído
+    var old_parent=node.parentNode;
+    var old_text=node.textContent;
+  }
+  gc();
+  if(p.parentNode) document.body.removeChild(p);
+  log('[T02] done, remaining: '+nl.length);
+}
+
+function t03(){
+  log('[T03] adoptNode após iframe removido');
+  var iframe=document.createElement('iframe');
+  iframe.style.display='none';
+  document.body.appendChild(iframe);
+  var idoc=iframe.contentDocument;
+  var nodes=[];
+  for(var i=0;i<20;i++){
+    var el=idoc.createElement('div');
+    el.setAttribute('data-i',i);
+    idoc.body.appendChild(el);
+    nodes.push(document.adoptNode(el)); // adota antes de remover
+  }
+  // Remove o iframe — documento fonte destruído
+  document.body.removeChild(iframe);
+  gc();
+  // Acessa e insere os nós adotados após fonte destruída
+  nodes.forEach(function(n){
+    try{
+      document.body.appendChild(n);
+      var attr=n.getAttribute('data-i');
+      var cs=window.getComputedStyle(n);
+      document.body.removeChild(n);
+    }catch(e){ log('  EXCECAO: '+e.name); }
+  });
+  gc();
+  log('[T03] done');
+}
+
+function t04(){
+  log('[T04] MutationObserver remove o próprio nó observado no callback');
+  var root=document.createElement('div');
+  document.body.appendChild(root);
+  var count=0;
+  var obs=new MutationObserver(function(muts){
+    count++;
+    if(count>50) return;
+    muts.forEach(function(m){
+      m.addedNodes.forEach(function(n){
+        // Remove o nó recém-adicionado DENTRO do callback
+        if(n.parentNode) n.parentNode.removeChild(n);
+        gc();
+        // E tenta acessar suas propriedades depois de removido
+        var tag=n.tagName;
+        var txt=n.textContent;
+        // Tenta reinserir
+        try{ root.appendChild(n); }catch(e){}
+      });
+    });
+  });
+  obs.observe(root,{childList:true,subtree:true});
+  for(var i=0;i<30;i++){
+    var el=document.createElement('div');
+    el.textContent='m'+i;
+    root.appendChild(el);
+  }
+  setTimeout(function(){
+    obs.disconnect();
+    if(root.parentNode) document.body.removeChild(root);
+    log('[T04] done, callbacks: '+count);
+  },300);
+}
+
+function t05(){
+  log('[T05] TreeWalker.nextNode() enquanto nós são removidos');
+  var root=document.createElement('div');
+  document.body.appendChild(root);
+  for(var i=0;i<60;i++){
+    var el=document.createElement('p');
+    el.innerHTML='<b>'+i+'</b><span>s'+i+'</span>';
+    root.appendChild(el);
+  }
+  var walker=document.createTreeWalker(root,NodeFilter.SHOW_ELEMENT,null);
+  var node, visited=0;
+  while((node=walker.nextNode())){
+    visited++;
+    if(visited%3===0 && node.parentNode && node!==root){
+      node.parentNode.removeChild(node);
+      gc();
+      // Tenta previousNode após remoção do current
+      try{ var prev=walker.previousNode(); }catch(e){ log('  previousNode exc: '+e.name); }
+    }
+    // Acessa props do nó possivelmente removido
+    try{ var tag=node.tagName; var kids=node.childNodes.length; }catch(e){}
+  }
+  if(root.parentNode) document.body.removeChild(root);
+  log('[T05] done, visited: '+visited);
+}
+
+function t06(){
+  log('[T06] Range cobrindo nó que é removido');
+  var host=document.createElement('div');
+  document.body.appendChild(host);
+  var nodes=[];
+  for(var i=0;i<20;i++){
+    var t=document.createTextNode('text'+i+' ');
+    var el=document.createElement('span');
+    el.appendChild(t);
+    host.appendChild(el);
+    nodes.push(el);
+  }
+  // Cria range que abrange metade dos nós
+  var range=document.createRange();
+  range.setStartBefore(nodes[2]);
+  range.setEndAfter(nodes[15]);
+  log('  range.toString length: '+range.toString().length);
+  // Remove os nós do meio (dentro do range)
+  for(var j=5;j<12;j++){
+    if(nodes[j].parentNode) host.removeChild(nodes[j]);
+  }
+  gc();
+  // Acessa o range após os nós serem removidos
+  try{
+    var collapsed=range.collapsed;
+    var str=range.toString();
+    var contents=range.cloneContents();
+    log('  range after remove: collapsed='+collapsed+' text='+str.length+' children='+contents.childNodes.length);
+    // Tenta extrair
+    var extracted=range.extractContents();
+    log('  extracted: '+extracted.childNodes.length+' nodes');
+  }catch(e){ log('  EXCECAO range: '+e.name+' '+e.message); }
+  range.detach();
+  if(host.parentNode) document.body.removeChild(host);
+  log('[T06] done');
+}
+
+function t07(){
+  log('[T07] cloneNode profundo + GC + acesso a nós internos');
+  // Cria árvore com event listeners
+  var original=document.createElement('div');
+  var current=original;
+  for(var d=0;d<50;d++){
+    var child=document.createElement('div');
+    child.setAttribute('data-depth',d);
+    child.textContent='depth'+d;
+    current.appendChild(child);
+    current=child;
+  }
+  document.body.appendChild(original);
+  // Clona profundamente
+  var clone=original.cloneNode(true);
+  document.body.appendChild(clone);
+  // Remove o original
+  document.body.removeChild(original);
+  gc();
+  // Acessa nós profundos do clone
+  var deepEl=clone.querySelector('[data-depth="49"]');
+  if(deepEl){
+    log('  deep el found: '+deepEl.getAttribute('data-depth'));
+    // Modifica e lê computed style
+    deepEl.style.color='red';
+    var cs=window.getComputedStyle(deepEl);
+    log('  computed color: '+cs.color);
+    // Remove o deep el e tenta acesso
+    deepEl.parentNode.removeChild(deepEl);
+    gc();
+    try{ var c2=window.getComputedStyle(deepEl); log('  stale computed: '+c2.color); }catch(e){}
+  }
+  if(clone.parentNode) document.body.removeChild(clone);
+  log('[T07] done');
+}
+
+function t08(){
+  log('[T08] insertBefore com nó que já foi removido do DOM');
+  var p=document.createElement('div');
+  var ref=document.createElement('span'); ref.textContent='ref';
+  p.appendChild(ref);
+  document.body.appendChild(p);
+  var el=document.createElement('b'); el.textContent='insert';
+  document.body.appendChild(el);
+  // Remove el do body
+  document.body.removeChild(el);
+  gc();
+  // Tenta insertBefore de nó já removido
+  try{
+    p.insertBefore(el,ref);
+    log('  insertBefore após remove: ok, children='+p.children.length);
+  }catch(e){ log('  insertBefore exc: '+e.name); }
+  // Agora remove o ref E tenta inserir antes dele (ref não está mais no p)
+  p.removeChild(ref);
+  var el2=document.createElement('i'); el2.textContent='i2';
+  try{
+    p.insertBefore(el2,ref); // ref não é filho de p → DOMException ou crash?
+    log('  insertBefore orphan ref: ok');
+  }catch(e){ log('  insertBefore orphan: '+e.name+' (esperado)'); }
+  if(p.parentNode) document.body.removeChild(p);
+  log('[T08] done');
+}
+
+function t09(){
+  log('[T09] Event listener disparado em nó fora do DOM repetidamente');
+  var el=document.createElement('div');
+  var count=0;
+  el.addEventListener('custom',function(e){
+    count++;
+    // Tenta acessar parentNode (null), offsetParent (null), getBoundingClientRect
+    var pn=el.parentNode;
+    try{ var r=el.getBoundingClientRect(); }catch(e2){}
+    try{ var cs=window.getComputedStyle(el); var w=cs.width; }catch(e2){}
+  });
+  // Dispara eventos sem inserir no DOM
+  for(var i=0;i<200;i++){
+    el.dispatchEvent(new CustomEvent('custom',{detail:i}));
+    if(i%50===0) gc();
+  }
+  log('[T09] done, events: '+count);
+}
+
+function t10(){
+  log('[T10] childNodes live limpo durante forEach');
+  var p=document.createElement('div');
+  document.body.appendChild(p);
+  for(var i=0;i<30;i++){ var c=document.createElement('span'); c.textContent=i; p.appendChild(c); }
+  var nl=p.childNodes; // live NodeList
+  log('  before: '+nl.length);
+  // Remove todos via firstChild enquanto temos ref ao live NodeList
+  while(p.firstChild) p.removeChild(p.firstChild);
+  gc();
+  // Acessa o live NodeList "vazio" com índices que antes eram válidos
+  for(var j=0;j<35;j++){
+    var node=nl[j]; // deve ser undefined, mas pode causar OOB?
+    var item=nl.item(j);
+    if(node || item) log('  nl['+j+'] existe: '+(node||item).tagName);
+  }
+  log('  after clear: '+nl.length);
+  if(p.parentNode) document.body.removeChild(p);
+  log('[T10] done');
+}
+
+function t11(){
+  log('[T11] NodeIterator: previousNode após remoção do referenceNode');
+  var root=document.createElement('div');
+  document.body.appendChild(root);
+  var nodes=[];
+  for(var i=0;i<20;i++){
+    var el=document.createElement('p'); el.textContent=i; root.appendChild(el); nodes.push(el);
+  }
+  var iter=document.createNodeIterator(root,NodeFilter.SHOW_ELEMENT);
+  // Avança até o meio
+  for(var i=0;i<10;i++) iter.nextNode();
+  // Remove o nó atual de referência
+  if(nodes[9].parentNode) root.removeChild(nodes[9]);
+  gc();
+  // Tenta nextNode e previousNode com referenceNode removido
+  try{ var nxt=iter.nextNode(); log('  nextNode após remove ref: '+(nxt?nxt.textContent:'null')); }catch(e){ log('  nextNode exc: '+e.name); }
+  try{ var prv=iter.previousNode(); log('  prevNode: '+(prv?prv.textContent:'null')); }catch(e){ log('  prevNode exc: '+e.name); }
+  if(root.parentNode) document.body.removeChild(root);
+  log('[T11] done');
+}
+
+function t12(){
+  log('[T12] removeChild do próprio pai dentro de um evento borbulhante');
+  var grandpa=document.createElement('div');
+  var parent=document.createElement('div');
+  var child=document.createElement('span');
+  child.textContent='click me';
+  parent.appendChild(child);
+  grandpa.appendChild(parent);
+  document.body.appendChild(grandpa);
+  var fired=[];
+  grandpa.addEventListener('click',function(e){
+    fired.push('grandpa');
+    // Durante o bubbling, remove o parent (que contém o target)
+    if(parent.parentNode) grandpa.removeChild(parent);
+    gc();
+    log('  grandpa handler: target='+e.target.tagName+' currentTarget='+e.currentTarget.tagName);
+  });
+  parent.addEventListener('click',function(e){
+    fired.push('parent');
+  });
+  child.addEventListener('click',function(e){
+    fired.push('child');
+  });
+  child.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+  if(grandpa.parentNode) document.body.removeChild(grandpa);
+  log('[T12] done, chain: '+fired.join('→'));
+}
+
+function t13(){
+  log('[T13] dispatchEvent em nó no meio de removeChild');
+  var p=document.createElement('div');
+  document.body.appendChild(p);
+  var nodes=[];
+  for(var i=0;i<20;i++){
+    var el=document.createElement('div');
+    el.textContent=i;
+    p.appendChild(el);
+    nodes.push(el);
+  }
+  var customEv=new CustomEvent('remove-time',{bubbles:true});
+  nodes.forEach(function(n,i){
+    if(n.parentNode) p.removeChild(n);
+    // Dispara evento imediatamente após remoção (nó fora do DOM)
+    n.dispatchEvent(customEv);
+    if(i%5===0) gc();
+  });
+  if(p.parentNode) document.body.removeChild(p);
+  log('[T13] done');
+}
+
+function t14(){
+  log('[T14] closest() e matches() em nó fora do DOM');
+  var el=document.createElement('div');
+  el.className='test foo bar';
+  var child=document.createElement('span');
+  el.appendChild(child);
+  // NÃO insere no DOM
+  gc();
+  try{
+    var c1=child.closest('div'); log('  closest div: '+(c1?c1.tagName:'null'));
+    var c2=child.closest('body'); log('  closest body: '+(c2?c2.tagName:'null'));
+    var m1=el.matches('.test'); log('  matches .test: '+m1);
+    var m2=el.matches('.nonexistent'); log('  matches .nonexistent: '+m2);
+    // Acessa offsetParent em nó fora do DOM
+    var op=el.offsetParent; log('  offsetParent: '+op);
+    var r=el.getBoundingClientRect(); log('  getBCR: '+r.width+'x'+r.height);
+  }catch(e){ log('  EXCECAO: '+e.name); }
+  log('[T14] done');
+}
+
+function t15(){
+  log('[T15] getRootNode, isConnected, ownerDocument após remoção');
+  var p=document.createElement('div');
+  var child=document.createElement('span');
+  p.appendChild(child);
+  document.body.appendChild(p);
+  log('  connected: '+child.isConnected+' root: '+child.getRootNode().nodeName);
+  document.body.removeChild(p);
+  gc();
+  log('  after remove: connected: '+child.isConnected+' root: '+child.getRootNode().nodeName);
+  // ownerDocument ainda deve existir mesmo após remoção
+  var od=child.ownerDocument;
+  log('  ownerDocument: '+(od===document?'same doc':'different'));
+  // Tenta operações DOM no nó desconectado
+  var sib=document.createElement('em');
+  try{ p.insertBefore(sib,child); log('  insertBefore desconectado: ok'); }catch(e){ log('  insertBefore exc: '+e.name); }
+  gc();
+  // O p agora tem 2 filhos mas está fora do DOM
+  log('  p.children fora do DOM: '+p.children.length);
+  log('[T15] done');
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== RODANDO TODOS OS TESTES ===');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){
+    if(i>=tests.length){ log('=== FIM ==='); return; }
+    try{ tests[i](); }catch(e){ log('CRASH T0'+(i+1)+': '+e.name+' — '+e.message); }
+    i++;
+    setTimeout(next,200);
+  }
+  next();
+}
+</script>
+</body>
+</html>

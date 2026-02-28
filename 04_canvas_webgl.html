@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>04 — Canvas / WebGL</title></head>
+<body>
+<h3>04 — Canvas / WebGL</h3>
+<div id="log" style="height:300px;overflow:auto;border:1px solid #999;padding:4px;font:11px monospace;white-space:pre"></div>
+<br>
+<button onclick="t01()">T01 drawImage de canvas detachado</button>
+<button onclick="t02()">T02 getImageData bounds extremos</button>
+<button onclick="t03()">T03 createPattern de canvas removido</button>
+<button onclick="t04()">T04 Canvas save/restore além do limite</button>
+<button onclick="t05()">T05 Canvas clip + transform acumulado</button>
+<button onclick="t06()">T06 ImageBitmap: close + uso posterior</button>
+<button onclick="t07()">T07 createImageBitmap de canvas modificado</button>
+<button onclick="t08()">T08 WebGL: usar buffer após deleteBuffer</button>
+<button onclick="t09()">T09 WebGL: shader deletado + compileShader</button>
+<button onclick="t10()">T10 WebGL: texture após deleteTexture</button>
+<button onclick="t11()">T11 WebGL: framebuffer após deleteFramebuffer</button>
+<button onclick="t12()">T12 Canvas path com coordenadas NaN/Inf</button>
+<button onclick="t13()">T13 drawImage com source rect OOB</button>
+<button onclick="t14()">T14 Canvas context perdido + operação</button>
+<button onclick="t15()">T15 putImageData com offset extremo</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html">← Index</a>
+
+<script>
+var L=document.getElementById('log');
+function log(m){L.textContent+=m+'\n';L.scrollTop=L.scrollHeight}
+function gc(){try{var a=[];for(var i=0;i<20;i++)a.push(new ArrayBuffer(2*1024*1024));a=null}catch(e){}}
+function mkCanvas(w,h,attach){
+  var c=document.createElement('canvas');
+  c.width=w||256; c.height=h||256;
+  if(attach) document.body.appendChild(c);
+  return c;
+}
+
+function t01(){
+  log('[T01] drawImage de canvas detachado do DOM');
+  var src=mkCanvas(256,256,true);
+  var ctx0=src.getContext('2d');
+  ctx0.fillStyle='red'; ctx0.fillRect(0,0,256,256);
+  ctx0.fillStyle='blue'; ctx0.fillRect(64,64,128,128);
+  // Detatcha o canvas src
+  document.body.removeChild(src);
+  gc();
+  // Cria canvas destino e tenta drawImage do canvas detachado
+  var dst=mkCanvas(512,512,false);
+  var ctx1=dst.getContext('2d');
+  try{
+    ctx1.drawImage(src,0,0);
+    log('  drawImage detached: ok');
+    ctx1.drawImage(src,-100,-100,600,600,0,0,512,512);
+    log('  drawImage detached scaled: ok');
+    var id=ctx1.getImageData(0,0,1,1);
+    log('  pixel[0]: '+id.data[0]);
+  }catch(e){ log('  exc: '+e.name); }
+  // Usa o src detachado como pattern
+  try{
+    var pat=ctx1.createPattern(src,'repeat');
+    ctx1.fillStyle=pat;
+    ctx1.fillRect(0,0,512,512);
+    log('  pattern from detached: ok');
+  }catch(e){ log('  pattern exc: '+e.name); }
+  gc();
+  log('[T01] done');
+}
+
+function t02(){
+  log('[T02] getImageData com bounds extremos');
+  var c=mkCanvas(256,256,false);
+  var ctx=c.getContext('2d');
+  ctx.fillStyle='green'; ctx.fillRect(0,0,256,256);
+  var cases=[
+    [0,0,256,256],        // válido
+    [-10,-10,276,276],    // origem negativa (recortado)
+    [0,0,0,0],            // tamanho zero
+    [0,0,1,1],
+    [255,255,2,2],        // parcialmente fora
+    [-2147483648,-2147483648,4294967295,4294967295], // extremo
+    [0,0,65536,65536],    // enorme
+    [NaN,NaN,100,100],    // NaN
+    [0,0,Infinity,100],   // Infinity
+  ];
+  cases.forEach(function(c2,i){
+    try{
+      var id=ctx.getImageData(c2[0],c2[1],c2[2],c2[3]);
+      log('  case['+i+'] ['+c2.join(',')+']: '+id.data.length+' bytes');
+    }catch(e){ log('  case['+i+'] exc: '+e.name); }
+  });
+  log('[T02] done');
+}
+
+function t03(){
+  log('[T03] createPattern de canvas removido + uso do pattern');
+  var src=mkCanvas(64,64,true);
+  var ctx0=src.getContext('2d');
+  ctx0.fillStyle='orange'; ctx0.fillRect(0,0,32,32);
+  ctx0.fillStyle='purple'; ctx0.fillRect(32,32,32,32);
+  // Cria pattern ANTES de remover
+  var dst=mkCanvas(256,256,false);
+  var ctx1=dst.getContext('2d');
+  var pattern=ctx1.createPattern(src,'repeat');
+  log('  pattern created: '+(pattern?'ok':'null'));
+  // Remove o canvas src
+  document.body.removeChild(src);
+  gc();
+  // Usa o pattern cujo canvas fonte foi removido
+  try{
+    ctx1.fillStyle=pattern;
+    ctx1.fillRect(0,0,256,256);
+    log('  fillRect com pattern stale: ok');
+    var id=ctx1.getImageData(0,0,1,1);
+    log('  pixel: '+id.data[0]+','+id.data[1]+','+id.data[2]);
+  }catch(e){ log('  exc: '+e.name); }
+  // Modifica o canvas src pós-remoção e usa o pattern de novo
+  try{
+    ctx0.fillStyle='yellow'; ctx0.fillRect(0,0,64,64);
+    ctx1.fillRect(0,128,256,128);
+    log('  fillRect após modificar src removido: ok');
+  }catch(e){ log('  modify exc: '+e.name); }
+  gc();
+  log('[T03] done');
+}
+
+function t04(){
+  log('[T04] Canvas save/restore além do limite do stack');
+  var c=mkCanvas(256,256,false);
+  var ctx=c.getContext('2d');
+  // Push save state 200 vezes
+  for(var i=0;i<200;i++){
+    ctx.save();
+    ctx.translate(0.1,0.1);
+    ctx.scale(1.0+i*0.0001, 1.0+i*0.0001);
+    ctx.rotate(i*0.001);
+  }
+  log('  saved 200 states');
+  // Faz drawImage em estado de transformação extremo
+  try{
+    ctx.fillStyle='red'; ctx.fillRect(0,0,100,100);
+    log('  fillRect em estado 200: ok');
+  }catch(e){ log('  fillRect exc: '+e.name); }
+  // Restore mais vezes do que o save
+  for(var j=0;j<250;j++) ctx.restore();
+  log('  restored 250 (50 além do stack)');
+  try{
+    ctx.fillStyle='blue'; ctx.fillRect(0,0,50,50);
+    var id=ctx.getImageData(0,0,1,1);
+    log('  fillRect pós over-restore: ok, pixel='+id.data[2]);
+  }catch(e){ log('  post-restore exc: '+e.name); }
+  log('[T04] done');
+}
+
+function t05(){
+  log('[T05] Canvas clip acumulado com transformações extremas');
+  var c=mkCanvas(512,512,false);
+  var ctx=c.getContext('2d');
+  // Acumula muitos clips com transformações
+  for(var i=0;i<50;i++){
+    ctx.save();
+    ctx.translate(i,i);
+    ctx.scale(1-i*0.01, 1-i*0.01); // escala diminuindo
+    ctx.beginPath();
+    for(var j=0;j<20;j++){
+      ctx.bezierCurveTo(
+        Math.sin(j)*100, Math.cos(j)*100,
+        Math.sin(j+1)*100, Math.cos(j+1)*100,
+        Math.sin(j+2)*100, Math.cos(j+2)*100
+      );
+    }
+    ctx.clip('evenodd');
+  }
+  log('  50 clips acumulados');
+  try{
+    ctx.fillStyle='rgba(255,0,0,0.5)';
+    ctx.fillRect(-10000,-10000,20000,20000);
+    log('  fillRect após 50 clips: ok');
+    ctx.drawImage(c,0,0); // auto-drawImage
+    log('  self drawImage após clips: ok');
+  }catch(e){ log('  exc: '+e.name); }
+  // Over-restore
+  for(var k=0;k<60;k++) ctx.restore();
+  try{
+    ctx.fillStyle='blue'; ctx.fillRect(0,0,100,100);
+    log('  fillRect após over-restore: ok');
+  }catch(e){ log('  post-clip-restore exc: '+e.name); }
+  log('[T05] done');
+}
+
+function t06(){
+  log('[T06] ImageBitmap.close() + uso posterior');
+  var c=mkCanvas(128,128,false);
+  var ctx=c.getContext('2d');
+  ctx.fillStyle='red'; ctx.fillRect(0,0,128,128);
+  createImageBitmap(c).then(function(bmp){
+    log('  bitmap created: '+bmp.width+'x'+bmp.height);
+    // Fecha o bitmap
+    bmp.close();
+    log('  bitmap closed');
+    gc();
+    // Tenta usar o bitmap fechado
+    var dst=mkCanvas(256,256,false);
+    var dctx=dst.getContext('2d');
+    try{ dctx.drawImage(bmp,0,0); log('  drawImage closed bitmap: ok'); }catch(e){ log('  drawImage exc: '+e.name); }
+    try{ var p=dctx.createPattern(bmp,'repeat'); log('  createPattern closed: '+(p?'ok':'null')); }catch(e){ log('  pattern exc: '+e.name); }
+    try{ createImageBitmap(bmp).then(function(b2){ log('  bitmap from closed: ok '+b2.width+'x'+b2.height); }).catch(function(e){ log('  bitmap from closed err: '+e.message); }); }catch(e){ log('  createBitmap exc: '+e.name); }
+    log('[T06] done');
+  }).catch(function(e){ log('  createImageBitmap exc: '+e.message); log('[T06] done'); });
+}
+
+function t07(){
+  log('[T07] createImageBitmap de canvas em modificação simultânea');
+  var c=mkCanvas(256,256,false);
+  var ctx=c.getContext('2d');
+  var promises=[];
+  // Cria múltiplos bitmaps enquanto modifica o canvas continuamente
+  for(var i=0;i<10;i++){
+    ctx.fillStyle='hsl('+(i*36)+',80%,50%)'; ctx.fillRect(0,0,256,256);
+    var p=createImageBitmap(c,{resizeWidth:64,resizeHeight:64,resizeQuality:'pixelated'});
+    promises.push(p);
+    // Modifica o canvas ENTRE as chamadas (antes da promise resolver)
+    ctx.clearRect(0,0,256,256);
+    ctx.fillStyle='black'; ctx.fillText('frame'+i,10,10);
+  }
+  Promise.all(promises).then(function(bitmaps){
+    log('  '+bitmaps.length+' bitmaps criados simultaneamente');
+    var dst=mkCanvas(64,64,false); var dctx=dst.getContext('2d');
+    bitmaps.forEach(function(b,i){
+      try{ dctx.drawImage(b,0,0); var id=dctx.getImageData(0,0,1,1); log('  bmp['+i+'] pixel: '+id.data[0]); }
+      catch(e){ log('  bmp['+i+'] exc: '+e.name); }
+      b.close();
+    });
+    log('[T07] done');
+  }).catch(function(e){ log('  promise exc: '+e.message); log('[T07] done'); });
+}
+
+function t08(){
+  log('[T08] WebGL: usar buffer após deleteBuffer');
+  var c=mkCanvas(256,256,false);
+  var gl=c.getContext('webgl')||c.getContext('experimental-webgl');
+  if(!gl){ log('  WebGL não disponível'); log('[T08] done'); return; }
+  var buf=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([0,0,1,0,0,1]),gl.STATIC_DRAW);
+  log('  buffer created');
+  gl.deleteBuffer(buf);
+  log('  buffer deleted');
+  gc();
+  // Tenta usar o buffer deletado
+  try{ gl.bindBuffer(gl.ARRAY_BUFFER,buf); log('  bindBuffer deleted: err='+gl.getError()); }catch(e){ log('  bindBuffer exc: '+e.name); }
+  try{ gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([1,1,0]),gl.STATIC_DRAW); log('  bufferData após delete: err='+gl.getError()); }catch(e){ log('  bufferData exc: '+e.name); }
+  try{ gl.bufferSubData(gl.ARRAY_BUFFER,0,new Float32Array([0.5])); log('  bufferSubData após delete: err='+gl.getError()); }catch(e){ log('  bufferSubData exc: '+e.name); }
+  try{ var isValid=gl.isBuffer(buf); log('  isBuffer após delete: '+isValid); }catch(e){ log('  isBuffer exc: '+e.name); }
+  log('[T08] done');
+}
+
+function t09(){
+  log('[T09] WebGL: deleteShader + compileShader posterior');
+  var c=mkCanvas(256,256,false);
+  var gl=c.getContext('webgl')||c.getContext('experimental-webgl');
+  if(!gl){ log('  WebGL não disponível'); log('[T09] done'); return; }
+  var vs=gl.createShader(gl.VERTEX_SHADER);
+  gl.shaderSource(vs,'void main(){gl_Position=vec4(0,0,0,1);}');
+  // Deleta sem compilar
+  gl.deleteShader(vs);
+  gc();
+  // Tenta compilar shader deletado
+  try{ gl.compileShader(vs); log('  compileShader deleted: err='+gl.getError()); }catch(e){ log('  compileShader exc: '+e.name); }
+  try{ var log2=gl.getShaderInfoLog(vs); log('  getShaderInfoLog: '+log2); }catch(e){ log('  infoLog exc: '+e.name); }
+  try{ var compiled=gl.getShaderParameter(vs,gl.COMPILE_STATUS); log('  COMPILE_STATUS: '+compiled); }catch(e){ log('  getParam exc: '+e.name); }
+  // Cria programa e tenta attachar shader deletado
+  var prog=gl.createProgram();
+  try{ gl.attachShader(prog,vs); log('  attachShader deleted: err='+gl.getError()); }catch(e){ log('  attachShader exc: '+e.name); }
+  gl.deleteProgram(prog);
+  log('[T09] done');
+}
+
+function t10(){
+  log('[T10] WebGL: texture após deleteTexture');
+  var c=mkCanvas(256,256,false);
+  var gl=c.getContext('webgl')||c.getContext('experimental-webgl');
+  if(!gl){ log('  WebGL não disponível'); log('[T10] done'); return; }
+  var tex=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,tex);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([255,0,0,255]));
+  log('  texture created');
+  gl.deleteTexture(tex);
+  gc();
+  // Tenta usar texture deletada
+  try{ gl.bindTexture(gl.TEXTURE_2D,tex); log('  bindTexture deleted: err='+gl.getError()); }catch(e){ log('  bindTexture exc: '+e.name); }
+  try{
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([0,255,0,255]));
+    log('  texImage2D após delete: err='+gl.getError());
+  }catch(e){ log('  texImage2D exc: '+e.name); }
+  try{ var isValid=gl.isTexture(tex); log('  isTexture após delete: '+isValid); }catch(e){ log('  isTexture exc: '+e.name); }
+  log('[T10] done');
+}
+
+function t11(){
+  log('[T11] WebGL: framebuffer após deleteFramebuffer');
+  var c=mkCanvas(256,256,false);
+  var gl=c.getContext('webgl')||c.getContext('experimental-webgl');
+  if(!gl){ log('  WebGL não disponível'); log('[T11] done'); return; }
+  var fb=gl.createFramebuffer();
+  var tex=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,tex);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,256,256,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);
+  var status=gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+  log('  fb status: '+status+' (36053=COMPLETE)');
+  gl.deleteFramebuffer(fb);
+  gc();
+  // Tenta usar framebuffer deletado
+  try{ gl.bindFramebuffer(gl.FRAMEBUFFER,fb); log('  bindFramebuffer deleted: err='+gl.getError()); }catch(e){ log('  bindFramebuffer exc: '+e.name); }
+  try{ var s2=gl.checkFramebufferStatus(gl.FRAMEBUFFER); log('  checkStatus após delete: '+s2); }catch(e){ log('  checkStatus exc: '+e.name); }
+  gl.deleteTexture(tex);
+  log('[T11] done');
+}
+
+function t12(){
+  log('[T12] Canvas path com coordenadas NaN/Infinity');
+  var c=mkCanvas(256,256,false);
+  var ctx=c.getContext('2d');
+  var cases=[
+    function(){ ctx.moveTo(NaN,NaN); ctx.lineTo(100,100); },
+    function(){ ctx.moveTo(Infinity,0); ctx.lineTo(-Infinity,100); },
+    function(){ ctx.bezierCurveTo(NaN,0,100,NaN,200,200); },
+    function(){ ctx.arc(100,100,Infinity,0,Math.PI*2); },
+    function(){ ctx.arc(NaN,NaN,50,0,Math.PI*2); },
+    function(){ ctx.ellipse(100,100,Infinity,50,0,0,Math.PI*2); },
+    function(){ ctx.rect(NaN,NaN,Infinity,Infinity); },
+    function(){ ctx.quadraticCurveTo(NaN,100,200,NaN); },
+    function(){ ctx.arcTo(NaN,NaN,200,200,Infinity); },
+  ];
+  cases.forEach(function(fn,i){
+    ctx.beginPath();
+    try{
+      fn();
+      ctx.stroke();
+      log('  case['+i+']: ok');
+    }catch(e){ log('  case['+i+'] exc: '+e.name); }
+  });
+  log('[T12] done');
+}
+
+function t13(){
+  log('[T13] drawImage com source rect além dos bounds da imagem');
+  var src=mkCanvas(100,100,false);
+  var ctx0=src.getContext('2d');
+  ctx0.fillStyle='red'; ctx0.fillRect(0,0,100,100);
+  var dst=mkCanvas(400,400,false);
+  var ctx1=dst.getContext('2d');
+  var cases=[
+    [0,0,100,100],          // válido
+    [-50,-50,200,200],      // parcialmente fora
+    [50,50,100,100],        // parcialmente fora direita/baixo
+    [-100,-100,300,300],    // completamente além
+    [0,0,0,0],              // tamanho zero
+    [0,0,-100,-100],        // tamanho negativo
+    [0,0,Number.MAX_SAFE_INTEGER,Number.MAX_SAFE_INTEGER], // enorme
+    [NaN,0,100,100],        // NaN
+  ];
+  cases.forEach(function(r,i){
+    try{
+      ctx1.drawImage(src,r[0],r[1],r[2],r[3],0,0,100,100);
+      log('  case['+i+'] ['+r.join(',')+']: ok');
+    }catch(e){ log('  case['+i+'] exc: '+e.name); }
+  });
+  log('[T13] done');
+}
+
+function t14(){
+  log('[T14] Canvas context perdido (forceLossContext) + operação posterior');
+  var c=mkCanvas(256,256,true);
+  var ctx=c.getContext('webgl')||c.getContext('experimental-webgl');
+  if(!ctx){ log('  WebGL não disponível, testando 2D context'); document.body.removeChild(c);
+    // Alternativa: canvas muito grande para forçar OOM de contexto
+    var c2=mkCanvas(16384,16384,false);
+    var ctx2=c2.getContext('2d');
+    if(ctx2){
+      try{
+        ctx2.fillStyle='red'; ctx2.fillRect(0,0,16384,16384);
+        var id=ctx2.getImageData(0,0,16384,16384);
+        log('  16384x16384 getImageData: '+id.data.length+' bytes');
+      }catch(e){ log('  big canvas exc: '+e.name); }
+    }
+    log('[T14] done'); return;
+  }
+  var ext=ctx.getExtension('WEBGL_lose_context');
+  if(ext){
+    ctx.clearColor(1,0,0,1); ctx.clear(ctx.COLOR_BUFFER_BIT);
+    ext.loseContext();
+    log('  context lost');
+    gc();
+    // Tenta usar o contexto perdido
+    try{ ctx.clear(ctx.COLOR_BUFFER_BIT); log('  clear após lost: err='+ctx.getError()); }catch(e){ log('  clear exc: '+e.name); }
+    try{ var buf=ctx.createBuffer(); log('  createBuffer após lost: '+(buf?'non-null':'null')); }catch(e){ log('  createBuffer exc: '+e.name); }
+    var ci=ctx.isContextLost(); log('  isContextLost: '+ci);
+    // Restaura
+    ext.restoreContext();
+    log('  context restore requested');
+    setTimeout(function(){
+      log('  isContextLost após restore: '+ctx.isContextLost());
+      if(c.parentNode) document.body.removeChild(c);
+      log('[T14] done');
+    },100);
+  } else {
+    log('  WEBGL_lose_context não disponível');
+    if(c.parentNode) document.body.removeChild(c);
+    log('[T14] done');
+  }
+}
+
+function t15(){
+  log('[T15] putImageData com offset e dirty rect extremos');
+  var c=mkCanvas(256,256,false);
+  var ctx=c.getContext('2d');
+  ctx.fillStyle='blue'; ctx.fillRect(0,0,256,256);
+  var id=ctx.getImageData(0,0,100,100);
+  // Modifica os dados
+  for(var i=0;i<id.data.length;i+=4){ id.data[i]=255; id.data[i+1]=0; id.data[i+2]=0; id.data[i+3]=255; }
+  var cases=[
+    [0,0],
+    [-50,-50],
+    [250,250],            // parcialmente fora
+    [1000,1000],          // completamente fora
+    [-2147483648,-2147483648],  // extremo negativo
+    [NaN,NaN],
+    [Infinity,0],
+  ];
+  cases.forEach(function(p,i){
+    try{
+      ctx.putImageData(id,p[0],p[1]);
+      log('  putImageData ['+p.join(',')+'']: ok');
+    }catch(e){ log('  putImageData ['+p.join(',')+'] exc: '+e.name); }
+  });
+  // putImageData com dirty rect
+  try{
+    ctx.putImageData(id,0,0,0,0,100,100);    // normal dirty
+    ctx.putImageData(id,0,0,-10,-10,120,120); // dirty rect fora
+    ctx.putImageData(id,0,0,NaN,NaN,Infinity,Infinity); // NaN/Inf dirty
+    log('  dirty rect cases: ok');
+  }catch(e){ log('  dirty rect exc: '+e.name); }
+  log('[T15] done');
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== RODANDO TODOS OS TESTES CANVAS/WEBGL ===');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){
+    if(i>=tests.length){ log('=== FIM ==='); return; }
+    try{ tests[i](); }catch(e){ log('CRASH T'+(i<9?'0':'')+(i+1)+': '+e.name+' — '+e.message); }
+    i++; setTimeout(next,300);
+  }
+  next();
+}
+</script>
+</body>
+</html>

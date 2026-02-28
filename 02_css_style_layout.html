@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>02 — CSS / Style / Layout</title></head>
+<body>
+<h3>02 — CSS / Style / Layout</h3>
+<div id="log" style="height:300px;overflow:auto;border:1px solid #999;padding:4px;font:11px monospace;white-space:pre"></div>
+<br>
+<button onclick="t01()">T01 CSSStyleDeclaration stale pós-remove</button>
+<button onclick="t02()">T02 getComputedStyle stale pós-remove</button>
+<button onclick="t03()">T03 pseudo-element computedStyle pós-remove</button>
+<button onclick="t04()">T04 CSS animation: remove mid-animation</button>
+<button onclick="t05()">T05 CSS counter circular</button>
+<button onclick="t06()">T06 contain:layout + remove</button>
+<button onclick="t07()">T07 CSS Grid track remove mid-layout</button>
+<button onclick="t08()">T08 CSS Flexbox shrink extremo</button>
+<button onclick="t09()">T09 CSSStyleSheet.insertRule após remove</button>
+<button onclick="t10()">T10 offsetParent chain com position changes</button>
+<button onclick="t11()">T11 CSS custom property herança pós-remove</button>
+<button onclick="t12()">T12 getPropertyValue após style sheet removida</button>
+<button onclick="t13()">T13 CSS transition: remove durante transition</button>
+<button onclick="t14()">T14 position:sticky + scrollIntoView pós-remove</button>
+<button onclick="t15()">T15 CSS clip-path + remove do clipping element</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html">← Index</a>
+
+<script>
+var L=document.getElementById('log');
+function log(m){L.textContent+=m+'\n';L.scrollTop=L.scrollHeight}
+function gc(){try{var a=[];for(var i=0;i<20;i++)a.push(new ArrayBuffer(2*1024*1024));a=null}catch(e){}}
+
+function t01(){
+  log('[T01] CSSStyleDeclaration stale pós-remove');
+  var stale=[];
+  for(var i=0;i<60;i++){
+    var el=document.createElement('div');
+    el.style.cssText='color:hsl('+i*6+',80%,50%);font-size:'+i+'px;margin:'+i+'px;padding:'+(i%10)+'px;border:'+(i%4)+'px solid black';
+    document.body.appendChild(el);
+    var ref=el.style; // salva ref
+    document.body.removeChild(el);
+    stale.push({ref:ref,el:el});
+  }
+  gc();
+  stale.forEach(function(s,i){
+    try{
+      var c=s.ref.color;
+      var fs=s.ref.fontSize;
+      s.ref.color='blue';       // WRITE em stale style
+      s.ref.fontSize='99px';
+      var c2=s.ref.color;       // READ após write
+    }catch(e){ log('  exc['+i+']: '+e.name); }
+  });
+  stale=null; gc();
+  log('[T01] done');
+}
+
+function t02(){
+  log('[T02] getComputedStyle stale pós-remove + pós-GC');
+  var refs=[];
+  for(var i=0;i<50;i++){
+    var el=document.createElement('div');
+    el.style.cssText='width:'+i+'px;height:'+i+'px;display:block;float:'+(i%2?'left':'none');
+    document.body.appendChild(el);
+    var cs=window.getComputedStyle(el);
+    document.body.removeChild(el);
+    refs.push(cs);
+  }
+  gc();
+  refs.forEach(function(cs,i){
+    try{
+      var w=cs.width;
+      var h=cs.height;
+      var d=cs.display;
+      var f=cs.float;
+      var pos=cs.position;
+    }catch(e){ log('  exc['+i+']: '+e.name); }
+  });
+  refs=null; gc();
+  log('[T02] done');
+}
+
+function t03(){
+  log('[T03] getComputedStyle pseudo-element pós-remove');
+  var s=document.createElement('style');
+  s.textContent='.ph::before{content:"BEFORE";display:block}.ph::after{content:"AFTER";display:block}';
+  document.head.appendChild(s);
+  var els=[];
+  for(var i=0;i<30;i++){
+    var el=document.createElement('div');
+    el.className='ph';
+    document.body.appendChild(el);
+    var before=window.getComputedStyle(el,'::before');
+    var after=window.getComputedStyle(el,'::after');
+    document.body.removeChild(el);
+    document.head.removeChild(s); // remove a stylesheet também
+    s=document.createElement('style'); // recria
+    s.textContent='.ph::before{content:"B'+i+'"}.ph::after{content:"A'+i+'"}';
+    document.head.appendChild(s);
+    els.push({before:before,after:after});
+  }
+  gc();
+  els.forEach(function(r,i){
+    try{
+      var bc=r.before.content;
+      var ac=r.after.content;
+      var bd=r.before.display;
+    }catch(e){ log('  exc['+i+']: '+e.name); }
+  });
+  if(s.parentNode) document.head.removeChild(s);
+  log('[T03] done');
+}
+
+function t04(){
+  log('[T04] CSS animation: remove element mid-animation');
+  var s=document.createElement('style');
+  s.textContent='@keyframes atest{from{transform:translateX(0)}to{transform:translateX(200px)}}.anim{animation:atest 2s infinite}';
+  document.head.appendChild(s);
+  var els=[];
+  for(var i=0;i<20;i++){
+    var el=document.createElement('div');
+    el.className='anim';
+    el.textContent='anim'+i;
+    document.body.appendChild(el);
+    els.push(el);
+  }
+  document.body.offsetHeight; // força início das animações
+  // Lê getAnimations() antes de remover
+  var animRefs=[];
+  els.forEach(function(el){
+    var anims=el.getAnimations();
+    animRefs.push({el:el,anims:anims});
+  });
+  // Remove elementos enquanto animações correm
+  els.forEach(function(el){ if(el.parentNode) document.body.removeChild(el); });
+  gc();
+  // Acessa animações de elementos já removidos
+  animRefs.forEach(function(r,i){
+    try{
+      r.anims.forEach(function(a){
+        var t=a.currentTime;
+        var s=a.playState;
+        a.pause();
+      });
+    }catch(e){ log('  exc['+i+']: '+e.name); }
+  });
+  document.head.removeChild(s);
+  log('[T04] done');
+}
+
+function t05(){
+  log('[T05] CSS counter com lista profunda e remoção');
+  var s=document.createElement('style');
+  s.textContent='ol.ctest{counter-reset:ctr}ol.ctest li::before{counter-increment:ctr;content:counter(ctr)". "}ol.ctest ol{counter-reset:ctr}';
+  document.head.appendChild(s);
+  var root=document.createElement('ol');
+  root.className='ctest';
+  document.body.appendChild(root);
+  // Cria lista aninhada profunda
+  var current=root;
+  for(var d=0;d<10;d++){
+    for(var i=0;i<5;i++){
+      var li=document.createElement('li');
+      li.textContent='level'+d+'item'+i;
+      current.appendChild(li);
+    }
+    var sub=document.createElement('ol');
+    sub.className='ctest';
+    current.appendChild(sub);
+    current=sub;
+  }
+  root.offsetHeight;
+  // Remove níveis intermediários (quebra o contexto dos counters)
+  var ols=root.querySelectorAll('ol');
+  for(var k=0;k<ols.length;k+=2){
+    if(ols[k].parentNode) ols[k].parentNode.removeChild(ols[k]);
+  }
+  root.offsetHeight; // força re-render do counter
+  gc();
+  if(root.parentNode) document.body.removeChild(root);
+  document.head.removeChild(s);
+  log('[T05] done');
+}
+
+function t06(){
+  log('[T06] contain:layout/style/paint + remove filho durante layout');
+  var s=document.createElement('style');
+  s.textContent='.contained{contain:layout style paint;width:200px;height:200px;overflow:hidden}.contained .inner{width:300px;height:50px;background:red}';
+  document.head.appendChild(s);
+  var containers=[];
+  for(var i=0;i<15;i++){
+    var c=document.createElement('div');
+    c.className='contained';
+    for(var j=0;j<10;j++){
+      var inner=document.createElement('div');
+      inner.className='inner';
+      inner.textContent='i'+i+'j'+j;
+      c.appendChild(inner);
+    }
+    document.body.appendChild(c);
+    containers.push(c);
+  }
+  document.body.offsetHeight;
+  // Remove filhos de dentro do contain:layout durante reflow
+  containers.forEach(function(c){
+    var children=Array.from(c.children);
+    children.forEach(function(ch,i){
+      if(i%2===0 && ch.parentNode) c.removeChild(ch);
+    });
+    c.offsetHeight; // força reflow do container
+  });
+  gc();
+  containers.forEach(function(c){ if(c.parentNode) document.body.removeChild(c); });
+  document.head.removeChild(s);
+  log('[T06] done');
+}
+
+function t07(){
+  log('[T07] CSS Grid: remove track element mid-layout');
+  var s=document.createElement('style');
+  s.textContent='.grid{display:grid;grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(5,40px);width:500px}.item{background:rgba(100,150,200,0.4)}';
+  document.head.appendChild(s);
+  var grid=document.createElement('div');
+  grid.className='grid';
+  var items=[];
+  for(var i=0;i<25;i++){
+    var el=document.createElement('div');
+    el.className='item';
+    el.style.cssText='grid-column:'+(i%5+1)+';grid-row:'+Math.floor(i/5+1);
+    el.textContent=i;
+    grid.appendChild(el);
+    items.push(el);
+  }
+  document.body.appendChild(grid);
+  grid.offsetHeight;
+  // Remove items e muda grid-template mid-layout
+  items.slice(0,10).forEach(function(el){ if(el.parentNode) grid.removeChild(el); });
+  grid.style.gridTemplateColumns='repeat(3,1fr)'; // muda o template
+  grid.offsetHeight;
+  items.slice(10,15).forEach(function(el){ if(el.parentNode) grid.removeChild(el); });
+  grid.offsetHeight;
+  gc();
+  if(grid.parentNode) document.body.removeChild(grid);
+  document.head.removeChild(s);
+  log('[T07] done');
+}
+
+function t08(){
+  log('[T08] Flexbox: flex-shrink extremo + remove mid-flex');
+  var s=document.createElement('style');
+  s.textContent='.flex{display:flex;width:200px;overflow:hidden}';
+  document.head.appendChild(s);
+  var flex=document.createElement('div');
+  flex.className='flex';
+  var items=[];
+  for(var i=0;i<20;i++){
+    var el=document.createElement('div');
+    // flex-shrink extremo: alguns 0, alguns muito grandes
+    el.style.cssText='flex:'+(i%3===0?'0 0 100px':'1 '+(i*10)+' 50px')+';min-width:'+(i%4)+'px';
+    el.textContent=i;
+    flex.appendChild(el);
+    items.push(el);
+  }
+  document.body.appendChild(flex);
+  flex.offsetWidth;
+  // Remove itens durante flex layout
+  for(var j=0;j<items.length;j+=2){
+    if(items[j].parentNode) flex.removeChild(items[j]);
+    flex.offsetWidth; // força re-flex
+  }
+  gc();
+  if(flex.parentNode) document.body.removeChild(flex);
+  document.head.removeChild(s);
+  log('[T08] done');
+}
+
+function t09(){
+  log('[T09] CSSStyleSheet.insertRule/deleteRule após sheet removida');
+  var s=document.createElement('style');
+  s.textContent='.sr1{color:red}.sr2{color:blue}';
+  document.head.appendChild(s);
+  var sheet=s.sheet;
+  log('  rules before: '+sheet.cssRules.length);
+  document.head.removeChild(s); // remove a tag do DOM
+  gc();
+  // Tenta operar na sheet após remoção
+  try{
+    sheet.insertRule('.sr3{color:green}',0);
+    log('  insertRule após remove: ok, rules='+sheet.cssRules.length);
+  }catch(e){ log('  insertRule exc: '+e.name); }
+  try{
+    sheet.deleteRule(0);
+    log('  deleteRule após remove: ok');
+  }catch(e){ log('  deleteRule exc: '+e.name); }
+  try{
+    var r=sheet.cssRules[0];
+    if(r) log('  cssRules[0] stale: '+r.cssText);
+  }catch(e){ log('  cssRules exc: '+e.name); }
+  log('[T09] done');
+}
+
+function t10(){
+  log('[T10] offsetParent chain com position changes dinâmicos');
+  var levels=[];
+  var current=document.body;
+  for(var i=0;i<10;i++){
+    var el=document.createElement('div');
+    el.style.cssText='position:'+(i%3===0?'relative':'static')+';width:100px;height:20px';
+    current.appendChild(el);
+    levels.push(el);
+    current=el;
+  }
+  var leaf=document.createElement('span');
+  leaf.textContent='leaf';
+  current.appendChild(leaf);
+  document.body.offsetHeight;
+  // Lê offsetParent chain
+  var el2=leaf;
+  var chain=[];
+  while(el2){ chain.push(el2.tagName); el2=el2.offsetParent; }
+  log('  chain: '+chain.join('→'));
+  // Muda positions dinamicamente e lê de novo
+  levels.forEach(function(l,i){ l.style.position=['fixed','absolute','sticky'][i%3]; });
+  document.body.offsetHeight;
+  el2=leaf; chain=[];
+  while(el2){ chain.push(el2.tagName); el2=el2.offsetParent; }
+  log('  chain após muda: '+chain.join('→'));
+  // Remove nível do meio e lê chain
+  if(levels[5].parentNode) levels[5].parentNode.removeChild(levels[5]);
+  gc();
+  try{
+    el2=leaf; chain=[];
+    while(el2 && chain.length<20){ chain.push(el2.tagName); el2=el2.offsetParent; }
+    log('  chain após remove: '+chain.join('→'));
+  }catch(e){ log('  chain exc: '+e.name); }
+  // Limpa
+  if(levels[0].parentNode) levels[0].parentNode.removeChild(levels[0]);
+  log('[T10] done');
+}
+
+function t11(){
+  log('[T11] CSS custom property herança + remoção do pai');
+  var s=document.createElement('style');
+  s.textContent=':root{--main:#ff0}.inherit-test{color:var(--main);background:var(--bg,#000)}.inherit-test .child{color:var(--main);--local:calc(var(--main))}';
+  document.head.appendChild(s);
+  var parent=document.createElement('div');
+  parent.className='inherit-test';
+  parent.style.setProperty('--bg','blue');
+  var child=document.createElement('span');
+  child.className='child';
+  child.textContent='child';
+  parent.appendChild(child);
+  document.body.appendChild(parent);
+  var cs=window.getComputedStyle(child);
+  log('  child color before: '+cs.color);
+  log('  --main value: '+cs.getPropertyValue('--main'));
+  // Remove o pai
+  document.body.removeChild(parent);
+  gc();
+  // Acessa propriedades custom no filho (agora orfão)
+  try{
+    var cs2=window.getComputedStyle(child);
+    log('  color stale: '+cs2.color);
+    log('  --main stale: "'+cs2.getPropertyValue('--main')+'"');
+  }catch(e){ log('  exc stale: '+e.name); }
+  // Stale ref do computed anterior
+  try{
+    log('  cs (original ref) color: '+cs.color);
+  }catch(e){ log('  cs stale exc: '+e.name); }
+  document.head.removeChild(s);
+  log('[T11] done');
+}
+
+function t12(){
+  log('[T12] getPropertyValue após stylesheet trocada/removida');
+  var s=document.createElement('style');
+  s.textContent='.spv{font-size:16px;color:red;--x:42}';
+  document.head.appendChild(s);
+  var el=document.createElement('div');
+  el.className='spv';
+  document.body.appendChild(el);
+  var cs=window.getComputedStyle(el);
+  log('  fontSize: '+cs.getPropertyValue('font-size'));
+  log('  --x: '+cs.getPropertyValue('--x'));
+  // Remove a stylesheet
+  document.head.removeChild(s);
+  // Adiciona outra
+  var s2=document.createElement('style');
+  s2.textContent='.spv{font-size:99px;color:blue;--x:999}';
+  document.head.appendChild(s2);
+  document.body.offsetHeight; // força recalc
+  gc();
+  // Acessa o computed style "antigo" (ref salva antes da mudança)
+  try{
+    log('  fontSize STALE: '+cs.getPropertyValue('font-size'));
+    log('  --x STALE: '+cs.getPropertyValue('--x'));
+    log('  color STALE: '+cs.getPropertyValue('color'));
+  }catch(e){ log('  exc: '+e.name); }
+  // Novo computed style
+  var cs3=window.getComputedStyle(el);
+  log('  fontSize NEW: '+cs3.getPropertyValue('font-size'));
+  if(el.parentNode) document.body.removeChild(el);
+  document.head.removeChild(s2);
+  log('[T12] done');
+}
+
+function t13(){
+  log('[T13] CSS transition: remove element durante transition');
+  var s=document.createElement('style');
+  s.textContent='.tr{transition:all 1s ease;width:50px;height:50px;background:red}.tr.expanded{width:200px;height:200px;background:blue}';
+  document.head.appendChild(s);
+  var els=[];
+  for(var i=0;i<15;i++){
+    var el=document.createElement('div');
+    el.className='tr';
+    document.body.appendChild(el);
+    els.push(el);
+  }
+  document.body.offsetHeight;
+  // Dispara transition em todos
+  els.forEach(function(el){ el.classList.add('expanded'); });
+  document.body.offsetHeight; // transition iniciada
+  // Remove DURANTE a transition
+  els.forEach(function(el){ if(el.parentNode) document.body.removeChild(el); });
+  gc();
+  // Acessa os elementos removidos e suas transitions
+  els.forEach(function(el,i){
+    try{
+      var anims=el.getAnimations();
+      log('  el['+i+'] anims: '+anims.length);
+      anims.forEach(function(a){ var t=a.currentTime; });
+    }catch(e){ log('  exc['+i+']: '+e.name); }
+  });
+  document.head.removeChild(s);
+  log('[T13] done');
+}
+
+function t14(){
+  log('[T14] position:sticky + scrollIntoView em elemento fora do DOM');
+  var s=document.createElement('style');
+  s.textContent='.sticky-wrap{height:400px;overflow:auto}.sticky{position:sticky;top:0}';
+  document.head.appendChild(s);
+  var wrap=document.createElement('div');
+  wrap.className='sticky-wrap';
+  var sticky=document.createElement('div');
+  sticky.className='sticky';
+  sticky.textContent='STICKY';
+  wrap.appendChild(sticky);
+  for(var i=0;i<20;i++){
+    var r=document.createElement('p'); r.textContent='row'+i; wrap.appendChild(r);
+  }
+  document.body.appendChild(wrap);
+  wrap.offsetHeight;
+  // Remove o wrap (sticky e tudo mais)
+  document.body.removeChild(wrap);
+  gc();
+  // Tenta scrollIntoView no sticky agora fora do DOM
+  try{ sticky.scrollIntoView({behavior:'smooth',block:'center'}); log('  scrollIntoView fora DOM: ok'); }catch(e){ log('  scrollIntoView exc: '+e.name); }
+  // Tenta getBoundingClientRect
+  try{ var r=sticky.getBoundingClientRect(); log('  BCR: '+r.top+','+r.left); }catch(e){ log('  BCR exc: '+e.name); }
+  document.head.removeChild(s);
+  log('[T14] done');
+}
+
+function t15(){
+  log('[T15] CSS clip-path referenciando elemento SVG removido');
+  var svgNS='http://www.w3.org/2000/svg';
+  var svg=document.createElementNS(svgNS,'svg');
+  svg.style.cssText='width:0;height:0;position:absolute';
+  var defs=document.createElementNS(svgNS,'defs');
+  var cp=document.createElementNS(svgNS,'clipPath');
+  cp.id='clip-target';
+  var rect=document.createElementNS(svgNS,'rect');
+  rect.setAttribute('width','100'); rect.setAttribute('height','100');
+  cp.appendChild(rect); defs.appendChild(cp); svg.appendChild(defs);
+  document.body.appendChild(svg);
+  // Cria elementos que usam o clip-path
+  var s=document.createElement('style');
+  s.textContent='.clipped{clip-path:url(#clip-target);width:100px;height:100px;background:red}';
+  document.head.appendChild(s);
+  var els=[];
+  for(var i=0;i<10;i++){
+    var el=document.createElement('div');
+    el.className='clipped';
+    document.body.appendChild(el);
+    els.push(el);
+  }
+  document.body.offsetHeight;
+  // Remove o SVG com o clipPath (invalida a referência)
+  document.body.removeChild(svg);
+  document.body.offsetHeight; // re-render sem o clip-path
+  gc();
+  // Acessa computed style dos elementos que ainda referenciam o clip
+  els.forEach(function(el,i){
+    try{
+      var cs=window.getComputedStyle(el);
+      var cp2=cs.clipPath;
+      log('  el['+i+'] clipPath: '+cp2);
+      el.offsetHeight; // força layout
+    }catch(e){ log('  exc['+i+']: '+e.name); }
+  });
+  els.forEach(function(el){ if(el.parentNode) document.body.removeChild(el); });
+  document.head.removeChild(s);
+  log('[T15] done');
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== RODANDO TODOS OS TESTES ===');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){
+    if(i>=tests.length){ log('=== FIM ==='); return; }
+    try{ tests[i](); }catch(e){ log('CRASH T'+(i<9?'0':'')+(i+1)+': '+e.name+' — '+e.message); }
+    i++; setTimeout(next,250);
+  }
+  next();
+}
+</script>
+</body>
+</html>
