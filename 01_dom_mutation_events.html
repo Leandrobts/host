@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>01 — DOM Mutation + Event Dispatch</title></head>
+<body>
+<h3>01 — DOM Mutation + Event Dispatch</h3>
+<div id="log" style="height:300px;overflow:auto;border:1px solid #999;padding:4px;font:11px monospace;white-space:pre"></div>
+<br>
+<button onclick="t01()">T01 MutationObserver: mover nó observado para outro doc</button>
+<button onclick="t02()">T02 childList + subtree: remoção em cascata no callback</button>
+<button onclick="t03()">T03 attributes observer: setAttribute durante callback</button>
+<button onclick="t04()">T04 characterData: substituir textNode durante observe</button>
+<button onclick="t05()">T05 Evento capture+bubble: remover listener na fase capture</button>
+<button onclick="t06()">T06 stopImmediatePropagation + remove target</button>
+<button onclick="t07()">T07 Event retargeting em Shadow DOM + remove host</button>
+<button onclick="t08()">T08 dispatchEvent síncrono reentrante</button>
+<button onclick="t09()">T09 CustomEvent com objeto complexo + remoção do target</button>
+<button onclick="t10()">T10 Nó movido entre documentos durante event dispatch</button>
+<button onclick="t11()">T11 EventListener: opção once + remoção manual simultânea</button>
+<button onclick="t12()">T12 MutationObserver.takeRecords após disconnect</button>
+<button onclick="t13()">T13 Observer: observar nó já removido</button>
+<button onclick="t14()">T14 dispatchEvent em nó dentro de DocumentFragment</button>
+<button onclick="t15()">T15 Nó inserido durante MutationObserver callback loop</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html">← Index</a>
+<script>
+var L=document.getElementById('log');
+function log(m){L.textContent+=m+'\n';L.scrollTop=L.scrollHeight}
+function gc(){try{var a=[];for(var i=0;i<20;i++)a.push(new ArrayBuffer(2*1024*1024));a=null}catch(e){}}
+
+function t01(){
+  log('[T01] MutationObserver: mover nó observado para outro documento');
+  var el=document.createElement('div');
+  el.innerHTML='<span>child</span>';
+  document.body.appendChild(el);
+  var fired=[];
+  var obs=new MutationObserver(function(muts){
+    muts.forEach(function(m){ fired.push(m.type+':'+m.target.ownerDocument.URL.slice(-4)); });
+  });
+  obs.observe(el,{childList:true,attributes:true,subtree:true,characterData:true});
+  // Cria um iframe para ter outro documento
+  var iframe=document.createElement('iframe');
+  iframe.style.display='none';
+  document.body.appendChild(iframe);
+  var idoc=iframe.contentDocument;
+  // Adota o elemento para o documento do iframe
+  var adopted=idoc.adoptNode(el);
+  idoc.body.appendChild(adopted);
+  gc();
+  // Faz mutações no nó agora em outro documento
+  adopted.setAttribute('data-x','1');
+  var newChild=idoc.createElement('b'); newChild.textContent='new';
+  adopted.appendChild(newChild);
+  // Volta para o documento principal
+  document.body.appendChild(document.adoptNode(adopted));
+  gc();
+  obs.disconnect();
+  log('  mutations: '+fired.join(', '));
+  document.body.removeChild(adopted);
+  document.body.removeChild(iframe);
+  log('[T01] done');
+}
+
+function t02(){
+  log('[T02] MutationObserver childList+subtree: remoção em cascata no callback');
+  var root=document.createElement('div');
+  document.body.appendChild(root);
+  // Cria árvore de 4 níveis
+  function buildTree(parent,depth){
+    if(depth===0) return;
+    for(var i=0;i<3;i++){
+      var el=document.createElement('div');
+      el.dataset.d=depth; el.dataset.i=i;
+      parent.appendChild(el);
+      buildTree(el,depth-1);
+    }
+  }
+  buildTree(root,4);
+  var cbCount=0, removedInCb=0;
+  var obs=new MutationObserver(function(muts){
+    cbCount++;
+    if(cbCount>30) return;
+    muts.forEach(function(m){
+      m.addedNodes.forEach(function(n){
+        // Remove todos os filhos do nó adicionado dentro do callback
+        while(n.firstChild){ n.removeChild(n.firstChild); removedInCb++; }
+        gc();
+      });
+      m.removedNodes.forEach(function(n){
+        // Tenta reinserir o nó removido
+        try{ m.target.appendChild(n); }catch(e){}
+      });
+    });
+  });
+  obs.observe(root,{childList:true,subtree:true});
+  // Dispara mutações
+  var all=Array.from(root.querySelectorAll('div'));
+  all.forEach(function(el,i){
+    if(i%4===0 && el.parentNode) el.parentNode.removeChild(el);
+    if(i%4===1){ var c=document.createElement('span'); el.appendChild(c); }
+  });
+  gc();
+  obs.disconnect();
+  if(root.parentNode) document.body.removeChild(root);
+  log('  callbacks: '+cbCount+' removedInCb: '+removedInCb);
+  log('[T02] done');
+}
+
+function t03(){
+  log('[T03] MutationObserver attributes: setAttribute em loop dentro do callback');
+  var el=document.createElement('div');
+  el.setAttribute('data-val','0');
+  document.body.appendChild(el);
+  var count=0;
+  var obs=new MutationObserver(function(muts){
+    count++;
+    if(count>20) return;
+    muts.forEach(function(m){
+      if(m.type==='attributes'){
+        var old=m.oldValue||'0';
+        var next=parseInt(old)+1;
+        // setAttribute dentro do callback → dispara novo mutation
+        el.setAttribute(m.attributeName, String(next));
+        // Muda um atributo diferente também
+        el.setAttribute('data-extra', next*2);
+      }
+    });
+  });
+  obs.observe(el,{attributes:true,attributeOldValue:true});
+  el.setAttribute('data-val','1'); // dispara a cadeia
+  setTimeout(function(){
+    obs.disconnect();
+    log('  attr mutations: '+count+' final val: '+el.getAttribute('data-val'));
+    if(el.parentNode) document.body.removeChild(el);
+    gc();
+    log('[T03] done');
+  },100);
+}
+
+function t04(){
+  log('[T04] characterData observer: modificar textNode no callback');
+  var container=document.createElement('div');
+  document.body.appendChild(container);
+  var tn=document.createTextNode('initial');
+  container.appendChild(tn);
+  var count=0;
+  var obs=new MutationObserver(function(muts){
+    count++;
+    if(count>15) return;
+    muts.forEach(function(m){
+      if(m.type==='characterData'){
+        var old=m.oldValue;
+        // Modifica o textNode dentro do callback (reentrante)
+        tn.data=old+'x';
+        // Remove e reinsere o textNode
+        if(count%3===0){
+          container.removeChild(tn);
+          gc();
+          container.appendChild(tn);
+        }
+      }
+    });
+  });
+  obs.observe(container,{characterData:true,characterDataOldValue:true,subtree:true});
+  tn.data='hello';
+  setTimeout(function(){
+    obs.disconnect();
+    log('  charData mutations: '+count+' final: "'+tn.data.slice(0,30)+'"');
+    if(container.parentNode) document.body.removeChild(container);
+    log('[T04] done');
+  },150);
+}
+
+function t05(){
+  log('[T05] Evento capture+bubble: remover listener durante fase capture');
+  var outer=document.createElement('div');
+  var middle=document.createElement('div');
+  var inner=document.createElement('span');
+  inner.textContent='target';
+  middle.appendChild(inner); outer.appendChild(middle);
+  document.body.appendChild(outer);
+  var log2=[];
+  function captureOuter(e){
+    log2.push('capture-outer');
+    // Remove o listener de bubble do middle durante capture
+    middle.removeEventListener('click',bubbleMiddle);
+    // Remove o próprio listener capture
+    outer.removeEventListener('click',captureOuter,true);
+  }
+  function bubbleMiddle(e){
+    log2.push('bubble-middle');
+  }
+  function bubbleInner(e){
+    log2.push('bubble-inner');
+    // Tenta remover o target do DOM durante a fase bubble
+    if(inner.parentNode) middle.removeChild(inner);
+    gc();
+    log2.push('inner-removed');
+  }
+  outer.addEventListener('click',captureOuter,true);
+  middle.addEventListener('click',bubbleMiddle);
+  inner.addEventListener('click',bubbleInner);
+  inner.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+  log('  chain: '+log2.join('→'));
+  if(outer.parentNode) document.body.removeChild(outer);
+  log('[T05] done');
+}
+
+function t06(){
+  log('[T06] stopImmediatePropagation + remove target no handler');
+  var el=document.createElement('div');
+  el.textContent='sip-target';
+  document.body.appendChild(el);
+  var fired=[];
+  // Três listeners no mesmo elemento
+  el.addEventListener('custom',function(e){ fired.push('L1'); e.stopImmediatePropagation(); if(el.parentNode) document.body.removeChild(el); gc(); });
+  el.addEventListener('custom',function(e){ fired.push('L2'); }); // não deve rodar
+  el.addEventListener('custom',function(e){ fired.push('L3'); }); // não deve rodar
+  var parent=document.createElement('div');
+  parent.addEventListener('custom',function(e){ fired.push('parent'); }); // não deve rodar
+  document.body.appendChild(parent);
+  parent.appendChild(document.createElement('span')); // el já foi removido
+  el.dispatchEvent(new CustomEvent('custom',{bubbles:true}));
+  log('  fired: '+fired.join(','));
+  log('  el conectado: '+el.isConnected);
+  if(parent.parentNode) document.body.removeChild(parent);
+  log('[T06] done');
+}
+
+function t07(){
+  log('[T07] Event retargeting em Shadow DOM + remove host durante dispatch');
+  var host=document.createElement('div');
+  document.body.appendChild(host);
+  var shadow=host.attachShadow({mode:'open'});
+  var inner=document.createElement('span');
+  inner.textContent='shadow-inner';
+  shadow.appendChild(inner);
+  var seenTargets=[];
+  // Listener no documento (fora do shadow)
+  document.addEventListener('click',function docHandler(e){
+    seenTargets.push('doc:'+e.target.tagName);
+    // Remove o host durante o bubbling
+    if(host.parentNode) document.body.removeChild(host);
+    gc();
+    document.removeEventListener('click',docHandler);
+  });
+  // Listener dentro do shadow
+  inner.addEventListener('click',function(e){
+    seenTargets.push('inner:'+e.target.tagName);
+  });
+  // Listener no host
+  host.addEventListener('click',function(e){
+    seenTargets.push('host:'+e.target.tagName);
+  });
+  inner.dispatchEvent(new MouseEvent('click',{bubbles:true,composed:true}));
+  log('  targets: '+seenTargets.join(', '));
+  log('[T07] done');
+}
+
+function t08(){
+  log('[T08] dispatchEvent síncrono reentrante (dispatch dentro de dispatch)');
+  var el=document.createElement('div');
+  document.body.appendChild(el);
+  var depth=0, maxDepth=0;
+  el.addEventListener('re-event',function(e){
+    depth++;
+    maxDepth=Math.max(maxDepth,depth);
+    if(depth<10){
+      // dispatch reentrante — evento dentro de evento
+      el.dispatchEvent(new CustomEvent('re-event',{detail:depth}));
+    }
+    if(depth===5) gc();
+    depth--;
+  });
+  el.dispatchEvent(new CustomEvent('re-event',{detail:0}));
+  log('  maxDepth: '+maxDepth);
+  // Agora remove o el e tenta dispatch
+  document.body.removeChild(el);
+  gc();
+  try{
+    el.dispatchEvent(new CustomEvent('re-event',{detail:99}));
+    log('  dispatch em removido: ok, depth='+maxDepth);
+  }catch(e){ log('  dispatch exc: '+e.name); }
+  log('[T08] done');
+}
+
+function t09(){
+  log('[T09] CustomEvent com detalhe complexo + remoção do target');
+  var target=document.createElement('div');
+  document.body.appendChild(target);
+  // Detalhe com referência circular
+  var detail={a:1, node:target, self:null};
+  detail.self=detail; // circular
+  var received=null;
+  target.addEventListener('complex',function(e){
+    received=e.detail;
+    // Remove o target durante o handler
+    if(target.parentNode) document.body.removeChild(target);
+    gc();
+    // Acessa o detail após remoção
+    log('  detail.node conectado: '+e.detail.node.isConnected);
+    log('  detail.self===detail: '+(e.detail.self===e.detail));
+  });
+  target.dispatchEvent(new CustomEvent('complex',{detail:detail,bubbles:true}));
+  // Acessa o detail depois do dispatch
+  try{
+    if(received) log('  post-dispatch detail.a: '+received.a);
+    if(received && received.node) log('  post-dispatch node tag: '+received.node.tagName);
+  }catch(e){ log('  post-dispatch exc: '+e.name); }
+  gc();
+  log('[T09] done');
+}
+
+function t10(){
+  log('[T10] Nó movido entre documentos durante event dispatch');
+  var iframe=document.createElement('iframe');
+  iframe.style.display='none';
+  document.body.appendChild(iframe);
+  var idoc=iframe.contentDocument;
+  var el=document.createElement('div');
+  el.textContent='cross-doc';
+  document.body.appendChild(el);
+  var phases=[];
+  document.body.addEventListener('custom-cd',function(e){
+    phases.push('body-bubble');
+    // Adota o target para outro documento DURANTE o bubbling
+    var adopted=idoc.adoptNode(e.target);
+    idoc.body.appendChild(adopted);
+    gc();
+    log('  target movido: ownerDoc==iframe? '+(e.target.ownerDocument===idoc));
+    // Ainda acessa propriedades da event após mover
+    log('  e.target.tagName: '+e.target.tagName);
+    log('  e.target.isConnected: '+e.target.isConnected);
+  });
+  el.addEventListener('custom-cd',function(e){ phases.push('target'); });
+  el.dispatchEvent(new CustomEvent('custom-cd',{bubbles:true}));
+  log('  phases: '+phases.join('→'));
+  // Limpa
+  var back=document.adoptNode(idoc.body.querySelector('div'));
+  if(back) back; // apenas deixa coletar
+  document.body.removeChild(iframe);
+  gc();
+  log('[T10] done');
+}
+
+function t11(){
+  log('[T11] addEventListener once + removeEventListener simultâneo');
+  var el=document.createElement('div');
+  document.body.appendChild(el);
+  var counts={once:0,manual:0,both:0};
+  function onceHandler(e){ counts.once++; log('  once fired, count='+counts.once); }
+  function manualHandler(e){ counts.manual++; }
+  function bothHandler(e){ counts.both++; }
+  el.addEventListener('ev',onceHandler,{once:true});
+  el.addEventListener('ev',manualHandler);
+  el.addEventListener('ev',bothHandler,{once:true});
+  // Remove o onceHandler ANTES de disparar (race com once)
+  el.removeEventListener('ev',onceHandler);
+  // Remove o manualHandler depois do once já ter sido removido
+  el.removeEventListener('ev',manualHandler);
+  el.dispatchEvent(new Event('ev'));
+  el.dispatchEvent(new Event('ev')); // segunda disparo
+  log('  counts: once='+counts.once+' manual='+counts.manual+' both='+counts.both);
+  if(el.parentNode) document.body.removeChild(el);
+  log('[T11] done');
+}
+
+function t12(){
+  log('[T12] MutationObserver.takeRecords após disconnect e após remoção do nó');
+  var el=document.createElement('div');
+  el.setAttribute('data-x','0');
+  document.body.appendChild(el);
+  var obs=new MutationObserver(function(){ /* não processa — acumula */ });
+  obs.observe(el,{attributes:true,childList:true});
+  // Faz mutações antes de chamar takeRecords
+  el.setAttribute('data-x','1');
+  el.setAttribute('data-y','2');
+  var c1=document.createElement('span'); el.appendChild(c1);
+  var c2=document.createElement('b'); el.appendChild(c2);
+  el.removeChild(c1);
+  obs.disconnect();
+  gc();
+  // takeRecords após disconnect
+  var recs=obs.takeRecords();
+  log('  records após disconnect: '+recs.length);
+  // Remove o elemento observado
+  document.body.removeChild(el);
+  gc();
+  // Acessa os records cujo target foi removido
+  recs.forEach(function(r,i){
+    try{
+      log('  rec['+i+']: type='+r.type+' target.connected='+r.target.isConnected+
+          (r.oldValue?' old='+r.oldValue:'')+
+          (r.attributeName?' attr='+r.attributeName:''));
+    }catch(e){ log('  rec['+i+'] exc: '+e.name); }
+  });
+  // takeRecords de novo — deve estar vazio
+  var recs2=obs.takeRecords();
+  log('  records após 2ª takeRecords: '+recs2.length);
+  log('[T12] done');
+}
+
+function t13(){
+  log('[T13] Observer: observe em nó já removido do DOM');
+  var el=document.createElement('div');
+  el.appendChild(document.createElement('span'));
+  document.body.appendChild(el);
+  document.body.removeChild(el); // remove antes de observar
+  gc();
+  var fired=0;
+  var obs=new MutationObserver(function(muts){ fired+=muts.length; });
+  // Observa nó que já está fora do DOM
+  try{
+    obs.observe(el,{childList:true,attributes:true,subtree:true});
+    log('  observe em removido: ok');
+  }catch(e){ log('  observe exc: '+e.name); }
+  // Faz mutações no nó fora do DOM
+  el.setAttribute('data-test','1');
+  var newChild=document.createElement('b');
+  el.appendChild(newChild);
+  el.removeChild(newChild);
+  gc();
+  // Coleta records
+  var recs=obs.takeRecords();
+  log('  mutations em nó fora do DOM: '+recs.length+' (fired: '+fired+')');
+  // Reinsere o nó
+  document.body.appendChild(el);
+  el.setAttribute('data-test','2');
+  var recs2=obs.takeRecords();
+  log('  mutations após reinserção: '+recs2.length);
+  obs.disconnect();
+  if(el.parentNode) document.body.removeChild(el);
+  log('[T13] done');
+}
+
+function t14(){
+  log('[T14] dispatchEvent em nó dentro de DocumentFragment');
+  var frag=document.createDocumentFragment();
+  var child=document.createElement('div');
+  var grandchild=document.createElement('span');
+  grandchild.textContent='gc';
+  child.appendChild(grandchild);
+  frag.appendChild(child);
+  // Frag não está no DOM — dispatch em nó dentro do frag
+  var log2=[];
+  grandchild.addEventListener('test',function(e){ log2.push('grandchild'); });
+  child.addEventListener('test',function(e){ log2.push('child'); });
+  frag.addEventListener('test',function(e){ log2.push('frag'); }); // fragments não têm listeners usualmente
+  document.addEventListener('test',function docH(e){ log2.push('doc'); document.removeEventListener('test',docH); });
+  // composed:false não sai do frag; composed:true...
+  grandchild.dispatchEvent(new CustomEvent('test',{bubbles:true,composed:false}));
+  log('  composed:false chain: '+log2.join('→'));
+  log2=[];
+  grandchild.dispatchEvent(new CustomEvent('test',{bubbles:true,composed:true}));
+  log('  composed:true chain: '+log2.join('→'));
+  // Agora insere o frag no DOM e repete
+  document.body.appendChild(frag);
+  log2=[];
+  grandchild.dispatchEvent(new CustomEvent('test',{bubbles:true}));
+  log('  após inserção: '+log2.join('→'));
+  if(child.parentNode) document.body.removeChild(child);
+  log('[T14] done');
+}
+
+function t15(){
+  log('[T15] Nó inserido/removido em loop dentro de MutationObserver callback');
+  var root=document.createElement('div');
+  document.body.appendChild(root);
+  var toggle=document.createElement('span');
+  toggle.textContent='toggle';
+  var iteration=0;
+  var obs=new MutationObserver(function(muts){
+    iteration++;
+    if(iteration>20) return;
+    // Alterna: insere se não está, remove se está
+    if(toggle.parentNode){
+      root.removeChild(toggle);
+    } else {
+      root.appendChild(toggle);
+    }
+    // A cada 5 iterações faz GC
+    if(iteration%5===0) gc();
+  });
+  obs.observe(root,{childList:true});
+  // Dispara a primeira mutação
+  root.appendChild(toggle);
+  setTimeout(function(){
+    obs.disconnect();
+    log('  iterações: '+iteration+' toggle no DOM: '+toggle.isConnected);
+    if(toggle.parentNode) root.removeChild(toggle);
+    if(root.parentNode) document.body.removeChild(root);
+    log('[T15] done');
+  },300);
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 01 — DOM Mutation + Event Dispatch ===');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){ if(i>=tests.length){log('=== FIM ===');return;} try{tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);} i++; setTimeout(next,250); }
+  next();
+}
+</script>
+</body>
+</html>

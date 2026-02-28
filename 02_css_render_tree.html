@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>02 — CSS Render Tree / Reflow / Stacking</title></head>
+<body>
+<h3>02 — CSS Render Tree / Reflow / Stacking</h3>
+<div id="log" style="height:300px;overflow:auto;border:1px solid #999;padding:4px;font:11px monospace;white-space:pre"></div>
+<br>
+<button onclick="t01()">T01 RenderObject destruído: offsetHeight pós-remove em loop</button>
+<button onclick="t02()">T02 display:none→block em loop + remove mid-toggle</button>
+<button onclick="t03()">T03 position:fixed + scrollIntoView durante reflow</button>
+<button onclick="t04()">T04 float clear: remove floated irmão durante layout</button>
+<button onclick="t05()">T05 CSS counter-reset em nó removido + reinserido</button>
+<button onclick="t06()">T06 CSS writing-mode: change + remove filho</button>
+<button onclick="t07()">T07 overflow:hidden + clip: children OOB removidos</button>
+<button onclick="t08()">T08 CSS columns: remove elemento span durante fragmentação</button>
+<button onclick="t09()">T09 CSS table-cell: display swap + remove</button>
+<button onclick="t10()">T10 z-index stacking context: remover pai do stacking</button>
+<button onclick="t11()">T11 CSS resize:both + observar offsetWidth loop</button>
+<button onclick="t12()">T12 CSSStyleSheet: addRule/removeRule + elemento ativo</button>
+<button onclick="t13()">T13 Herança CSS: remover nó intermediário na cadeia</button>
+<button onclick="t14()">T14 :nth-child recalcular + remoção de irmão</button>
+<button onclick="t15()">T15 CSS content: attr() em nó removido</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html">← Index</a>
+<script>
+var L=document.getElementById('log');
+function log(m){L.textContent+=m+'\n';L.scrollTop=L.scrollHeight}
+function gc(){try{var a=[];for(var i=0;i<20;i++)a.push(new ArrayBuffer(2*1024*1024));a=null}catch(e){}}
+
+function t01(){
+  log('[T01] RenderObject destruído: offsetHeight após remove em loop');
+  // Cria muitos elementos, guarda refs de style/layout, remove, acessa pós-remoção
+  var host=document.createElement('div');
+  document.body.appendChild(host);
+  var data=[];
+  for(var i=0;i<60;i++){
+    var el=document.createElement('div');
+    el.style.cssText='height:'+(20+i)+'px;width:'+(50+i)+'px;position:'+(i%3===0?'absolute':'relative')+';overflow:'+(i%2?'hidden':'visible');
+    host.appendChild(el);
+    data.push({
+      el:el,
+      cs:window.getComputedStyle(el),
+      style:el.style
+    });
+  }
+  host.offsetHeight; // força layout e criação de RenderObjects
+  // Remove todos os elementos (destrói RenderObjects)
+  while(host.firstChild){ host.removeChild(host.firstChild); }
+  gc();
+  // Acessa propriedades de layout nos elementos removidos
+  var ok=0;
+  data.forEach(function(d,i){
+    try{
+      var oh=d.el.offsetHeight;  // tenta acesso à geometria
+      var ow=d.el.offsetWidth;
+      var op=d.el.offsetParent;
+      var cs_h=d.cs.height;       // computed style stale
+      d.style.height='999px';     // write em style de elemento removido
+      ok++;
+    }catch(e){ log('  exc['+i+']: '+e.name); }
+  });
+  log('  ok: '+ok+'/'+data.length);
+  if(host.parentNode) document.body.removeChild(host);
+  data=null; gc();
+  log('[T01] done');
+}
+
+function t02(){
+  log('[T02] display:none/block em loop + remove mid-toggle');
+  var host=document.createElement('div');
+  document.body.appendChild(host);
+  var els=[];
+  for(var i=0;i<30;i++){
+    var el=document.createElement('div');
+    el.textContent='el'+i;
+    host.appendChild(el);
+    els.push(el);
+  }
+  host.offsetHeight;
+  // Alterna display e remove simultaneamente
+  for(var round=0;round<15;round++){
+    els.forEach(function(el,i){
+      el.style.display=(round+i)%2===0 ? 'none' : 'block';
+    });
+    host.offsetHeight; // força reflow
+    // Remove elementos em display:none
+    if(round===5){
+      els.filter(function(el){ return el.style.display==='none'; })
+        .forEach(function(el){ if(el.parentNode) host.removeChild(el); });
+      gc();
+    }
+    if(round===10){
+      // Acessa offsetHeight de elementos que podem ter sido removidos
+      els.forEach(function(el){
+        try{ var h=el.offsetHeight; }catch(e){}
+      });
+    }
+  }
+  if(host.parentNode) document.body.removeChild(host);
+  log('[T02] done');
+}
+
+function t03(){
+  log('[T03] position:fixed + scrollIntoView durante mutação');
+  var fixed=document.createElement('div');
+  fixed.style.cssText='position:fixed;top:0;left:0;width:100%;height:50px;background:#eee;z-index:100';
+  fixed.textContent='fixed header';
+  document.body.appendChild(fixed);
+  var items=[];
+  for(var i=0;i<20;i++){
+    var el=document.createElement('div');
+    el.style.cssText='height:80px;margin:4px';
+    el.textContent='item '+i;
+    document.body.appendChild(el);
+    items.push(el);
+  }
+  // scrollIntoView em vários elementos, removendo o fixed durante o processo
+  items.forEach(function(el,i){
+    try{ el.scrollIntoView({behavior:'instant',block:'start'}); }catch(e){}
+    if(i===5){
+      // Remove o fixed durante scroll/layout
+      if(fixed.parentNode) document.body.removeChild(fixed);
+      gc();
+    }
+    if(i===10){
+      // Remove o elemento que acabou de ser scrolled
+      if(el.parentNode) document.body.removeChild(el);
+      gc();
+      // Tenta scrollIntoView em elemento removido
+      try{ el.scrollIntoView({behavior:'instant'}); }catch(e){ log('  scrollIntoView removido exc: '+e.name); }
+    }
+  });
+  items.forEach(function(el){ if(el.parentNode) document.body.removeChild(el); });
+  log('[T03] done');
+}
+
+function t04(){
+  log('[T04] float clear: remove floated durante layout');
+  var host=document.createElement('div');
+  host.style.width='400px';
+  document.body.appendChild(host);
+  var floats=[];
+  for(var i=0;i<10;i++){
+    var el=document.createElement('div');
+    el.style.cssText='float:'+(i%2?'right':'left')+';width:80px;height:60px;margin:4px';
+    el.textContent='f'+i;
+    host.appendChild(el);
+    floats.push(el);
+  }
+  var clearEl=document.createElement('div');
+  clearEl.style.cssText='clear:both;height:20px';
+  clearEl.textContent='clear';
+  host.appendChild(clearEl);
+  host.offsetHeight; // layout com floats
+  log('  host height com floats: '+host.offsetHeight);
+  // Remove floats durante reflow
+  floats.forEach(function(el,i){
+    if(i%2===0 && el.parentNode){ host.removeChild(el); host.offsetHeight; }
+    if(i===4) gc();
+  });
+  // Remove o clear também
+  if(clearEl.parentNode) host.removeChild(clearEl);
+  gc();
+  host.offsetHeight;
+  log('  host height sem floats: '+host.offsetHeight);
+  if(host.parentNode) document.body.removeChild(host);
+  log('[T04] done');
+}
+
+function t05(){
+  log('[T05] CSS counter-reset em nó removido + reinserido');
+  var style=document.createElement('style');
+  style.textContent='.ctr-list{counter-reset:item}.ctr-list>li{counter-increment:item}.ctr-list>li::before{content:counter(item)". "}';
+  document.head.appendChild(style);
+  var list=document.createElement('ol');
+  list.className='ctr-list';
+  document.body.appendChild(list);
+  var items=[];
+  for(var i=0;i<10;i++){
+    var li=document.createElement('li'); li.textContent='item '+i;
+    list.appendChild(li); items.push(li);
+  }
+  list.offsetHeight;
+  // Remove itens do meio (interrompe a sequência do counter)
+  [3,5,7].forEach(function(idx){ if(items[idx].parentNode) list.removeChild(items[idx]); });
+  list.offsetHeight;
+  gc();
+  // Reinsere em posições erradas
+  list.insertBefore(items[7], items[2]);
+  list.offsetHeight;
+  log('  counter reflow: ok, items restantes: '+list.children.length);
+  // Remove o pai da lista
+  document.body.removeChild(list);
+  gc();
+  // Acessa computed style de items removidos (counter ainda calculado?)
+  var cs=window.getComputedStyle(items[0]);
+  try{ log('  items[0] display stale: '+cs.display); }catch(e){ log('  cs exc: '+e.name); }
+  document.head.removeChild(style);
+  log('[T05] done');
+}
+
+function t06(){
+  log('[T06] CSS writing-mode change + remoção de filho durante reflow');
+  var host=document.createElement('div');
+  host.style.cssText='width:200px;height:300px;writing-mode:horizontal-tb';
+  document.body.appendChild(host);
+  var children=[];
+  for(var i=0;i<15;i++){
+    var el=document.createElement('span');
+    el.textContent='texto'+i+' ';
+    host.appendChild(el); children.push(el);
+  }
+  host.offsetHeight;
+  // Muda writing-mode para vertical
+  host.style.writingMode='vertical-rl';
+  host.offsetHeight;
+  log('  writing-mode vertical: ok');
+  // Remove filhos durante reflow de writing-mode
+  children.forEach(function(el,i){
+    if(i%3===0 && el.parentNode) host.removeChild(el);
+    host.offsetHeight;
+    if(i===6) gc();
+  });
+  // Muda de volta para horizontal
+  host.style.writingMode='horizontal-tb';
+  host.offsetHeight;
+  if(host.parentNode) document.body.removeChild(host);
+  log('[T06] done');
+}
+
+function t07(){
+  log('[T07] overflow:hidden + children fora dos bounds + remove');
+  var host=document.createElement('div');
+  host.style.cssText='position:relative;width:100px;height:100px;overflow:hidden';
+  document.body.appendChild(host);
+  var children=[];
+  for(var i=0;i<20;i++){
+    var el=document.createElement('div');
+    // Posiciona maioria fora do clip area
+    el.style.cssText='position:absolute;width:50px;height:50px;left:'+((i-5)*30)+'px;top:'+((i-5)*20)+'px';
+    host.appendChild(el); children.push(el);
+  }
+  host.offsetHeight;
+  // Salva refs de layout
+  var rects=children.map(function(el){ try{ return el.getBoundingClientRect(); }catch(e){ return null; } });
+  // Remove todos e acessa os rects salvos
+  while(host.firstChild) host.removeChild(host.firstChild);
+  gc();
+  // Tenta obter BCR de elementos removidos
+  children.forEach(function(el,i){
+    try{
+      var bcr=el.getBoundingClientRect();
+      if(i===0) log('  BCR removido: '+bcr.left+','+bcr.top+' '+bcr.width+'x'+bcr.height);
+    }catch(e){ log('  BCR exc['+i+']: '+e.name); }
+  });
+  if(host.parentNode) document.body.removeChild(host);
+  log('[T07] done');
+}
+
+function t08(){
+  log('[T08] CSS columns: remove elemento durante fragmentação');
+  var style=document.createElement('style');
+  style.textContent='.cols{column-count:3;column-gap:10px;width:300px}.cols p{break-inside:avoid}';
+  document.head.appendChild(style);
+  var host=document.createElement('div');
+  host.className='cols';
+  document.body.appendChild(host);
+  var paras=[];
+  for(var i=0;i<12;i++){
+    var p=document.createElement('p');
+    p.textContent='Parágrafo '+i+' com texto suficiente para testar fragmentação de colunas.';
+    host.appendChild(p); paras.push(p);
+  }
+  host.offsetHeight;
+  // Remove parágrafos durante o layout de colunas
+  paras.forEach(function(p,i){
+    if(i%3===1 && p.parentNode){ host.removeChild(p); host.offsetHeight; }
+  });
+  gc();
+  host.offsetHeight;
+  log('  cols layout após removes: ok, paras restantes: '+host.children.length);
+  if(host.parentNode) document.body.removeChild(host);
+  document.head.removeChild(style);
+  log('[T08] done');
+}
+
+function t09(){
+  log('[T09] CSS display:table-cell swap + remoção de célula');
+  var style=document.createElement('style');
+  style.textContent='.tb{display:table}.tr{display:table-row}.td{display:table-cell;padding:4px;border:1px solid}';
+  document.head.appendChild(style);
+  var table=document.createElement('div');
+  table.className='tb';
+  document.body.appendChild(table);
+  var rows=[], cells=[];
+  for(var r=0;r<4;r++){
+    var row=document.createElement('div'); row.className='tr'; table.appendChild(row); rows.push(row);
+    for(var c=0;c<5;c++){
+      var cell=document.createElement('div'); cell.className='td'; cell.textContent=r+','+c;
+      row.appendChild(cell); cells.push(cell);
+    }
+  }
+  table.offsetHeight;
+  // Muda display de algumas células para block (quebra o table model)
+  cells.forEach(function(td,i){
+    if(i%7===0) td.style.display='block';
+  });
+  table.offsetHeight;
+  // Remove linhas durante reflow
+  rows.forEach(function(row,i){
+    if(i%2===0 && row.parentNode){ table.removeChild(row); table.offsetHeight; }
+    gc();
+  });
+  if(table.parentNode) document.body.removeChild(table);
+  document.head.removeChild(style);
+  log('[T09] done');
+}
+
+function t10(){
+  log('[T10] z-index stacking context: remover pai do stacking context');
+  var host=document.createElement('div');
+  host.style.cssText='position:relative;width:300px;height:300px';
+  document.body.appendChild(host);
+  // Cria stacking contexts aninhados
+  var stackers=[];
+  for(var i=0;i<5;i++){
+    var el=document.createElement('div');
+    el.style.cssText='position:absolute;z-index:'+(i+1)+';top:'+(i*10)+'px;left:'+(i*10)+'px;width:200px;height:200px;isolation:isolate';
+    host.appendChild(el);
+    stackers.push(el);
+    // Cria filhos dentro do stacking context
+    for(var j=0;j<3;j++){
+      var child=document.createElement('div');
+      child.style.cssText='position:relative;z-index:'+(j+1)+';width:50px;height:50px';
+      el.appendChild(child);
+    }
+  }
+  host.offsetHeight;
+  // Salva computed styles dos filhos
+  var childRefs=stackers.map(function(el){ return Array.from(el.children).map(function(c){ return window.getComputedStyle(c); }); });
+  // Remove os stacking contexts do meio
+  [1,3].forEach(function(idx){ if(stackers[idx].parentNode) host.removeChild(stackers[idx]); });
+  gc();
+  host.offsetHeight;
+  // Acessa computed styles dos filhos de elementos removidos
+  childRefs[1].forEach(function(cs,i){
+    try{ var zi=cs.zIndex; var pos=cs.position; }catch(e){ log('  cs[1]['+i+'] exc: '+e.name); }
+  });
+  if(host.parentNode) document.body.removeChild(host);
+  log('[T10] done');
+}
+
+function t11(){
+  log('[T11] CSS resize:both + offsetWidth polling loop');
+  var host=document.createElement('div');
+  host.style.cssText='position:relative;width:200px;height:200px;overflow:auto;resize:both;border:1px solid';
+  document.body.appendChild(host);
+  var inner=document.createElement('div');
+  inner.style.cssText='width:300px;height:300px';
+  host.appendChild(inner);
+  host.offsetHeight;
+  // Lê offsetWidth em loop e muda tamanhos
+  var prev=host.offsetWidth;
+  for(var i=0;i<30;i++){
+    host.style.width=(200+i*3)+'px';
+    host.style.height=(200+i*2)+'px';
+    var w=host.offsetWidth; // força reflow
+    var h=host.offsetHeight;
+    if(i===10){ // Remove o inner durante resize
+      if(inner.parentNode) host.removeChild(inner);
+      gc();
+    }
+    if(i===20){ // Remove o próprio host
+      if(host.parentNode) document.body.removeChild(host);
+      gc();
+    }
+    // Acessa offsetWidth de host possivelmente removido
+    try{ var ow=host.offsetWidth; }catch(e){ log('  offsetWidth exc at '+i+': '+e.name); break; }
+  }
+  log('[T11] done');
+}
+
+function t12(){
+  log('[T12] CSSStyleSheet: manipulação dinâmica de regras com elemento ativo');
+  var style=document.createElement('style');
+  style.textContent='.dyn-rule { color: red; font-size: 14px; }';
+  document.head.appendChild(style);
+  var el=document.createElement('div');
+  el.className='dyn-rule';
+  el.textContent='dyn element';
+  document.body.appendChild(el);
+  var sheet=style.sheet;
+  log('  rules: '+sheet.cssRules.length+' color: '+window.getComputedStyle(el).color);
+  // Insere regras dinamicamente enquanto o elemento existe
+  for(var i=0;i<20;i++){
+    try{ sheet.insertRule('.dyn-rule { font-weight: bold; margin: '+i+'px; }',0); }catch(e){}
+  }
+  log('  rules após inserts: '+sheet.cssRules.length);
+  el.offsetHeight; // força aplicação das regras
+  // Remove regras enquanto o elemento ainda as usa
+  while(sheet.cssRules.length>1){
+    try{ sheet.deleteRule(0); }catch(e){ break; }
+  }
+  el.offsetHeight;
+  gc();
+  // Remove o elemento e tenta modificar a sheet
+  document.body.removeChild(el);
+  gc();
+  try{ sheet.insertRule('.dyn-rule { display:none; }',0); log('  insertRule após remove el: ok'); }catch(e){ log('  insertRule exc: '+e.name); }
+  document.head.removeChild(style);
+  log('[T12] done');
+}
+
+function t13(){
+  log('[T13] Herança CSS: remover nó intermediário na cadeia de herança');
+  var style=document.createElement('style');
+  style.textContent='div.h-root{color:red;font-size:20px;font-weight:bold}div.h-mid{color:inherit;font-size:0.8em}span.h-leaf{color:inherit;font-size:inherit}';
+  document.head.appendChild(style);
+  var root=document.createElement('div'); root.className='h-root';
+  var mid=document.createElement('div'); mid.className='h-mid';
+  var leaf=document.createElement('span'); leaf.className='h-leaf'; leaf.textContent='leaf';
+  mid.appendChild(leaf); root.appendChild(mid);
+  document.body.appendChild(root);
+  root.offsetHeight;
+  var csLeaf=window.getComputedStyle(leaf);
+  log('  leaf color before: '+csLeaf.color+' size: '+csLeaf.fontSize);
+  // Remove o nó do meio (mid) — leaf perde o contexto de herança
+  root.removeChild(mid);
+  gc();
+  root.offsetHeight;
+  // Acessa computed style da leaf que perdeu o pai intermediário
+  try{
+    var cs2=window.getComputedStyle(leaf);
+    log('  leaf color após remove mid: '+cs2.color+' size: '+cs2.fontSize);
+  }catch(e){ log('  cs exc: '+e.name); }
+  // csLeaf ainda válido?
+  try{ log('  csLeaf stale color: '+csLeaf.color); }catch(e){ log('  csLeaf stale exc: '+e.name); }
+  // Reinsere mid em outro lugar
+  document.body.appendChild(mid);
+  root.offsetHeight;
+  log('  leaf após reinserção em body: '+window.getComputedStyle(leaf).color);
+  if(mid.parentNode) document.body.removeChild(mid);
+  if(root.parentNode) document.body.removeChild(root);
+  document.head.removeChild(style);
+  log('[T13] done');
+}
+
+function t14(){
+  log('[T14] :nth-child recalcular após remoção de irmão');
+  var style=document.createElement('style');
+  style.textContent='.nth-host > div:nth-child(odd){background:#fee}.nth-host > div:nth-child(3n+1){font-weight:bold}.nth-host > div:nth-child(even){text-decoration:underline}';
+  document.head.appendChild(style);
+  var host=document.createElement('div'); host.className='nth-host';
+  document.body.appendChild(host);
+  var divs=[];
+  for(var i=0;i<12;i++){
+    var d=document.createElement('div'); d.textContent='div '+i;
+    host.appendChild(d); divs.push(d);
+  }
+  host.offsetHeight;
+  // Salva computed styles antes de remover
+  var csRefs=divs.map(function(d){ return window.getComputedStyle(d); });
+  // Remove irmãos alternados (muda os :nth-child de todos os restantes)
+  [1,3,5,7].forEach(function(idx){ if(divs[idx].parentNode) host.removeChild(divs[idx]); });
+  host.offsetHeight; // força recalc do :nth-child
+  gc();
+  // Acessa computed styles stale vs novos
+  divs.forEach(function(d,i){
+    try{
+      var csNew=window.getComputedStyle(d);
+      var csOld=csRefs[i];
+      // Compara font-weight (pode ter mudado por :nth-child)
+      var fw_new=csNew.fontWeight;
+      var fw_old=csOld.fontWeight;
+      if(fw_new!==fw_old) log('  div['+i+'] fontWeight mudou: '+fw_old+'→'+fw_new);
+    }catch(e){ log('  nth['+i+'] exc: '+e.name); }
+  });
+  if(host.parentNode) document.body.removeChild(host);
+  document.head.removeChild(style);
+  log('[T14] done');
+}
+
+function t15(){
+  log('[T15] CSS content:attr() em nó removido + mudança de atributo');
+  var style=document.createElement('style');
+  style.textContent='.attr-content::before{content:attr(data-label)" — "attr(data-count)}.attr-content::after{content:" [" attr(class) "]"}';
+  document.head.appendChild(style);
+  var els=[];
+  for(var i=0;i<15;i++){
+    var el=document.createElement('div');
+    el.className='attr-content';
+    el.setAttribute('data-label','Label'+i);
+    el.setAttribute('data-count',String(i));
+    document.body.appendChild(el);
+    els.push(el);
+  }
+  document.body.offsetHeight;
+  // Salva computed styles dos pseudo-elements
+  var pseudoRefs=els.map(function(el){
+    return {
+      before:window.getComputedStyle(el,'::before'),
+      after:window.getComputedStyle(el,'::after')
+    };
+  });
+  // Remove elementos e muda atributos dos removidos
+  els.forEach(function(el,i){
+    if(i%2===0 && el.parentNode) document.body.removeChild(el);
+  });
+  gc();
+  // Muda atributos nos elementos removidos
+  els.forEach(function(el,i){
+    if(!el.isConnected){
+      el.setAttribute('data-label','CHANGED'+i);
+      el.setAttribute('data-count',String(i*100));
+    }
+  });
+  // Acessa content dos pseudo-elements de elementos removidos
+  pseudoRefs.forEach(function(r,i){
+    try{
+      var bc=r.before.content;
+      var ac=r.after.content;
+    }catch(e){ log('  pseudo['+i+'] exc: '+e.name); }
+  });
+  els.forEach(function(el){ if(el.parentNode) document.body.removeChild(el); });
+  document.head.removeChild(style);
+  log('[T15] done');
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 02 — CSS Render Tree / Reflow / Stacking ===');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){ if(i>=tests.length){log('=== FIM ===');return;} try{tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);} i++; setTimeout(next,250); }
+  next();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>04 — Canvas 2D / Text / ImageData</title></head>
+<body>
+<h3>04 — Canvas 2D / Text / ImageData</h3>
+<div id="log" style="height:300px;overflow:auto;border:1px solid #999;padding:4px;font:11px monospace;white-space:pre"></div>
+<br>
+<button onclick="t01()">T01 drawImage: canvas como source e destino (self)</button>
+<button onclick="t02()">T02 Pattern: repetição de canvas modificado mid-fill</button>
+<button onclick="t03()">T03 Canvas 2D: path com arcTo degenerado</button>
+<button onclick="t04()">T04 measureText: font extrema + string longa</button>
+<button onclick="t05()">T05 ImageData: criar, modificar e reaplicar cross-canvas</button>
+<button onclick="t06()">T06 Canvas save: transform matrix extrema</button>
+<button onclick="t07()">T07 Canvas clip: bezier curves recursivas</button>
+<button onclick="t08()">T08 createImageBitmap + close + drawImage</button>
+<button onclick="t09()">T09 Canvas 2D: globalCompositeOperation todos os modos</button>
+<button onclick="t10()">T10 fillText com strings Unicode extremas</button>
+<button onclick="t11()">T11 Canvas: dimensão zero + operações</button>
+<button onclick="t12()">T12 getImageData + putImageData com dirty rect loop</button>
+<button onclick="t13()">T13 Canvas path: subpath com moveTo sem lineTo</button>
+<button onclick="t14()">T14 drawImage: source com dimensão alterada mid-draw</button>
+<button onclick="t15()">T15 Canvas font: fallback chain com fontes inexistentes</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html">← Index</a>
+<script>
+var L=document.getElementById('log');
+function log(m){L.textContent+=m+'\n';L.scrollTop=L.scrollHeight}
+function gc(){try{var a=[];for(var i=0;i<20;i++)a.push(new ArrayBuffer(2*1024*1024));a=null}catch(e){}}
+
+function mkC(w,h){ var c=document.createElement('canvas'); c.width=w||256; c.height=h||256; return c; }
+
+function t01(){
+  log('[T01] drawImage: canvas como source e destino (self-draw)');
+  var c=mkC(256,256);
+  var ctx=c.getContext('2d');
+  ctx.fillStyle='red'; ctx.fillRect(0,0,128,128);
+  ctx.fillStyle='blue'; ctx.fillRect(128,128,128,128);
+  ctx.fillStyle='green'; ctx.fillRect(128,0,128,128);
+  // Self-draw: canvas desenhando em si mesmo com offsets e escalas
+  for(var i=0;i<10;i++){
+    try{
+      ctx.drawImage(c, 0,0,256,256, i*4,i*3,256-i*8,256-i*6);
+      var px=ctx.getImageData(i,i,1,1);
+      if(i===5) log('  self-draw iter '+i+' px[0]: '+px.data[0]);
+    }catch(e){ log('  self-draw['+i+'] exc: '+e.name); }
+  }
+  // Rotaciona e escala durante self-draw
+  ctx.save();
+  ctx.translate(128,128);
+  ctx.rotate(Math.PI/4);
+  ctx.scale(0.5,0.5);
+  try{
+    ctx.drawImage(c,-128,-128,256,256);
+    log('  rotated self-draw: ok');
+  }catch(e){ log('  rotated self-draw exc: '+e.name); }
+  ctx.restore();
+  log('[T01] done');
+}
+
+function t02(){
+  log('[T02] Pattern: source canvas modificado entre fillRects');
+  var src=mkC(32,32);
+  var sCtx=src.getContext('2d');
+  sCtx.fillStyle='red'; sCtx.fillRect(0,0,16,16);
+  sCtx.fillStyle='blue'; sCtx.fillRect(16,16,16,16);
+  var dst=mkC(256,256);
+  var dCtx=dst.getContext('2d');
+  var pattern=dCtx.createPattern(src,'repeat');
+  // Fill com pattern
+  dCtx.fillStyle=pattern;
+  dCtx.fillRect(0,0,128,128);
+  var px1=dCtx.getImageData(0,0,1,1);
+  log('  fill1 px[0]: '+px1.data[0]);
+  // Modifica o source canvas
+  sCtx.fillStyle='yellow'; sCtx.fillRect(0,0,32,32);
+  // Fill com o mesmo pattern (source modificado)
+  dCtx.fillRect(128,128,128,128);
+  var px2=dCtx.getImageData(200,200,1,1);
+  log('  fill2 px[0] (source changed): '+px2.data[0]);
+  // Limpa o source (width=0 temporariamente)
+  src.width=0;
+  try{ dCtx.fillRect(0,128,128,128); log('  fill3 (src width=0): ok'); }catch(e){ log('  fill3 exc: '+e.name); }
+  src.width=32; // restaura
+  gc();
+  // Pattern ainda válido?
+  try{ dCtx.fillRect(128,0,128,128); log('  fill4 (src restaurado): ok'); }catch(e){ log('  fill4 exc: '+e.name); }
+  log('[T02] done');
+}
+
+function t03(){
+  log('[T03] Canvas 2D: arcTo com pontos degenerados/colineares');
+  var c=mkC(256,256);
+  var ctx=c.getContext('2d');
+  var cases=[
+    // arcTo(x1,y1,x2,y2,radius)
+    [0,0,0,0,0],           // tudo zero
+    [100,100,100,100,50],  // p1===p2 (degenerado)
+    [0,0,100,0,0],         // radius zero
+    [0,100,100,100,1e10],  // radius gigante
+    [NaN,100,200,100,50],  // NaN em p1
+    [100,Infinity,200,100,50], // Infinity
+    [100,100,100,200,50],  // colinear com current point
+    [-1e15,-1e15,1e15,1e15,1e15], // extremo
+  ];
+  cases.forEach(function(args,i){
+    ctx.beginPath();
+    ctx.moveTo(100,100);
+    try{
+      ctx.arcTo.apply(ctx,args);
+      ctx.stroke();
+      var px=ctx.getImageData(100,100,1,1);
+      log('  arcTo case['+i+']: ok');
+    }catch(e){ log('  arcTo['+i+'] exc: '+e.name); }
+  });
+  log('[T03] done');
+}
+
+function t04(){
+  log('[T04] measureText: fontes extremas + strings longas');
+  var c=mkC(256,256);
+  var ctx=c.getContext('2d');
+  var fonts=[
+    '12px sans-serif',
+    '0px sans-serif',
+    '1px sans-serif',
+    '9999px sans-serif',
+    '-1px sans-serif',        // inválido → fallback
+    'italic bold 14px/1.5 "Nonexistent Font", serif',
+    '1em monospace',
+    'small-caps 12px serif',
+  ];
+  var strs=[
+    '',
+    'A',
+    'Hello World',
+    'x'.repeat(10000),
+    '\u200B\u200C\u200D\uFEFF', // zero-width chars
+    '\u0041\u0300\u0041',        // combining chars
+    String.fromCharCode.apply(null, Array.from({length:100},function(_,i){ return i+0x4E00; })), // CJK
+    '\uD83D\uDE00'.repeat(100),  // emoji
+  ];
+  fonts.forEach(function(font,fi){
+    ctx.font=font;
+    try{
+      var m=ctx.measureText(strs[fi]);
+      log('  font['+fi+'] "'+font.slice(0,30)+'": w='+m.width.toFixed(1)+' actual='+m.actualBoundingBoxAscent.toFixed(1));
+    }catch(e){ log('  measureText['+fi+'] exc: '+e.name); }
+  });
+  log('[T04] done');
+}
+
+function t05(){
+  log('[T05] ImageData: criar, modificar, reaplicar cross-canvas');
+  var c1=mkC(128,128); var ctx1=c1.getContext('2d');
+  var c2=mkC(64,64);   var ctx2=c2.getContext('2d');
+  ctx1.fillStyle='hsl(200,80%,50%)'; ctx1.fillRect(0,0,128,128);
+  // getImageData de c1
+  var id1=ctx1.getImageData(0,0,128,128);
+  log('  id1 length: '+id1.data.length);
+  // Cria ImageData manualmente
+  var id2=new ImageData(64,64);
+  for(var i=0;i<id2.data.length;i+=4){ id2.data[i]=255; id2.data[i+1]=100; id2.data[i+2]=0; id2.data[i+3]=200; }
+  // putImageData cross-canvas
+  ctx2.putImageData(id1, -32, -32, 0, 0, 64, 64); // apenas o canto inferior direito de id1
+  var px=ctx2.getImageData(0,0,1,1);
+  log('  cross putImageData px: '+px.data[0]+','+px.data[1]+','+px.data[2]+','+px.data[3]);
+  // putImageData de ImageData criado manualmente
+  ctx1.putImageData(id2, 32, 32);
+  // Tenta criar ImageData com tamanho zero/negativo
+  try{ var id3=new ImageData(0,1); log('  ImageData(0,1): ok len='+id3.data.length); }catch(e){ log('  ImageData(0,1) exc: '+e.name); }
+  try{ var id4=new ImageData(1,0); log('  ImageData(1,0): ok'); }catch(e){ log('  ImageData(1,0) exc: '+e.name); }
+  // Cria com Uint8ClampedArray de tamanho errado
+  try{ var id5=new ImageData(new Uint8ClampedArray(100),13,13); log('  ImageData mismatched: ok'); }catch(e){ log('  ImageData mismatch exc: '+e.name); }
+  gc();
+  log('[T05] done');
+}
+
+function t06(){
+  log('[T06] Canvas save: transform matrix acumulada extrema');
+  var c=mkC(256,256);
+  var ctx=c.getContext('2d');
+  // Acumula transforms extremas sem restore
+  ctx.save();
+  ctx.scale(1.0001,1.0001);
+  for(var i=0;i<200;i++){
+    ctx.transform(1,0.001,0.001,1,0.1,0.1); // shear+translate acumulado
+    if(i%50===49){
+      ctx.fillStyle='rgba(255,0,0,0.1)';
+      try{ ctx.fillRect(0,0,256,256); }catch(e){ log('  fillRect['+i+'] exc: '+e.name); break; }
+    }
+  }
+  log('  200 transforms acumulados: ok');
+  // getTransform após acumulação extrema
+  try{
+    var m=ctx.getTransform();
+    log('  matrix.a: '+m.a.toFixed(6)+' .e: '+m.e.toFixed(3));
+  }catch(e){ log('  getTransform exc: '+e.name); }
+  // setTransform para valor extremo
+  try{
+    ctx.setTransform(1e15,0,0,1e15,1e15,1e15);
+    ctx.fillRect(0,0,1,1);
+    log('  setTransform 1e15: ok');
+  }catch(e){ log('  setTransform exc: '+e.name); }
+  // Restore além do stack
+  for(var j=0;j<300;j++) ctx.restore();
+  try{ ctx.fillRect(0,0,10,10); log('  fillRect após over-restore: ok'); }catch(e){ log('  over-restore exc: '+e.name); }
+  log('[T06] done');
+}
+
+function t07(){
+  log('[T07] Canvas clip: bezier curves aninhadas recursivas');
+  var c=mkC(256,256);
+  var ctx=c.getContext('2d');
+  // Acumula clips com paths complexos (bezier)
+  function bezierStar(n){
+    ctx.beginPath();
+    for(var i=0;i<n;i++){
+      var a=i*2*Math.PI/n;
+      var a2=(i+0.5)*2*Math.PI/n;
+      var r1=80, r2=40;
+      if(i===0) ctx.moveTo(Math.cos(a)*r1+128, Math.sin(a)*r1+128);
+      ctx.bezierCurveTo(
+        Math.cos(a)*r1*1.2+128, Math.sin(a)*r1*1.2+128,
+        Math.cos(a2)*r2*1.2+128, Math.sin(a2)*r2*1.2+128,
+        Math.cos(a2)*r2+128, Math.sin(a2)*r2+128
+      );
+      ctx.bezierCurveTo(
+        Math.cos(a2)*r2*0.8+128, Math.sin(a2)*r2*0.8+128,
+        Math.cos(a+2*Math.PI/n)*r1*0.8+128, Math.sin(a+2*Math.PI/n)*r1*0.8+128,
+        Math.cos(a+2*Math.PI/n)*r1+128, Math.sin(a+2*Math.PI/n)*r1+128
+      );
+    }
+    ctx.closePath();
+  }
+  for(var i=0;i<30;i++){
+    ctx.save();
+    bezierStar(5+i%7);
+    ctx.clip('evenodd');
+    ctx.fillStyle='rgba('+(i*8)+','+(255-i*8)+',100,0.3)';
+    ctx.fillRect(0,0,256,256);
+  }
+  log('  30 bezier clips acumulados: ok');
+  var px=ctx.getImageData(128,128,1,1);
+  log('  center pixel: '+px.data[0]+','+px.data[1]+','+px.data[2]+','+px.data[3]);
+  for(var j=0;j<35;j++) ctx.restore();
+  try{ ctx.fillStyle='green'; ctx.fillRect(0,0,256,256); log('  fill após over-restore clip: ok'); }catch(e){ log('  exc: '+e.name); }
+  log('[T07] done');
+}
+
+function t08(){
+  log('[T08] createImageBitmap: close + drawImage + pattern');
+  var c=mkC(64,64);
+  var ctx0=c.getContext('2d');
+  ctx0.fillStyle='red'; ctx0.fillRect(0,0,32,32);
+  ctx0.fillStyle='blue'; ctx0.fillRect(32,32,32,32);
+  createImageBitmap(c).then(function(bmp){
+    log('  bitmap: '+bmp.width+'x'+bmp.height);
+    var dst=mkC(128,128);
+    var dCtx=dst.getContext('2d');
+    dCtx.drawImage(bmp,0,0,128,128);
+    var px=dCtx.getImageData(0,0,1,1);
+    log('  drawImage bitmap px[0]: '+px.data[0]);
+    // Cria pattern do bitmap
+    var pat=dCtx.createPattern(bmp,'repeat');
+    bmp.close(); // fecha antes de usar o pattern
+    gc();
+    log('  bitmap closed');
+    // Usa pattern cujo bitmap foi fechado
+    try{
+      dCtx.fillStyle=pat;
+      dCtx.fillRect(0,0,128,128);
+      var px2=dCtx.getImageData(0,0,1,1);
+      log('  fill com pattern de bmp fechado: ok px[0]='+px2.data[0]);
+    }catch(e){ log('  fill pattern closed exc: '+e.name); }
+    // drawImage do bitmap fechado
+    try{
+      dCtx.drawImage(bmp,0,0);
+      log('  drawImage bmp fechado: ok');
+    }catch(e){ log('  drawImage closed exc: '+e.name); }
+    log('[T08] done');
+  }).catch(function(e){ log('[T08] createImageBitmap exc: '+e.message); });
+}
+
+function t09(){
+  log('[T09] globalCompositeOperation: todos os modos + alpha');
+  var c=mkC(100,100);
+  var ctx=c.getContext('2d');
+  var modes=[
+    'source-over','source-in','source-out','source-atop',
+    'destination-over','destination-in','destination-out','destination-atop',
+    'lighter','copy','xor','multiply','screen','overlay',
+    'darken','lighten','color-dodge','color-burn','hard-light','soft-light',
+    'difference','exclusion','hue','saturation','color','luminosity'
+  ];
+  ctx.fillStyle='rgba(200,0,0,0.8)'; ctx.fillRect(0,0,60,60);
+  var snapshot=ctx.getImageData(0,0,100,100);
+  modes.forEach(function(mode,i){
+    ctx.putImageData(snapshot,0,0); // restaura estado
+    ctx.globalCompositeOperation=mode;
+    ctx.globalAlpha=0.7;
+    ctx.fillStyle='rgba(0,0,200,0.6)';
+    try{
+      ctx.fillRect(30,30,60,60);
+      var px=ctx.getImageData(50,50,1,1);
+      if(i<4 || i===modes.length-1) log('  mode "'+mode+'" px: '+px.data[0]+','+px.data[1]+','+px.data[2]);
+    }catch(e){ log('  mode "'+mode+'" exc: '+e.name); }
+  });
+  ctx.globalCompositeOperation='source-over';
+  ctx.globalAlpha=1;
+  log('[T09] done');
+}
+
+function t10(){
+  log('[T10] fillText/strokeText com strings Unicode complexas');
+  var c=mkC(400,200);
+  var ctx=c.getContext('2d');
+  ctx.font='16px sans-serif';
+  var cases=[
+    '\uD83D\uDE00\uD83C\uDF89\uD83D\uDCA5',   // emoji
+    '\u0041\u0300\u0041\u0301\u0041\u0302',    // combining marks
+    '\u0644\u0627',                              // Arabic LAM+ALEF ligature (RTL)
+    '\u202E\u0041\u0042\u0043\u202C',           // RLO override
+    '\u200B\u200C\u200D',                        // zero-width
+    '\uFEFF\uFFFE\uFFFF',                        // BOM + non-chars
+    '\uD800\uDC00',                              // surrogate pair (U+10000)
+    '\uD800',                                    // lone surrogate
+    '\uFFFD'.repeat(100),                        // replacement char repeated
+    String.fromCharCode.apply(null,Array.from({length:200},function(_,i){ return 0x600+i; })), // Arabic block
+  ];
+  cases.forEach(function(s,i){
+    try{
+      ctx.fillText(s, 10, 30+i%10*18);
+      var m=ctx.measureText(s);
+      if(i<3) log('  fillText['+i+'] width: '+m.width.toFixed(1));
+    }catch(e){ log('  fillText['+i+'] exc: '+e.name); }
+  });
+  log('[T10] done');
+}
+
+function t11(){
+  log('[T11] Canvas com dimensão zero + operações');
+  var c=mkC(0,0);
+  var ctx=c.getContext('2d');
+  log('  canvas 0x0: ok');
+  // Operações em canvas de tamanho zero
+  try{ ctx.fillRect(0,0,100,100); log('  fillRect 0x0: ok'); }catch(e){ log('  fillRect exc: '+e.name); }
+  try{ var id=ctx.getImageData(0,0,1,1); log('  getImageData 0x0: ok data='+id.data.length); }catch(e){ log('  getImageData exc: '+e.name); }
+  try{ ctx.putImageData(new ImageData(1,1),0,0); log('  putImageData 0x0: ok'); }catch(e){ log('  putImageData exc: '+e.name); }
+  // Muda dimensão para não-zero
+  c.width=256; c.height=256;
+  ctx.fillStyle='red'; ctx.fillRect(0,0,256,256);
+  var px=ctx.getImageData(0,0,1,1);
+  log('  após resize para 256: px[0]='+px.data[0]);
+  // Muda para zero de novo
+  c.width=0;
+  try{ var id2=ctx.getImageData(0,0,1,1); log('  getImageData após resize→0: ok'); }catch(e){ log('  exc: '+e.name); }
+  // Muda para 1x1
+  c.width=1; c.height=1;
+  ctx.fillStyle='blue'; ctx.fillRect(0,0,1,1);
+  var px2=ctx.getImageData(0,0,1,1);
+  log('  1x1 px[2]: '+px2.data[2]);
+  gc();
+  log('[T11] done');
+}
+
+function t12(){
+  log('[T12] getImageData + putImageData com dirty rect em loop');
+  var c=mkC(256,256);
+  var ctx=c.getContext('2d');
+  // Preenche com gradiente
+  for(var y=0;y<256;y++){
+    var id=ctx.createImageData(256,1);
+    for(var x=0;x<256;x++){ id.data[x*4]=x; id.data[x*4+1]=y; id.data[x*4+2]=128; id.data[x*4+3]=255; }
+    ctx.putImageData(id,0,y);
+  }
+  // Loop: getImageData de região, modifica, putImageData com dirty rect
+  for(var i=0;i<50;i++){
+    var x=Math.floor(Math.random()*200);
+    var y2=Math.floor(Math.random()*200);
+    try{
+      var id2=ctx.getImageData(x,y2,64,64);
+      // Inverte cores
+      for(var k=0;k<id2.data.length;k+=4){ id2.data[k]=255-id2.data[k]; id2.data[k+1]=255-id2.data[k+1]; }
+      // putImageData com dirty rect que pode sair dos bounds
+      ctx.putImageData(id2, x, y2, -10, -10, 80, 80); // dirty rect maior
+      if(i===25) gc();
+    }catch(e){ log('  loop['+i+'] exc: '+e.name); }
+  }
+  var pxFinal=ctx.getImageData(128,128,1,1);
+  log('  center px final: '+pxFinal.data[0]+','+pxFinal.data[1]+','+pxFinal.data[2]);
+  log('[T12] done');
+}
+
+function t13(){
+  log('[T13] Canvas path: múltiplos subpaths com moveTo sem lineTo');
+  var c=mkC(256,256);
+  var ctx=c.getContext('2d');
+  ctx.beginPath();
+  // Subpaths com apenas moveTo (pontos isolados)
+  for(var i=0;i<100;i++){
+    ctx.moveTo(i*2.56, i*2.56);
+    // Sem lineTo — apenas ponto isolado
+  }
+  try{ ctx.stroke(); log('  stroke 100 moveTo-only: ok'); }catch(e){ log('  stroke exc: '+e.name); }
+  // Path alternando moveTo e closePath sem lineTo
+  ctx.beginPath();
+  for(var j=0;j<50;j++){
+    ctx.moveTo(j*4, j*3);
+    ctx.closePath(); // fecha sem linha
+  }
+  try{ ctx.fill(); log('  fill 50 moveTo+closePath: ok'); }catch(e){ log('  fill exc: '+e.name); }
+  // Path gigante: muitos subpaths
+  ctx.beginPath();
+  for(var k=0;k<2000;k++){
+    ctx.moveTo(k%256, (k*7)%256);
+    ctx.lineTo((k+1)%256, (k*7+1)%256);
+  }
+  try{ ctx.stroke(); log('  stroke 2000 subpaths: ok'); }catch(e){ log('  stroke 2000 exc: '+e.name); }
+  gc();
+  log('[T13] done');
+}
+
+function t14(){
+  log('[T14] drawImage: source canvas com dimensão alterada mid-draw');
+  var src=mkC(64,64);
+  var sCtx=src.getContext('2d');
+  sCtx.fillStyle='green'; sCtx.fillRect(0,0,64,64);
+  var dst=mkC(256,256);
+  var dCtx=dst.getContext('2d');
+  // Draw normal
+  dCtx.drawImage(src,0,0,256,256);
+  var px1=dCtx.getImageData(0,0,1,1);
+  log('  normal draw px[1]: '+px1.data[1]);
+  // Cria pattern e depois altera src
+  var pat=dCtx.createPattern(src,'repeat');
+  src.width=128; // altera dimensão do source
+  src.height=128;
+  sCtx.fillStyle='purple'; sCtx.fillRect(0,0,128,128);
+  // drawImage com src de tamanho diferente do que quando pattern foi criado
+  try{
+    dCtx.drawImage(src,0,0,256,256);
+    var px2=dCtx.getImageData(0,0,1,1);
+    log('  draw após resize src px[0]: '+px2.data[0]+' px[2]: '+px2.data[2]);
+  }catch(e){ log('  draw exc: '+e.name); }
+  // Usa o pattern (criado quando src era 64x64, agora é 128x128)
+  dCtx.fillStyle=pat;
+  try{
+    dCtx.fillRect(0,0,256,256);
+    var px3=dCtx.getImageData(128,128,1,1);
+    log('  pattern após resize src px[2]: '+px3.data[2]);
+  }catch(e){ log('  pattern exc: '+e.name); }
+  gc();
+  log('[T14] done');
+}
+
+function t15(){
+  log('[T15] Canvas font: fallback chain com fontes inexistentes');
+  var c=mkC(400,300);
+  var ctx=c.getContext('2d');
+  var fonts=[
+    '"Font1Inexistente", "Font2Inexistente", sans-serif',
+    '"Font1", monospace',
+    '12px "FontGigante_'+Math.random()+'", serif',
+    '"Courier New", Courier, monospace',
+    'italic 900 50px "Inexistente", Arial, sans-serif',
+    '1px/"' + 'x'.repeat(500) + '" serif', // family enorme
+    'calc(10px + 2em) sans-serif',  // calc em font-size (inválido)
+    'var(--font-size) sans-serif',  // var() em font-size (inválido)
+  ];
+  fonts.forEach(function(font,i){
+    ctx.font=font;
+    var actual=ctx.font; // lê de volta (WebKit normaliza)
+    var m=ctx.measureText('Hello World '+i);
+    try{
+      ctx.fillText('Hello World '+i, 10, 30+i*30);
+      log('  font['+i+'] actual="'+actual.slice(0,40)+'" w='+m.width.toFixed(1));
+    }catch(e){ log('  font['+i+'] exc: '+e.name); }
+  });
+  gc();
+  log('[T15] done');
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 04 — Canvas 2D / Text / ImageData ===');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){ if(i>=tests.length){log('=== FIM ===');return;} try{tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);} i++; setTimeout(next,300); }
+  next();
+}
+</script>
+</body>
+</html>

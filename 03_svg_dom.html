@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>03 — SVG DOM / Animation / References</title></head>
+<body>
+<h3>03 — SVG DOM / Animation / References</h3>
+<div id="log" style="height:300px;overflow:auto;border:1px solid #999;padding:4px;font:11px monospace;white-space:pre"></div>
+<br>
+<button onclick="t01()">T01 SVGUseElement: mudar href em runtime + remove target</button>
+<button onclick="t02()">T02 SVG filter: feBlend entre dois shapes removidos</button>
+<button onclick="t03()">T03 SVGLength: modificar baseVal após detach do DOM</button>
+<button onclick="t04()">T04 SVG SMIL: animateMotion + path removido</button>
+<button onclick="t05()">T05 SVGMatrix: multiply após elemento removido</button>
+<button onclick="t06()">T06 SVG nested use depth extrema</button>
+<button onclick="t07()">T07 SVGTextElement: getCharNumAtPosition pós-remove</button>
+<button onclick="t08()">T08 SVG gradientTransform stale após defs remove</button>
+<button onclick="t09()">T09 SVG: foreignObject remove + reanexo</button>
+<button onclick="t10()">T10 SVGPathElement: getTotalLength com path vazio/inválido</button>
+<button onclick="t11()">T11 SVG animateTransform: remover durante acumulação</button>
+<button onclick="t12()">T12 SVGPointList: appendItem em elemento fora do DOM</button>
+<button onclick="t13()">T13 SVG: mover elemento entre dois SVGs</button>
+<button onclick="t14()">T14 SVGStringList: className.baseVal em removido</button>
+<button onclick="t15()">T15 SVG: remove defs inteiro com múltiplas referências ativas</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html">← Index</a>
+<script>
+var L=document.getElementById('log');
+function log(m){L.textContent+=m+'\n';L.scrollTop=L.scrollHeight}
+function gc(){try{var a=[];for(var i=0;i<20;i++)a.push(new ArrayBuffer(2*1024*1024));a=null}catch(e){}}
+var NS='http://www.w3.org/2000/svg';
+function el(tag,a){ var e=document.createElementNS(NS,tag); Object.keys(a||{}).forEach(function(k){ e.setAttribute(k,a[k]); }); return e; }
+function mkSVG(w,h){ var s=el('svg',{width:w||200,height:h||200}); document.body.appendChild(s); return s; }
+
+function t01(){
+  log('[T01] SVGUseElement: mudar href em runtime + remove target');
+  var svg=mkSVG(300,100);
+  var defs=el('defs'); svg.appendChild(defs);
+  var sym1=el('symbol',{id:'s01a',viewBox:'0 0 20 20'});
+  sym1.appendChild(el('circle',{cx:10,cy:10,r:9,fill:'red'})); defs.appendChild(sym1);
+  var sym2=el('symbol',{id:'s01b',viewBox:'0 0 20 20'});
+  sym2.appendChild(el('rect',{width:20,height:20,fill:'blue'})); defs.appendChild(sym2);
+  var u=el('use',{href:'#s01a',x:0,y:0,width:50,height:50}); svg.appendChild(u);
+  svg.getBoundingClientRect();
+  // Muda o href do use em runtime
+  u.setAttribute('href','#s01b');
+  svg.getBoundingClientRect();
+  log('  href changed: ok');
+  // Remove sym2 enquanto use aponta para ele
+  defs.removeChild(sym2);
+  svg.getBoundingClientRect();
+  gc();
+  try{ var bb=u.getBBox(); log('  getBBox após target remove: '+bb.width+'x'+bb.height); }
+  catch(e){ log('  getBBox exc: '+e.name); }
+  // Muda para href inexistente
+  u.setAttribute('href','#nonexistent');
+  svg.getBoundingClientRect();
+  log('  href nonexistent: ok');
+  document.body.removeChild(svg);
+  log('[T01] done');
+}
+
+function t02(){
+  log('[T02] SVG filter: feBlend dois shapes + remoção sequencial');
+  var svg=mkSVG(200,200);
+  var defs=el('defs'); svg.appendChild(defs);
+  var filter=el('filter',{id:'f02',x:0,y:0,width:'100%',height:'100%'});
+  var flood1=el('feFlood',{'flood-color':'red',result:'r1'}); filter.appendChild(flood1);
+  var flood2=el('feFlood',{'flood-color':'blue',result:'r2'}); filter.appendChild(flood2);
+  var blend=el('feBlend',{in:'r1',in2:'r2',mode:'multiply',result:'blend'}); filter.appendChild(blend);
+  var comp=el('feComposite',{in:'blend',in2:'SourceGraphic',operator:'in'}); filter.appendChild(comp);
+  defs.appendChild(filter);
+  var rect=el('rect',{width:200,height:200,filter:'url(#f02)'}); svg.appendChild(rect);
+  svg.getBoundingClientRect();
+  // Remove feBlend (invalida a pipeline do filtro)
+  filter.removeChild(blend);
+  svg.getBoundingClientRect();
+  gc();
+  // Remove feComposite
+  filter.removeChild(comp);
+  svg.getBoundingClientRect();
+  gc();
+  log('  filter com primitivos removidos: ok');
+  document.body.removeChild(svg);
+  log('[T02] done');
+}
+
+function t03(){
+  log('[T03] SVGLength: modificar baseVal após detach');
+  var svg=mkSVG(200,200);
+  var rect=el('rect',{x:10,y:20,width:100,height:80}); svg.appendChild(rect);
+  // Salva refs para SVGAnimatedLength
+  var xAnim=rect.x, yAnim=rect.y, wAnim=rect.width, hAnim=rect.height;
+  var xBase=xAnim.baseVal; // SVGLength
+  log('  xBase.value: '+xBase.value);
+  // Remove o rect
+  svg.removeChild(rect);
+  gc();
+  // Lê e escreve SVGLength de elemento removido
+  try{ log('  xBase stale read: '+xBase.value); }catch(e){ log('  read exc: '+e.name); }
+  try{ xBase.value=999; log('  xBase write 999: ok, read back: '+xBase.value); }catch(e){ log('  write exc: '+e.name); }
+  try{ xBase.convertToSpecifiedUnits(2); log('  convertToSpecifiedUnits: ok'); }catch(e){ log('  convert exc: '+e.name); }
+  try{ xBase.newValueSpecifiedUnits(1, 50); log('  newValueSpecifiedUnits: ok'); }catch(e){ log('  newVal exc: '+e.name); }
+  // Reinsere o rect com o SVGLength modificado
+  try{ svg.appendChild(rect); svg.getBoundingClientRect(); log('  reinserted, x now: '+rect.x.baseVal.value); }catch(e){ log('  reinsert exc: '+e.name); }
+  document.body.removeChild(svg);
+  log('[T03] done');
+}
+
+function t04(){
+  log('[T04] SVG SMIL: animateMotion + path removido durante animação');
+  var svg=mkSVG(300,200);
+  var defs=el('defs'); svg.appendChild(defs);
+  var motionPath=el('path',{id:'mp04',d:'M 10,100 Q 150,10 290,100'}); defs.appendChild(motionPath);
+  var circ=el('circle',{r:10,fill:'green'}); svg.appendChild(circ);
+  var am=el('animateMotion',{dur:'3s',repeatCount:'indefinite'});
+  var mpRef=el('mpath',{'href':'#mp04'}); am.appendChild(mpRef);
+  circ.appendChild(am);
+  svg.getBoundingClientRect();
+  log('  animateMotion iniciado');
+  setTimeout(function(){
+    // Remove o path referenciado durante a animação
+    defs.removeChild(motionPath);
+    svg.getBoundingClientRect();
+    gc();
+    try{
+      var anims=circ.getAnimations();
+      log('  anims após path remove: '+anims.length);
+      if(anims[0]) log('  playState: '+anims[0].playState);
+    }catch(e){ log('  anims exc: '+e.name); }
+    // Remove o próprio animateMotion
+    circ.removeChild(am);
+    gc();
+    svg.getBoundingClientRect();
+    log('  animateMotion removido: ok');
+    document.body.removeChild(svg);
+    log('[T04] done');
+  },100);
+}
+
+function t05(){
+  log('[T05] SVGMatrix: multiply após elemento removido');
+  var svg=mkSVG(200,200);
+  var g=el('g',{transform:'translate(50,50) rotate(30) scale(1.5)'}); svg.appendChild(g);
+  var rect=el('rect',{width:50,height:50}); g.appendChild(rect);
+  svg.getBoundingClientRect();
+  // Obtém CTM antes de remover
+  var ctm=rect.getCTM();
+  var sctm=rect.getScreenCTM();
+  log('  CTM.a: '+ctm.a.toFixed(3)+' CTM.e: '+ctm.e.toFixed(3));
+  // Remove o grupo pai
+  svg.removeChild(g);
+  gc();
+  // Operações de matrix após remoção
+  try{
+    var inv=ctm.inverse();
+    log('  CTM inverse: a='+inv.a.toFixed(3));
+    var mul=ctm.multiply(sctm);
+    log('  CTM multiply: a='+mul.a.toFixed(3));
+    var rot=ctm.rotate(45);
+    log('  CTM rotate: a='+rot.a.toFixed(3));
+  }catch(e){ log('  matrix exc: '+e.name); }
+  // Tenta getCTM no elemento removido
+  try{ var ctm2=rect.getCTM(); log('  getCTM pós-remove: '+(ctm2?ctm2.a:'null')); }catch(e){ log('  getCTM exc: '+e.name); }
+  document.body.removeChild(svg);
+  log('[T05] done');
+}
+
+function t06(){
+  log('[T06] SVG nested use: profundidade extrema');
+  var svg=mkSVG(200,200);
+  var defs=el('defs'); svg.appendChild(defs);
+  // Cria cadeia de symbols, cada um usando o anterior
+  var N=15;
+  var prevId='sym06_0';
+  var s0=el('symbol',{id:prevId,viewBox:'0 0 10 10'});
+  s0.appendChild(el('rect',{width:10,height:10,fill:'red'}));
+  defs.appendChild(s0);
+  for(var i=1;i<N;i++){
+    var sym=el('symbol',{id:'sym06_'+i,viewBox:'0 0 20 20'});
+    sym.appendChild(el('use',{href:'#'+prevId,width:20,height:20}));
+    sym.appendChild(el('rect',{x:0,y:0,width:2,height:2,fill:'blue'}));
+    defs.appendChild(sym);
+    prevId='sym06_'+i;
+  }
+  var topUse=el('use',{href:'#'+prevId,x:0,y:0,width:200,height:200});
+  svg.appendChild(topUse);
+  try{
+    svg.getBoundingClientRect();
+    var bb=topUse.getBBox();
+    log('  nested use depth '+N+': bbox='+bb.width.toFixed(1)+'x'+bb.height.toFixed(1));
+  }catch(e){ log('  nested use exc: '+e.name); }
+  // Remove symbol do meio da cadeia
+  var midSym=defs.querySelector('#sym06_7');
+  if(midSym) defs.removeChild(midSym);
+  try{ svg.getBoundingClientRect(); log('  após remove mid sym: ok'); }catch(e){ log('  exc: '+e.name); }
+  gc();
+  document.body.removeChild(svg);
+  log('[T06] done');
+}
+
+function t07(){
+  log('[T07] SVGTextElement: getCharNumAtPosition pós-remove');
+  var svg=mkSVG(300,100);
+  var text=el('text',{x:10,y:50,'font-size':16}); text.textContent='Hello SVG World';
+  svg.appendChild(text);
+  svg.getBoundingClientRect();
+  // Posições para testar
+  var pt=svg.createSVGPoint();
+  pt.x=50; pt.y=45;
+  try{ var charNum=text.getCharNumAtPosition(pt); log('  charNumAtPos(50,45): '+charNum); }catch(e){ log('  getCharNum exc: '+e.name); }
+  try{ var len=text.getComputedTextLength(); log('  textLength: '+len.toFixed(1)); }catch(e){}
+  // Remove o text
+  svg.removeChild(text);
+  gc();
+  // Acessa métodos do text após remoção
+  try{ var cn2=text.getCharNumAtPosition(pt); log('  getCharNumAtPos pós-remove: '+cn2); }catch(e){ log('  exc pós-remove: '+e.name); }
+  try{ var tl2=text.getComputedTextLength(); log('  textLength pós-remove: '+tl2.toFixed(1)); }catch(e){ log('  textLength exc: '+e.name); }
+  try{ var sp=text.getStartPositionOfChar(0); log('  startPos[0]: '+sp.x.toFixed(1)+','+sp.y.toFixed(1)); }catch(e){ log('  startPos exc: '+e.name); }
+  try{ var ep=text.getEndPositionOfChar(0); log('  endPos[0]: '+ep.x.toFixed(1)+','+ep.y.toFixed(1)); }catch(e){ log('  endPos exc: '+e.name); }
+  document.body.removeChild(svg);
+  log('[T07] done');
+}
+
+function t08(){
+  log('[T08] SVG gradientTransform stale após defs removidos');
+  var svg=mkSVG(200,200);
+  var defs=el('defs'); svg.appendChild(defs);
+  var grad=el('linearGradient',{id:'g08',gradientTransform:'rotate(45)',x1:'0%',y1:'0%',x2:'100%',y2:'100%'});
+  var s1=el('stop',{offset:'0%','stop-color':'red'}); grad.appendChild(s1);
+  var s2=el('stop',{offset:'100%','stop-color':'blue'}); grad.appendChild(s2);
+  defs.appendChild(grad);
+  // Salva referência ao SVGAnimatedTransformList
+  var xf=grad.gradientTransform;
+  log('  gradientTransform baseVal length: '+xf.baseVal.numberOfItems);
+  var rect=el('rect',{width:200,height:200,fill:'url(#g08)'}); svg.appendChild(rect);
+  svg.getBoundingClientRect();
+  // Remove defs inteiro
+  svg.removeChild(defs);
+  gc();
+  // Acessa o transform stale
+  try{ var n=xf.baseVal.numberOfItems; log('  xf stale items: '+n); }catch(e){ log('  xf stale exc: '+e.name); }
+  try{ var item=xf.baseVal.getItem(0); log('  xf item0 type: '+item.type); }catch(e){ log('  item exc: '+e.name); }
+  svg.getBoundingClientRect();
+  document.body.removeChild(svg);
+  log('[T08] done');
+}
+
+function t09(){
+  log('[T09] SVG foreignObject: remove + reanexo com DOM modificado');
+  var svg=mkSVG(300,200);
+  var fo=el('foreignObject',{x:10,y:10,width:280,height:180}); svg.appendChild(fo);
+  var div=document.createElement('div');
+  div.innerHTML='<p id="fo-p">paragraph in FO</p><input type="text" value="input in FO">';
+  fo.appendChild(div);
+  svg.getBoundingClientRect();
+  var p=div.querySelector('#fo-p');
+  var inp=div.querySelector('input');
+  // Acessa layout do conteúdo no foreignObject
+  try{ var w=div.offsetWidth; log('  div.offsetWidth in FO: '+w); }catch(e){}
+  // Remove o foreignObject
+  svg.removeChild(fo);
+  gc();
+  // Modifica o conteúdo enquanto fora do SVG
+  p.textContent='modified while detached';
+  inp.value='changed';
+  // Acessa layout de elementos que estavam no foreignObject
+  try{ var w2=div.offsetWidth; log('  div.offsetWidth detached: '+w2); }catch(e){}
+  try{ var cs=window.getComputedStyle(p); log('  p.color detached: '+cs.color); }catch(e){}
+  // Reanexa o foreignObject
+  svg.appendChild(fo);
+  svg.getBoundingClientRect();
+  try{ var w3=div.offsetWidth; log('  div.offsetWidth reattached: '+w3); }catch(e){}
+  document.body.removeChild(svg);
+  log('[T09] done');
+}
+
+function t10(){
+  log('[T10] SVGPathElement: getTotalLength com dados de path extremos');
+  var svg=mkSVG(200,200);
+  var paths=[
+    '',                                          // vazio
+    'M 0,0',                                     // só moveto
+    'M 0,0 Z',                                   // fechar sem linha
+    'M 0,0 L 0,0',                              // linha de comprimento zero
+    'M 0,0 C 0,0 0,0 0,0',                     // curva degenerada
+    'M 0,0 A 0,0 0 0 0 0,0',                   // arco de raio zero
+    'M '+Array(50).fill(0).map(function(_,i){ return i*100+','+(Math.sin(i)*50+100); }).join(' L '), // longa
+    'M 0,0 L 1e10,1e10',                        // coordenadas muito grandes
+    'M NaN,NaN L 100,100',                       // NaN
+  ];
+  paths.forEach(function(d,i){
+    var p=el('path',{d:d});
+    svg.appendChild(p);
+    try{
+      var len=p.getTotalLength();
+      log('  path['+i+']: len='+len.toFixed(2));
+      if(len>0){
+        var mid=p.getPointAtLength(len/2);
+        log('    midpoint: '+mid.x.toFixed(1)+','+mid.y.toFixed(1));
+      }
+    }catch(e){ log('  path['+i+'] exc: '+e.name); }
+    svg.removeChild(p);
+    gc();
+  });
+  document.body.removeChild(svg);
+  log('[T10] done');
+}
+
+function t11(){
+  log('[T11] SVG animateTransform: remove durante acumulação additive');
+  var svg=mkSVG(200,200);
+  var g=el('g'); svg.appendChild(g);
+  var rect=el('rect',{x:0,y:0,width:20,height:20,fill:'purple'}); g.appendChild(rect);
+  // Múltiplos animateTransform com additive="sum"
+  var anims=[];
+  for(var i=0;i<5;i++){
+    var at=el('animateTransform',{attributeName:'transform',type:'translate',additive:'sum',from:'0 0',to:(i*10)+' '+(i*5),dur:'2s',repeatCount:'indefinite'});
+    g.appendChild(at); anims.push(at);
+  }
+  svg.getBoundingClientRect();
+  setTimeout(function(){
+    // Remove animateTransforms alternados durante acumulação
+    anims.forEach(function(a,i){ if(i%2===0 && a.parentNode) g.removeChild(a); });
+    gc();
+    svg.getBoundingClientRect();
+    log('  anims após remove: '+g.querySelectorAll('animateTransform').length);
+    // Remove o grupo durante as animações restantes
+    svg.removeChild(g);
+    gc();
+    svg.getBoundingClientRect();
+    log('  grupo removido: ok');
+    document.body.removeChild(svg);
+    log('[T11] done');
+  },100);
+}
+
+function t12(){
+  log('[T12] SVGPointList: appendItem em elemento fora do DOM');
+  var svg=mkSVG(200,200);
+  var poly=el('polygon',{points:'0,0 100,0 100,100 0,100',fill:'none',stroke:'black'});
+  svg.appendChild(poly);
+  svg.getBoundingClientRect();
+  log('  points antes: '+poly.points.numberOfItems);
+  // Remove o polygon
+  svg.removeChild(poly);
+  gc();
+  // Manipula SVGPointList de elemento removido
+  var pt=svg.createSVGPoint();
+  pt.x=50; pt.y=50;
+  try{ poly.points.appendItem(pt); log('  appendItem após remove: ok, n='+poly.points.numberOfItems); }catch(e){ log('  appendItem exc: '+e.name); }
+  try{ poly.points.removeItem(0); log('  removeItem após remove: ok, n='+poly.points.numberOfItems); }catch(e){ log('  removeItem exc: '+e.name); }
+  try{
+    var item=poly.points.getItem(0);
+    log('  getItem[0]: '+item.x+','+item.y);
+    item.x=999; // modifica o ponto
+    log('  item.x=999: ok');
+  }catch(e){ log('  getItem exc: '+e.name); }
+  // Reinsere e verifica
+  svg.appendChild(poly);
+  svg.getBoundingClientRect();
+  log('  points após reinsert: '+poly.points.numberOfItems);
+  document.body.removeChild(svg);
+  log('[T12] done');
+}
+
+function t13(){
+  log('[T13] SVG: mover elemento entre dois SVGs com transforms diferentes');
+  var svg1=mkSVG(200,200);
+  var svg2=mkSVG(300,300);
+  svg1.setAttribute('viewBox','0 0 100 100');
+  svg2.setAttribute('viewBox','0 0 200 200');
+  var g1=el('g',{transform:'translate(20,20) scale(2)'}); svg1.appendChild(g1);
+  var g2=el('g',{transform:'rotate(45) translate(50,0)'}); svg2.appendChild(g2);
+  var shape=el('rect',{width:30,height:30,fill:'orange'}); g1.appendChild(shape);
+  svg1.getBoundingClientRect(); svg2.getBoundingClientRect();
+  // Obtém CTM no contexto do svg1
+  try{ var ctm1=shape.getCTM(); log('  CTM em svg1: a='+ctm1.a.toFixed(2)+' e='+ctm1.e.toFixed(2)); }catch(e){ log('  ctm1 exc: '+e.name); }
+  // Move para svg2 (muda o contexto de viewport e transforms)
+  g2.appendChild(shape);
+  svg1.getBoundingClientRect(); svg2.getBoundingClientRect();
+  try{ var ctm2=shape.getCTM(); log('  CTM em svg2: a='+ctm2.a.toFixed(2)+' e='+ctm2.e.toFixed(2)); }catch(e){ log('  ctm2 exc: '+e.name); }
+  // Move de volta
+  g1.appendChild(shape);
+  gc();
+  try{ var ctm3=shape.getCTM(); log('  CTM volta svg1: a='+ctm3.a.toFixed(2)+' e='+ctm3.e.toFixed(2)); }catch(e){ log('  ctm3 exc: '+e.name); }
+  document.body.removeChild(svg1);
+  document.body.removeChild(svg2);
+  log('[T13] done');
+}
+
+function t14(){
+  log('[T14] SVGAnimatedString: className.baseVal em elemento removido');
+  var svg=mkSVG(200,100);
+  var style=document.createElement('style');
+  style.textContent='.svg-cls { fill: red; } .svg-cls2 { stroke: blue; stroke-width: 2; }';
+  document.head.appendChild(style);
+  var rect=el('rect',{width:80,height:60}); rect.setAttribute('class','svg-cls'); svg.appendChild(rect);
+  svg.getBoundingClientRect();
+  // Salva referência ao SVGAnimatedString
+  var clsAnim=rect.className;
+  log('  className.baseVal: "'+clsAnim.baseVal+'"');
+  // Remove o rect
+  svg.removeChild(rect);
+  gc();
+  // Acessa e modifica className de elemento removido
+  try{ log('  baseVal stale: "'+clsAnim.baseVal+'"'); }catch(e){ log('  baseVal exc: '+e.name); }
+  try{ clsAnim.baseVal='svg-cls2'; log('  baseVal write: ok'); }catch(e){ log('  write exc: '+e.name); }
+  try{ log('  baseVal após write: "'+clsAnim.baseVal+'"'); }catch(e){}
+  // Reinsere e verifica
+  svg.appendChild(rect);
+  svg.getBoundingClientRect();
+  var cs=window.getComputedStyle(rect);
+  log('  fill após reinsert: '+cs.fill);
+  document.head.removeChild(style);
+  document.body.removeChild(svg);
+  log('[T14] done');
+}
+
+function t15(){
+  log('[T15] SVG: remover defs inteiro com múltiplas referências ativas simultâneas');
+  var svg=mkSVG(400,200);
+  var defs=el('defs'); svg.appendChild(defs);
+  // Cria vários recursos no defs
+  var grad=el('linearGradient',{id:'grad15',x1:'0%',y1:'0%',x2:'100%',y2:'0%'});
+  grad.appendChild(el('stop',{offset:'0%','stop-color':'red'}));
+  grad.appendChild(el('stop',{offset:'100%','stop-color':'yellow'}));
+  defs.appendChild(grad);
+  var filter=el('filter',{id:'flt15'});
+  filter.appendChild(el('feGaussianBlur',{stdDeviation:3}));
+  defs.appendChild(filter);
+  var clip=el('clipPath',{id:'cp15'});
+  clip.appendChild(el('circle',{cx:50,cy:50,r:40}));
+  defs.appendChild(clip);
+  var marker=el('marker',{id:'mk15',markerWidth:6,markerHeight:6,refX:3,refY:3,orient:'auto'});
+  marker.appendChild(el('circle',{cx:3,cy:3,r:2,fill:'black'}));
+  defs.appendChild(marker);
+  var pat=el('pattern',{id:'pat15',width:10,height:10,patternUnits:'userSpaceOnUse'});
+  pat.appendChild(el('rect',{width:5,height:5,fill:'green'}));
+  defs.appendChild(pat);
+  // Cria elementos que usam cada recurso
+  var shapes=[
+    el('rect',{x:0,y:10,width:70,height:70,fill:'url(#grad15)'}),
+    el('rect',{x:80,y:10,width:70,height:70,fill:'blue',filter:'url(#flt15)'}),
+    el('rect',{x:160,y:10,width:100,height:100,fill:'orange','clip-path':'url(#cp15)'}),
+    el('line',{x1:280,y1:10,x2:380,y2:110,stroke:'black','stroke-width':3,'marker-end':'url(#mk15)'}),
+    el('rect',{x:0,y:120,width:200,height:70,fill:'url(#pat15)'}),
+  ];
+  shapes.forEach(function(s){ svg.appendChild(s); });
+  svg.getBoundingClientRect();
+  log('  todos recursos renderizados: ok');
+  // Remove o defs inteiro (invalida TODAS as referências de uma vez)
+  svg.removeChild(defs);
+  svg.getBoundingClientRect(); // re-render sem nenhum recurso
+  gc();
+  log('  defs removido, re-render: ok');
+  // Tenta acessar cada shape após perder seus recursos
+  shapes.forEach(function(s,i){
+    try{ var bb=s.getBBox(); log('  shape['+i+'] bbox: '+bb.width.toFixed(0)+'x'+bb.height.toFixed(0)); }
+    catch(e){ log('  shape['+i+'] exc: '+e.name); }
+  });
+  document.body.removeChild(svg);
+  log('[T15] done');
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 03 — SVG DOM / Animation / References ===');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){ if(i>=tests.length){log('=== FIM ===');return;} try{tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);} i++; setTimeout(next,300); }
+  next();
+}
+</script>
+</body>
+</html>

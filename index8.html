@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>PS4 WebKit Crash v3</title></head>
+<body>
+<h2>PS4 WebKit Crash Tests v3</h2>
+<p>UA: <span id="ua"></span></p>
+<p>Escopo: DOM · CSS Layout · SVG · Canvas 2D · JS LLInt (sem WebGL, WebAudio, SAB, JIT)</p>
+<hr>
+<ul>
+  <li><a href="01_dom_mutation_events.html">01 — DOM Mutation + Event Dispatch</a></li>
+  <li><a href="02_css_render_tree.html">02 — CSS Render Tree / Reflow / Stacking</a></li>
+  <li><a href="03_svg_dom.html">03 — SVG DOM / Animation / References</a></li>
+  <li><a href="04_canvas2d_text.html">04 — Canvas 2D / Text / ImageData</a></li>
+  <li><a href="05_js_llint.html">05 — JS LLInt / Prototype / Closures / Generators</a></li>
+</ul>
+<script>document.getElementById('ua').textContent=navigator.userAgent</script>
+</body>
+</html>

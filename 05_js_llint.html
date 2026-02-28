@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>05 — JS LLInt / Prototype / Closures / Generators</title></head>
+<body>
+<h3>05 — JS LLInt / Prototype / Closures / Generators (sem JIT)</h3>
+<div id="log" style="height:300px;overflow:auto;border:1px solid #999;padding:4px;font:11px monospace;white-space:pre"></div>
+<br>
+<button onclick="t01()">T01 Prototype chain: modificar __proto__ durante iteração</button>
+<button onclick="t02()">T02 Closure: capturar variável que tem seu objeto GC'd</button>
+<button onclick="t03()">T03 Generator: throw durante yield + DOM ref</button>
+<button onclick="t04()">T04 Getter/Setter: acessar via stale prototype</button>
+<button onclick="t05()">T05 Proxy: apply trap com arglist modificado</button>
+<button onclick="t06()">T06 Symbol: usar como chave de mapa + weak ref</button>
+<button onclick="t07()">T07 eval: executar código que modifica seu próprio scope</button>
+<button onclick="t08()">T08 arguments object: modificar params em função strictless</button>
+<button onclick="t09()">T09 Destructuring: padrão complexo com getter effect</button>
+<button onclick="t10()">T10 for...of: iterator com throw() e return() intercalados</button>
+<button onclick="t11()">T11 Prototype: Object.defineProperty em objeto selado</button>
+<button onclick="t12()">T12 try/catch/finally: return em finally + exception pending</button>
+<button onclick="t13()">T13 Recursive closure: função modifica seu upvalue em loop</button>
+<button onclick="t14()">T14 Array holes: métodos em array esparso + prototype</button>
+<button onclick="t15()">T15 Async generator: yield + throw + DOM removal</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html">← Index</a>
+<script>
+var L=document.getElementById('log');
+function log(m){L.textContent+=m+'\n';L.scrollTop=L.scrollHeight}
+function gc(){try{var a=[];for(var i=0;i<20;i++)a.push(new ArrayBuffer(2*1024*1024));a=null}catch(e){}}
+
+function t01(){
+  log('[T01] Prototype chain: modificar __proto__ durante iteração');
+  var base={baseMethod:function(){ return 'base'; }, x:1};
+  var mid={midMethod:function(){ return 'mid'; }, y:2};
+  var top={topMethod:function(){ return 'top'; }, z:3};
+  Object.setPrototypeOf(mid,base);
+  Object.setPrototypeOf(top,mid);
+  var obj=Object.create(top);
+  obj.own=42;
+  // Itera propriedades via for...in (percorre a chain)
+  var props=[];
+  var i=0;
+  for(var k in obj){
+    props.push(k);
+    i++;
+    // Modifica o prototype durante a iteração
+    if(i===2){ mid.injected='INJECTED'; }
+    if(i===3){ delete base.x; }
+    if(i===4){ Object.setPrototypeOf(top,{}); } // corta a chain
+  }
+  log('  props em for..in: '+props.join(','));
+  // hasOwnProperty vs prototype chain após modificação
+  log('  obj.baseMethod: '+(typeof obj.baseMethod));
+  log('  obj.topMethod: '+(typeof obj.topMethod)); // chain cortada
+  // Troca de __proto__ em runtime
+  var a={val:'a'}, b={val:'b'};
+  var child={};
+  Object.setPrototypeOf(child,a);
+  log('  child.val antes: '+child.val);
+  Object.setPrototypeOf(child,b);
+  gc();
+  log('  child.val depois: '+child.val);
+  log('[T01] done');
+}
+
+function t02(){
+  log('[T02] Closure: capturar variável que referencia objeto GC\'d');
+  var closures=[];
+  for(var i=0;i<20;i++){
+    (function(idx){
+      // Cria um objeto grande que pode ser coletado
+      var bigObj={data:new Array(1000).fill(idx), idx:idx, node:document.createElement('div')};
+      document.body.appendChild(bigObj.node);
+      // Closure captura bigObj
+      var fn=function(){
+        return bigObj.idx + ':' + bigObj.data[0] + ':' + bigObj.node.isConnected;
+      };
+      closures.push(fn);
+      // Remove o nó do DOM (mas closure ainda referencia bigObj que referencia nó)
+      document.body.removeChild(bigObj.node);
+      // bigObj sai de scope mas closure ainda o captura
+      bigObj=null; // null o binding local, mas a closure ainda tem a ref original
+    })(i);
+  }
+  gc(); // tenta coletar os bigObjs
+  // Executa closures
+  closures.forEach(function(fn,i){
+    try{
+      var result=fn();
+      if(i<3) log('  closure['+i+']: '+result);
+    }catch(e){ log('  closure['+i+'] exc: '+e.name); }
+  });
+  closures=null; gc();
+  log('[T02] done');
+}
+
+function t03(){
+  log('[T03] Generator: throw() durante yield + DOM ref na closure');
+  var el=document.createElement('div');
+  el.textContent='gen-ref';
+  document.body.appendChild(el);
+  function* gen(){
+    var step=0;
+    try{
+      while(true){
+        step++;
+        // yield com referência ao elemento DOM
+        var received=yield {step:step, connected:el.isConnected, tag:el.tagName};
+        if(received==='remove') document.body.removeChild(el);
+        if(received==='gc') gc();
+      }
+    }catch(e){
+      log('  gen caught: '+e.message+' step='+step+' el.connected='+el.isConnected);
+      yield {caught:true, step:step};
+    }finally{
+      log('  gen finally: el.connected='+el.isConnected);
+    }
+  }
+  var g=gen();
+  log('  '+JSON.stringify(g.next().value));
+  log('  '+JSON.stringify(g.next('normal').value));
+  log('  '+JSON.stringify(g.next('remove').value)); // remove el aqui dentro
+  log('  '+JSON.stringify(g.next('gc').value));     // gc após remoção
+  var r=g.throw(new Error('intentional throw'));
+  log('  throw result: '+JSON.stringify(r.value));
+  var r2=g.next();
+  log('  after throw: done='+r2.done);
+  log('[T03] done');
+}
+
+function t04(){
+  log('[T04] Getter/Setter com efeitos colaterais + prototype stale');
+  var sideEffects=[];
+  var proto={
+    get magic(){ sideEffects.push('get'); return this._v*2; },
+    set magic(v){ sideEffects.push('set:'+v); this._v=v; }
+  };
+  var obj=Object.create(proto);
+  obj._v=10;
+  log('  get: '+obj.magic); // getter via prototype
+  obj.magic=5;               // setter via prototype
+  log('  get após set: '+obj.magic);
+  log('  sideEffects: '+sideEffects.join(','));
+  // Redefine o getter no próprio objeto (shadowing o prototype)
+  Object.defineProperty(obj,'magic',{
+    get:function(){ sideEffects.push('own-get'); return this._v*100; },
+    configurable:true
+  });
+  log('  own getter: '+obj.magic);
+  // Apaga a propriedade própria (volta a usar o prototype)
+  delete obj.magic;
+  gc();
+  log('  após delete: '+obj.magic); // volta ao prototype getter
+  // Agora muda o prototype
+  Object.setPrototypeOf(obj,{});
+  gc();
+  try{ log('  após setProto({}): '+(obj.magic)); }catch(e){ log('  magic exc: '+e.name); }
+  log('[T04] done');
+}
+
+function t05(){
+  log('[T05] Proxy: apply trap + arglist modificado durante trap');
+  var callLog=[];
+  var targetFn=function(a,b,c){ return a+b+(c||0); };
+  var proxy=new Proxy(targetFn,{
+    apply:function(target,thisArg,args){
+      callLog.push('apply:'+args.length);
+      // Modifica os args dentro do trap
+      args.push(args.length*10); // adiciona arg extra
+      args[0]=args[0]*2;         // modifica primeiro arg
+      gc();
+      // Chama o target com args modificados
+      return Reflect.apply(target,thisArg,args);
+    },
+    get:function(t,prop){
+      callLog.push('get:'+String(prop));
+      return Reflect.get(t,prop);
+    }
+  });
+  log('  proxy(1,2): '+proxy(1,2));
+  log('  proxy(3,4,5): '+proxy(3,4,5));
+  // Chama como constructor (apply trap não é chamado, construct seria)
+  try{
+    var inst=new Proxy(function(){this.x=1;},{
+      construct:function(target,args,newTarget){
+        log('  construct trap, args: '+args.length);
+        return Reflect.construct(target,args,newTarget);
+      }
+    });
+    var i=new inst(1,2,3);
+    log('  construct ok: x='+i.x);
+  }catch(e){ log('  construct exc: '+e.name); }
+  log('  callLog: '+callLog.join(','));
+  log('[T05] done');
+}
+
+function t06(){
+  log('[T06] Symbol como chave + WeakMap/WeakSet com DOM nodes');
+  var sym1=Symbol('key1');
+  var sym2=Symbol('key2');
+  var obj={[sym1]:'sym-value', [sym2]:42};
+  log('  obj[sym1]: '+obj[sym1]);
+  log('  sym1===sym2: '+(sym1===sym2));
+  log('  Symbol.for: '+(Symbol.for('x')===Symbol.for('x')));
+  // WeakMap com DOM nodes como chaves
+  var wm=new WeakMap();
+  var ws=new WeakSet();
+  var nodes=[];
+  for(var i=0;i<10;i++){
+    var el=document.createElement('div');
+    el.textContent=i;
+    document.body.appendChild(el);
+    wm.set(el,{data:i,sym:sym1});
+    ws.add(el);
+    nodes.push(el);
+  }
+  // Remove metade dos nós
+  nodes.forEach(function(el,i){
+    if(i%2===0) document.body.removeChild(el);
+  });
+  gc(); gc();
+  // Acessa WeakMap com nós removidos (podem ter sido GC'd)
+  nodes.forEach(function(el,i){
+    try{
+      var has=wm.has(el);
+      var val=wm.get(el);
+      var inSet=ws.has(el);
+      if(i<4) log('  node['+i+'] connected='+el.isConnected+' wm.has='+has+' ws.has='+inSet);
+    }catch(e){ log('  wm['+i+'] exc: '+e.name); }
+  });
+  nodes.forEach(function(el){ if(el.parentNode) document.body.removeChild(el); });
+  log('[T06] done');
+}
+
+function t07(){
+  log('[T07] eval: código que modifica seu escopo léxico');
+  var x=10;
+  var results=[];
+  // eval no escopo atual — pode modificar x
+  try{
+    eval('x = x * 2; results.push(x);');
+    log('  x após eval: '+x+' results: '+results);
+  }catch(e){ log('  eval exc: '+e.name); }
+  // eval que cria variável nova no escopo
+  try{
+    eval('var evalCreated = 42;');
+    log('  evalCreated: '+(typeof evalCreated !== 'undefined' ? evalCreated : 'undefined'));
+  }catch(e){ log('  eval var exc: '+e.name); }
+  // eval que define função recursiva
+  try{
+    eval('function evalFib(n){ return n<=1?n:evalFib(n-1)+evalFib(n-2); }');
+    log('  evalFib(10): '+(typeof evalFib==='function'?evalFib(10):'not defined'));
+  }catch(e){ log('  eval fn exc: '+e.name); }
+  // eval em loop com closures
+  var fns=[];
+  for(var i=0;i<5;i++){
+    try{
+      fns.push(eval('(function(){ return '+i+' * 2; })'));
+    }catch(e){ log('  eval loop['+i+'] exc: '+e.name); }
+  }
+  log('  eval loop results: '+fns.map(function(f){ return f(); }).join(','));
+  log('[T07] done');
+}
+
+function t08(){
+  log('[T08] arguments object: mapeamento em função não-strict');
+  function nonStrictFn(a, b, c){
+    log('  before: a='+a+' arguments[0]='+arguments[0]);
+    // Modifica via arguments — mapeia para o param em non-strict
+    arguments[0]=999;
+    log('  após arguments[0]=999: a='+a); // a deve ser 999
+    // Modifica via param — mapeia para arguments
+    b=777;
+    log('  após b=777: arguments[1]='+arguments[1]); // deve ser 777
+    // Adiciona índice além dos params
+    arguments[3]='extra';
+    log('  arguments[3]: '+arguments[3]);
+    log('  arguments.length: '+arguments.length);
+    // Converte para array
+    var arr=Array.from(arguments);
+    log('  arr: '+arr.join(','));
+    // callee (deprecated mas pode existir)
+    try{ var cal=arguments.callee; log('  callee defined: '+(typeof cal==='function')); }catch(e){ log('  callee exc: '+e.name); }
+    return a + b;
+  }
+  var r=nonStrictFn(1,2,3);
+  log('  return: '+r);
+  // Passa arguments object para outra função
+  function useArgs(fn){
+    function inner(x,y){ fn(arguments); }
+    inner(10,20);
+  }
+  useArgs(function(args){ log('  inner arguments[0]='+args[0]+' [1]='+args[1]); });
+  log('[T08] done');
+}
+
+function t09(){
+  log('[T09] Destructuring: padrão complexo com getter com efeito colateral');
+  var sideLog=[];
+  var source={
+    get a(){ sideLog.push('get-a'); return {nested:42}; },
+    get b(){ sideLog.push('get-b'); return [1,2,3]; },
+    c:100,
+    get d(){ sideLog.push('get-d'); return this.c * 2; }
+  };
+  // Destructuring aninhado com defaults e rename
+  try{
+    var {a:{nested:n1}, b:[b1,b2,...bRest], c:renamed=999, d, e=sideLog.push('default-e')&&'DEFAULT'} = source;
+    log('  n1='+n1+' b1='+b1+' bRest='+bRest+' renamed='+renamed+' d='+d+' e='+e);
+    log('  sideLog: '+sideLog.join(','));
+  }catch(e){ log('  destructure exc: '+e.name); }
+  // Array destructuring com iterator que tem efeito colateral
+  var log2=[];
+  var iter={
+    [Symbol.iterator](){
+      var i=0;
+      return { next(){ log2.push('next'+i); return i<5?{value:i++,done:false}:{value:undefined,done:true}; } };
+    }
+  };
+  try{
+    var [x1,,x3,...xRest]=iter; // skip x2
+    log('  iter x1='+x1+' x3='+x3+' xRest='+xRest);
+    log('  iter sideLog: '+log2.join(','));
+  }catch(e){ log('  iter exc: '+e.name); }
+  log('[T09] done');
+}
+
+function t10(){
+  log('[T10] for...of: iterator com throw() e return() intercalados');
+  function makeIter(){
+    var i=0;
+    var log2=[];
+    return {
+      [Symbol.iterator](){ return this; },
+      next(){
+        log2.push('next:'+i);
+        if(i>=10) return {value:undefined,done:true};
+        return {value:i++, done:false};
+      },
+      throw(e){
+        log2.push('throw:'+e.message);
+        return {value:'threw', done:true};
+      },
+      return(v){
+        log2.push('return:'+v);
+        return {value:v||'returned', done:true};
+      },
+      getLog(){ return log2; }
+    };
+  }
+  // for...of normal com break (chama return())
+  var iter1=makeIter();
+  for(var v of iter1){ if(v===3) break; }
+  log('  break log: '+iter1.getLog().join(','));
+  // for...of com continue e throw
+  var iter2=makeIter();
+  try{
+    for(var v2 of iter2){
+      if(v2===2) continue;
+      if(v2===5) throw new Error('mid-iteration');
+    }
+  }catch(e){ log('  caught: '+e.message); }
+  log('  throw log: '+iter2.getLog().join(','));
+  // Uso manual de throw() e return()
+  var iter3=makeIter();
+  iter3.next(); iter3.next(); // avança
+  var t=iter3.throw(new Error('manual-throw'));
+  log('  manual throw result: '+JSON.stringify(t));
+  var r=iter3.return('manual-return');
+  log('  manual return result: '+JSON.stringify(r));
+  log('[T10] done');
+}
+
+function t11(){
+  log('[T11] Object.defineProperty em objeto selado/congelado');
+  var obj={a:1, b:2, c:3};
+  Object.seal(obj); // impede add/delete mas permite write
+  // Tenta definir nova propriedade em objeto selado
+  try{ Object.defineProperty(obj,'d',{value:4,writable:true}); log('  seal+newProp: ok'); }catch(e){ log('  seal+newProp: '+e.name); }
+  // Redefine propriedade existente em objeto selado
+  try{
+    Object.defineProperty(obj,'a',{value:999,writable:false});
+    log('  seal+redefine+nonWritable: ok a='+obj.a);
+  }catch(e){ log('  seal+redefine: '+e.name); }
+  // Objeto congelado
+  var frozen={x:10,y:[1,2,3]};
+  Object.freeze(frozen);
+  try{ frozen.x=999; log('  frozen write: '+frozen.x); }catch(e){ log('  frozen write exc: '+e.name); }
+  frozen.y.push(4); // congelamento é shallow — array interno ainda pode ser modificado
+  log('  frozen.y (inner not frozen): '+frozen.y);
+  // Prototype de congelado
+  try{ Object.setPrototypeOf(frozen,{}); log('  setProto frozen: ok'); }catch(e){ log('  setProto frozen: '+e.name); }
+  // defineProperty em prototype de objeto congelado
+  var child2=Object.create(frozen);
+  try{
+    Object.defineProperty(child2,'x',{value:42,writable:true,configurable:true});
+    log('  child shadow frozen prop: '+child2.x+' parent: '+frozen.x);
+  }catch(e){ log('  child shadow exc: '+e.name); }
+  log('[T11] done');
+}
+
+function t12(){
+  log('[T12] try/catch/finally: return em finally + exception pendente');
+  function f1(){
+    try{ throw new Error('from-try'); }
+    finally{ return 'from-finally'; } // return em finally cancela a exception
+  }
+  try{ var r1=f1(); log('  f1: '+r1+' (exception cancelada pelo finally)'); }catch(e){ log('  f1 exc: '+e.message); }
+  function f2(){
+    try{ throw new Error('original'); }
+    catch(e){ throw new Error('from-catch'); }
+    finally{ return 'finally-wins'; } // finally return cancela exception do catch
+  }
+  try{ var r2=f2(); log('  f2: '+r2); }catch(e){ log('  f2 exc: '+e.message); }
+  // finally com nova exception (substitui a original)
+  function f3(){
+    try{ throw new Error('original'); }
+    catch(e){ log('  f3 catch: '+e.message); }
+    finally{ throw new Error('from-finally'); }
+  }
+  try{ f3(); }catch(e){ log('  f3 final exc: '+e.message); }
+  // try dentro de finally
+  function f4(){
+    try{ return 1; }
+    finally{
+      try{ throw new Error('inner'); }
+      catch(e){ log('  f4 inner catch: '+e.message); }
+      // não re-throw → finally completa normalmente → return 1 vale
+    }
+  }
+  log('  f4: '+f4());
+  // finally com DOM mutation
+  var el=document.createElement('div'); document.body.appendChild(el);
+  function f5(){
+    try{ throw new Error('test'); }
+    catch(e){ document.body.removeChild(el); gc(); }
+    finally{ log('  f5 finally: el.connected='+el.isConnected); }
+  }
+  try{ f5(); }catch(e){}
+  log('[T12] done');
+}
+
+function t13(){
+  log('[T13] Closure recursiva que modifica seu upvalue em loop');
+  // Upvalue compartilhado entre closures
+  var counter={val:0};
+  var fns=[];
+  for(var i=0;i<10;i++){
+    (function(snapshot){
+      fns.push(function mutate(){
+        counter.val++;
+        if(counter.val<100){
+          // Chama outra closure da lista (não si mesma — evita stack overflow)
+          var next=fns[(snapshot+counter.val)%fns.length];
+          if(next && counter.val%10!==0) next();
+        }
+        if(counter.val%20===0) gc();
+      });
+    })(i);
+  }
+  fns[0]();
+  log('  counter.val: '+counter.val);
+  // Closure que captura variável de loop via var (clássico bug)
+  var varClosures=[];
+  for(var j=0;j<5;j++){
+    varClosures.push(function(){ return j; }); // captura j, não snapshot de j
+  }
+  log('  var closure[0](): '+varClosures[0]()+' (esperado 5, não 0)');
+  // Closure que captura variável de loop via let
+  var letClosures=[];
+  for(let k=0;k<5;k++){
+    letClosures.push(function(){ return k; }); // cada iteração tem seu próprio k
+  }
+  log('  let closure[0](): '+letClosures[0]()+' (esperado 0)');
+  log('  let closure[4](): '+letClosures[4]()+' (esperado 4)');
+  log('[T13] done');
+}
+
+function t14(){
+  log('[T14] Array holes: métodos em array esparso + prototype');
+  // Cria array esparso (com "holes")
+  var sparse=new Array(10); // 10 holes
+  sparse[0]='a'; sparse[5]='f'; sparse[9]='j';
+  log('  length: '+sparse.length+' holes em [1-4,6-8]');
+  log('  1 in sparse: '+(1 in sparse)+' 0 in sparse: '+(0 in sparse));
+  // Métodos que tratam holes de forma diferente
+  var mapped=sparse.map(function(v,i){ return i+':'+v; });
+  log('  map: '+JSON.stringify(mapped)); // holes viram undefined
+  var filtered=sparse.filter(function(v){ return v!==undefined; });
+  log('  filter: '+filtered.join(','));
+  var reduced=sparse.reduce(function(acc,v){ return acc+(v||''); },'');
+  log('  reduce: "'+reduced+'"');
+  // forEach pula holes mas for...of não
+  var forOf=[];
+  for(var v of sparse){ forOf.push(String(v)); }
+  log('  for..of: ['+forOf.join(',')+']');
+  // Adiciona ao Array.prototype (afeta todos os arrays)
+  Array.prototype._testProp='INJECTED';
+  log('  [].testProp: '+[]._testProp);
+  // Verifica se aparece em for...in
+  var forIn=[];
+  for(var k in sparse){ forIn.push(k); }
+  log('  for..in keys: '+forIn.join(','));
+  // Limpa
+  delete Array.prototype._testProp;
+  // Array com length modificado manualmente
+  var a2=[1,2,3,4,5];
+  a2.length=2; // trunca
+  log('  após length=2: '+a2);
+  a2.length=10; // expande (cria holes)
+  log('  após length=10: length='+a2.length+' 5 in a2: '+(5 in a2));
+  log('[T14] done');
+}
+
+function t15(){
+  log('[T15] Async generator: yield + throw + DOM removal');
+  async function* asyncGen(){
+    var el=document.createElement('div'); document.body.appendChild(el);
+    var step=0;
+    try{
+      while(step<8){
+        step++;
+        var info={step:step, connected:el.isConnected};
+        var received=yield info;
+        if(received==='remove' && el.parentNode){
+          document.body.removeChild(el); gc();
+        }
+        await new Promise(function(r){ setTimeout(r,5); });
+      }
+    }catch(e){
+      log('  asyncGen caught: '+e.message+' at step='+step);
+      yield {caught:true,step:step,connected:el.isConnected};
+    }finally{
+      if(el.parentNode) document.body.removeChild(el);
+      log('  asyncGen finally: el.connected='+el.isConnected);
+    }
+  }
+  var gen=asyncGen();
+  async function drive(){
+    try{
+      var r;
+      r=await gen.next(); log('  step1: '+JSON.stringify(r.value));
+      r=await gen.next(); log('  step2: '+JSON.stringify(r.value));
+      r=await gen.next('remove'); log('  step3 (remove): '+JSON.stringify(r.value));
+      r=await gen.next(); log('  step4: '+JSON.stringify(r.value));
+      r=await gen.throw(new Error('async-throw')); log('  throw: '+JSON.stringify(r.value));
+      r=await gen.next(); log('  after throw done='+r.done);
+    }catch(e){ log('  drive exc: '+e.name+' '+e.message); }
+    log('[T15] done');
+  }
+  drive().catch(function(e){ log('[T15] async crash: '+e.message); });
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 05 — JS LLInt / Prototype / Closures / Generators ===');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){ if(i>=tests.length){log('=== FIM ===');return;} try{tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);} i++; setTimeout(next,350); }
+  next();
+}
+</script>
+</body>
+</html>
