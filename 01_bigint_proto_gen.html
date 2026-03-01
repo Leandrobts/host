@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>01 — BigInt + Proto + Generator</title></head>
+<body>
+<h3>01 — BigInt + Prototype Corruption + Generator State Machine</h3>
+<div id="log" style="height:380px;overflow:auto;background:#111;color:#0f0;padding:8px;font:11px monospace;white-space:pre"></div><br>
+<button onclick="t01()">T01 BigInt prototype getter com side-effect durante aritmética</button>
+<button onclick="t02()">T02 Generator suspenso: modificar closure durante yield</button>
+<button onclick="t03()">T03 Proxy sobre BigInt wrapper: trap em valueOf durante comparação</button>
+<button onclick="t04()">T04 Float64↔BigInt punning + prototype substituição mid-op</button>
+<button onclick="t05()">T05 Generator aninhado: throw() encadeado com remoção de DOM</button>
+<button onclick="t06()">T06 BigInt em TypedArray: substituir buffer durante operação</button>
+<button onclick="t07()">T07 Prototype chain loop: __proto__ circular + for...in</button>
+<button onclick="t08()">T08 Generator com WeakRef: GC entre yields</button>
+<button onclick="t09()">T09 Symbol.toPrimitive com reentrância recursiva</button>
+<button onclick="t10()">T10 BigInt shift extremo + overflow de 64 bits</button>
+<button onclick="t11()">T11 Object.defineProperty no prototype durante iteração spread</button>
+<button onclick="t12()">T12 Generator delegado (yield*) com throw em mid-delegation</button>
+<button onclick="t13()">T13 Proxy com has-trap em for...in + prototype swap</button>
+<button onclick="t14()">T14 FinalizationRegistry callback durante generator.next()</button>
+<button onclick="t15()">T15 BigInt + DataView: ler/escrever com endianness e offset extremo</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html">← Index</a>
+<script>
+var L=document.getElementById('log');
+function log(m){L.textContent+=m+'\n';L.scrollTop=L.scrollHeight}
+function gc(){try{var a=[];for(var i=0;i<30;i++)a.push(new ArrayBuffer(4*1024*1024));a=null}catch(e){}}
+
+// Shared: ArrayBuffer para punning float64 <-> BigInt
+var _ab=new ArrayBuffer(8),_f64=new Float64Array(_ab),_u64=new BigUint64Array(_ab);
+function f2i(v){_f64[0]=v;return _u64[0];}
+function i2f(v){_u64[0]=BigInt(v);return _f64[0];}
+
+function t01(){
+  log('[T01] BigInt prototype getter com side-effect durante aritmética');
+  // Instala getter em BigInt.prototype que muta estado externo
+  var sideCount=0;
+  var orig=Object.getOwnPropertyDescriptor(BigInt.prototype,'valueOf');
+  var origToString=Object.getOwnPropertyDescriptor(BigInt.prototype,'toString');
+  try{
+    Object.defineProperty(BigInt.prototype,'toFixed',{
+      get:function(){
+        sideCount++;
+        // Muta o prototype durante acesso
+        if(sideCount===3){
+          try{ Object.defineProperty(BigInt.prototype,'__sc__',{value:sideCount,configurable:true}); }catch(e){}
+        }
+        return function(n){ return this.valueOf().toString(); };
+      },configurable:true
+    });
+    var a=42n, b=100n, c=0n;
+    for(var i=0;i<10;i++){
+      c += a * b;
+      try{ var s=c['toFixed']; if(s) s.call(c); }catch(e){}
+    }
+    log('  sideCount: '+sideCount+' c: '+c);
+    log('  BigInt.prototype.__sc__: '+BigInt.prototype['__sc__']);
+  }catch(e){ log('  exc: '+e.name+' '+e.message); }
+  finally{
+    try{ delete BigInt.prototype['toFixed']; }catch(e){}
+    try{ delete BigInt.prototype['__sc__']; }catch(e){}
+  }
+  log('[T01] done');
+}
+
+function t02(){
+  log('[T02] Generator suspenso: modificar upvalue closure durante yield');
+  // Closure compartilhada entre generator e código externo
+  var shared={arr:[],count:0,active:true};
+  function* complexGen(){
+    var local=0;
+    while(shared.active){
+      // yield expõe o estado
+      var received=yield {local:local,sharedLen:shared.arr.length,count:shared.count};
+      local+=received||1;
+      shared.count++;
+      // Dentro do generator: acessa e modifica shared
+      if(shared.count%3===0){
+        shared.arr.push(new ArrayBuffer(1024*1024)); // 1MB por step
+        if(shared.arr.length>10) shared.arr.shift();
+      }
+    }
+    return 'done:'+local;
+  }
+  var gen=complexGen();
+  var results=[];
+  try{
+    for(var step=0;step<20;step++){
+      var res=gen.next(step%5===0?10:1);
+      results.push(res.value);
+      if(step===7){
+        // Modifica shared DURANTE o generator estar suspenso no yield
+        shared.arr=[];
+        gc();
+        shared.count=0;
+        log('  [step7] shared resetado durante yield suspend');
+      }
+      if(step===14){
+        shared.active=false;
+      }
+    }
+    var final=gen.next();
+    log('  final: '+JSON.stringify(final));
+    log('  results[0]: '+JSON.stringify(results[0]));
+    log('  results[7]: '+JSON.stringify(results[7]));
+    log('  results[14]: '+JSON.stringify(results[14]));
+  }catch(e){ log('  exc: '+e.name+' '+e.message); }
+  log('[T02] done');
+}
+
+function t03(){
+  log('[T03] Proxy sobre objeto com BigInt: toPrimitive trap durante operação');
+  var trapLog=[];
+  var innerBigInt=999n;
+  var proxyTarget={
+    valueOf:function(){ trapLog.push('valueOf'); return innerBigInt; },
+    [Symbol.toPrimitive]:function(hint){
+      trapLog.push('toPrimitive:'+hint);
+      if(hint==='number') return Number(innerBigInt);
+      if(hint==='string') return String(innerBigInt);
+      // Em 'default': muta innerBigInt durante conversão
+      innerBigInt *= 2n;
+      return innerBigInt;
+    }
+  };
+  var proxy=new Proxy(proxyTarget,{
+    get:function(t,prop,recv){
+      trapLog.push('get:'+String(prop));
+      // Durante acesso ao Symbol.toPrimitive: muta o prototype
+      if(prop===Symbol.toPrimitive){
+        Object.defineProperty(proxyTarget,'__trapped__',{value:trapLog.length,configurable:true});
+      }
+      return Reflect.get(t,prop,recv);
+    }
+  });
+  try{
+    // Operações que devem chamar toPrimitive
+    var r1=String(proxy); trapLog.push('=r1:'+r1);
+    var r2=proxy+''; trapLog.push('=r2:'+r2);
+    var r3=+proxy; trapLog.push('=r3:'+r3);
+    // Comparação BigInt vs proxy (não deve funcionar diretamente mas testa paths)
+    try{ var r4=innerBigInt+proxy[Symbol.toPrimitive]('default'); trapLog.push('=r4:'+r4); }catch(e){ trapLog.push('r4exc:'+e.name); }
+    log('  trapLog: '+trapLog.slice(0,12).join(' | '));
+    log('  innerBigInt final: '+innerBigInt);
+    log('  __trapped__: '+proxyTarget.__trapped__);
+  }catch(e){ log('  exc: '+e.name+' '+e.message); }
+  log('[T03] done');
+}
+
+function t04(){
+  log('[T04] Float64↔BigInt punning + prototype swap mid-operação');
+  var ab1=new ArrayBuffer(8),ab2=new ArrayBuffer(8);
+  var f1=new Float64Array(ab1),u1=new BigUint64Array(ab1);
+  var f2=new Float64Array(ab2),u2=new BigUint64Array(ab2);
+  // Proxy que intercepta set no TypedArray e troca os buffers
+  var swapCount=0;
+  var arr=new Float64Array(16);
+  var handler={
+    set:function(t,prop,val,recv){
+      var idx=parseInt(prop);
+      if(!isNaN(idx) && swapCount<5){
+        swapCount++;
+        // Troca o buffer de f1 "embaixo" da operação
+        // (não podemos trocar o buffer de um TypedArray existente,
+        //  mas podemos criar confusão via detach e realloc)
+        try{
+          // Cria novo array com buffer diferente durante o set
+          var tmp=new Float64Array(new ArrayBuffer(8));
+          tmp[0]=val;
+          f1[0]=tmp[0];
+          u1[0]+=1n; // incrementa como BigInt enquanto f1 ainda está sendo escrito
+        }catch(e){}
+      }
+      return Reflect.set(t,prop,val,recv);
+    }
+  };
+  var proxyArr=new Proxy(arr,handler);
+  try{
+    for(var i=0;i<20;i++){
+      f1[0]=Math.PI*i;
+      var asInt=u1[0];
+      proxyArr[i%16]=Number(asInt & 0xFFFFFFFFn)/0xFFFFFFFF;
+      // Operação BigInt complexa durante o loop
+      u2[0]=(asInt ^ (asInt>>32n)) & 0xFFFFFFFFFFFFFFFFn;
+      f2[0]=f2[0]; // re-lê como float
+      if(i===10){
+        gc();
+        log('  [i=10] u1: 0x'+u1[0].toString(16)+' f1: '+f1[0].toFixed(6));
+      }
+    }
+    log('  swapCount: '+swapCount);
+    log('  final u2: 0x'+u2[0].toString(16));
+  }catch(e){ log('  exc: '+e.name+' '+e.message); }
+  log('[T04] done');
+}
+
+function t05(){
+  log('[T05] Generator aninhado: throw() encadeado + remoção de DOM mid-stack');
+  var domNodes=[];
+  for(var d=0;d<10;d++){
+    var el=document.createElement('div');
+    el.textContent='node-'+d;
+    document.body.appendChild(el);
+    domNodes.push(el);
+  }
+  function* inner(node){
+    try{
+      yield 'inner-start:'+node.textContent;
+      node.textContent='mutated-inner';
+      yield 'inner-mid';
+      yield 'inner-end';
+    }catch(e){
+      // Quando throw() é chamado: remove o nó do DOM dentro do generator
+      if(node.parentNode) node.parentNode.removeChild(node);
+      gc();
+      log('  inner catch: node.isConnected='+node.isConnected+' e='+e.message);
+      yield 'inner-caught';
+    }finally{
+      log('  inner finally: node='+node.textContent);
+    }
+  }
+  function* outer(){
+    var delegatedResults=[];
+    for(var i=0;i<domNodes.length;i++){
+      try{
+        // Delega para inner via yield*
+        for(var val of inner(domNodes[i])){
+          delegatedResults.push(val);
+          if(delegatedResults.length===3){
+            // throw durante delegação
+            throw new Error('mid-delegation-throw');
+          }
+          yield val;
+        }
+      }catch(e){
+        log('  outer catch['+i+']: '+e.message);
+        yield 'outer-caught-'+i;
+      }
+    }
+    return 'outer-done:'+delegatedResults.length;
+  }
+  var gen=outer();
+  var collected=[];
+  try{
+    var r;
+    var step=0;
+    while(!(r=gen.next()).done && step<30){
+      collected.push(r.value);
+      step++;
+      if(step===5){
+        // throw externo durante generator em execução
+        var throwResult=gen.throw(new Error('external-throw-'+step));
+        collected.push('thrown:'+throwResult.value);
+      }
+    }
+    log('  collected: '+collected.slice(0,8).join(' | '));
+    log('  final: '+JSON.stringify(r));
+  }catch(e){ log('  outer exc: '+e.name+' '+e.message); }
+  // Limpa nós restantes
+  domNodes.forEach(function(n){ if(n.parentNode) n.parentNode.removeChild(n); });
+  log('[T05] done');
+}
+
+function t06(){
+  log('[T06] BigInt em TypedArray: detach-like via novo ArrayBuffer durante operação');
+  var ab=new ArrayBuffer(64);
+  var u64=new BigUint64Array(ab);
+  var u32=new Uint32Array(ab);
+  var f64=new Float64Array(ab);
+  // Preenche com padrão
+  for(var i=0;i<8;i++) u64[i]=BigInt(0xDEADBEEF00000000n+BigInt(i));
+  log('  u64[0]: 0x'+u64[0].toString(16));
+  log('  f64[0]: '+f64[0]);
+  // Operações interleaved: BigInt e float no mesmo buffer
+  var results=[];
+  for(var i=0;i<8;i++){
+    // Lê como BigInt
+    var asBig=u64[i];
+    // Escreve como float no mesmo slot
+    f64[i]=Math.sin(i)*1e15;
+    // Lê de volta como BigInt (o valor mudou!)
+    var afterFloat=u64[i];
+    // Aritmética BigInt com o novo valor
+    var computed=(afterFloat^asBig)&0xFFFFFFFFFFFFFFFFn;
+    // Escreve o resultado como Uint32 (2 words)
+    u32[i*2]=Number(computed & 0xFFFFFFFFn);
+    u32[i*2+1]=Number((computed>>32n) & 0xFFFFFFFFn);
+    results.push({big:asBig.toString(16).slice(-8),after:afterFloat.toString(16).slice(-8),computed:computed.toString(16).slice(-8)});
+    if(i===3) gc();
+  }
+  results.slice(0,4).forEach(function(r,i){
+    log('  ['+i+'] big='+r.big+' after='+r.after+' xor='+r.computed);
+  });
+  // Tenta criar BigUint64Array com offset alinhado vs não-alinhado
+  try{
+    var ab2=new ArrayBuffer(32);
+    var u64_off=new BigUint64Array(ab2,8,2); // offset 8 bytes
+    u64_off[0]=0xCAFEBABEn;
+    log('  aligned offset u64: 0x'+u64_off[0].toString(16));
+  }catch(e){ log('  offset exc: '+e.name); }
+  try{
+    var ab3=new ArrayBuffer(32);
+    var u64_bad=new BigUint64Array(ab3,1); // offset não alinhado
+    log('  unaligned: ok (inesperado)');
+  }catch(e){ log('  unaligned exc (esperado): '+e.name); }
+  log('[T06] done');
+}
+
+function t07(){
+  log('[T07] Prototype chain manipulation durante for...in + spread');
+  // Cria cadeia profunda de protótipos
+  var chain=[];
+  var base={base_prop:0};
+  var current=base;
+  for(var i=0;i<20;i++){
+    var next=Object.create(current);
+    next['prop_'+i]=i;
+    chain.push(next);
+    current=next;
+  }
+  var leaf=current;
+  // for...in em objeto com cadeia profunda
+  var keys=[];
+  var keyCount=0;
+  for(var k in leaf){
+    keys.push(k);
+    keyCount++;
+    // Mid-iteration: modifica o prototype!
+    if(keyCount===5){
+      // Insere propriedade em um ancestral
+      chain[2]['injected_mid']=999;
+      log('  [iter 5] injetou propriedade mid-iteration');
+    }
+    if(keyCount===10){
+      // Remove propriedade de um ancestral
+      delete chain[4]['prop_4'];
+      gc();
+    }
+    if(keyCount>40) break;
+  }
+  log('  keys.length: '+keys.length+' injected_mid present: '+keys.includes('injected_mid'));
+  // Spread de objeto com prototype muito profundo
+  try{
+    var spread={...leaf};
+    log('  spread keys: '+Object.keys(spread).length+' (só own props)');
+  }catch(e){ log('  spread exc: '+e.name); }
+  // Object.assign com prototype chain
+  try{
+    var target={};
+    // assign só copia own enumerable — mas testa o path
+    Object.assign(target,leaf);
+    log('  assign keys: '+Object.keys(target).length);
+  }catch(e){ log('  assign exc: '+e.name); }
+  // Tenta criar ciclo no __proto__ (deve falhar)
+  try{
+    Object.setPrototypeOf(base,leaf);
+    log('  __proto__ cycle: criado (inesperado!)');
+  }catch(e){ log('  __proto__ cycle exc (esperado): '+e.name); }
+  log('[T07] done');
+}
+
+function t08(){
+  log('[T08] Generator com WeakRef: pressão GC entre yields');
+  var refs=[];
+  var derefCount=0;
+  function* gcPressureGen(){
+    for(var round=0;round<10;round++){
+      // Aloca objetos e guarda WeakRefs
+      var localObjs=[];
+      for(var i=0;i<50;i++){
+        var obj={data:new Float64Array(1024),round:round,idx:i};
+        localObjs.push(obj);
+        refs.push(new WeakRef(obj));
+      }
+      yield {round:round,refs:refs.length,localLen:localObjs.length};
+      // Após yield: localObjs sai de escopo quando generator resume
+      // mas refs ainda guarda WeakRefs
+      localObjs=null; // força GC elegibility
+      // Conta quantas refs ainda são válidas
+      var alive=refs.filter(function(r){ return r.deref()!==undefined; }).length;
+      derefCount=refs.length-alive;
+      yield {round:round,alive:alive,dead:derefCount};
+    }
+  }
+  var gen=gcPressureGen();
+  var step=0;
+  try{
+    var r;
+    while(!(r=gen.next()).done && step<25){
+      if(step%4===0){
+        // GC entre yields
+        gc();
+      }
+      if(step<6) log('  [step '+step+'] '+JSON.stringify(r.value));
+      step++;
+    }
+    log('  total refs: '+refs.length+' derefCount: '+derefCount);
+    var finalAlive=refs.filter(function(r){ return r.deref()!==undefined; }).length;
+    log('  alive após GC final: '+finalAlive);
+  }catch(e){ log('  exc: '+e.name+' '+e.message); }
+  log('[T08] done');
+}
+
+function t09(){
+  log('[T09] Symbol.toPrimitive com reentrância recursiva e side-effects');
+  var callStack=[];
+  var callDepth=0;
+  var MAX_DEPTH=8;
+  function makeReentrant(id,innerVal){
+    var obj={
+      id:id,
+      inner:innerVal,
+      [Symbol.toPrimitive]:function(hint){
+        callStack.push(id+':'+hint);
+        callDepth++;
+        if(callDepth>MAX_DEPTH) return id+'[max]';
+        try{
+          // Durante conversão: tenta converter o inner (pode ser reentrante)
+          var innerStr='';
+          if(obj.inner && typeof obj.inner[Symbol.toPrimitive]==='function'){
+            innerStr=String(obj.inner); // reentrante!
+          }
+          // Modifica propriedade durante conversão
+          obj.callCount=(obj.callCount||0)+1;
+          if(hint==='number') return callDepth*100+id;
+          return id+'('+innerStr+')depth='+callDepth;
+        }finally{
+          callDepth--;
+        }
+      }
+    };
+    return obj;
+  }
+  // Cadeia reentrante: a→b→c→d
+  var d=makeReentrant(4,null);
+  var c=makeReentrant(3,d);
+  var b=makeReentrant(2,c);
+  var a=makeReentrant(1,b);
+  try{
+    var s1=String(a); log('  String(a): '+s1.slice(0,60));
+    var n1=+a;        log('  +a: '+n1);
+    var s2=`template:${a}`; log('  template: '+s2.slice(0,60));
+    var s3=a+'concat'; log('  concat: '+s3.slice(0,60));
+    log('  callStack depth: '+callStack.length+' calls');
+    log('  a.callCount: '+a.callCount+' b: '+b.callCount+' c: '+c.callCount);
+  }catch(e){ log('  exc: '+e.name+' '+e.message); }
+  log('[T09] done');
+}
+
+function t10(){
+  log('[T10] BigInt shift extremo + operações no limite de 64 bits');
+  var cases=[
+    [1n,0n,'1n<<0'],
+    [1n,63n,'1n<<63 (max signed)'],
+    [1n,64n,'1n<<64 (overflow 64)'],
+    [1n,127n,'1n<<127'],
+    [1n,1000n,'1n<<1000 (enorme)'],
+    [-1n,0n,'-1n<<0'],
+    [0xFFFFFFFFFFFFFFFFn,0n,'UINT64_MAX'],
+    [0xFFFFFFFFFFFFFFFFn,1n,'UINT64_MAX<<1'],
+    [1n,-1n,'shift negativo'],
+  ];
+  cases.forEach(function(c){
+    try{
+      var result=c[0]<<c[1];
+      // Armazena resultado no ArrayBuffer via BigUint64Array (pode truncar)
+      try{
+        var ab=new ArrayBuffer(8);
+        var u64=new BigUint64Array(ab);
+        var f64=new Float64Array(ab);
+        u64[0]=BigInt.asUintN(64,result);
+        var asFloat=f64[0];
+        log('  '+c[2]+' = '+result.toString().slice(0,20)+' asFloat='+asFloat.toFixed(3));
+      }catch(e2){ log('  '+c[2]+' = '+result.toString().slice(0,20)+' (store exc: '+e2.name+')'); }
+    }catch(e){ log('  '+c[2]+' exc: '+e.name); }
+  });
+  // Divisão e módulo BigInt
+  var divCases=[
+    [0xFFFFFFFFFFFFFFFFn,2n],
+    [1n,0n], // divisão por zero
+    [-1n,1n],
+    [BigInt(Number.MAX_SAFE_INTEGER)*1000n,7n],
+  ];
+  divCases.forEach(function(c){
+    try{ log('  '+c[0].toString().slice(0,10)+'/'+c[1]+' = '+(c[0]/c[1]).toString().slice(0,20)); }
+    catch(e){ log('  div exc (esperado zero): '+e.name); }
+    try{ log('  '+c[0].toString().slice(0,10)+'%'+c[1]+' = '+(c[0]%c[1]).toString().slice(0,20)); }
+    catch(e){ log('  mod exc: '+e.name); }
+  });
+  log('[T10] done');
+}
+
+function t11(){
+  log('[T11] Object.defineProperty no prototype durante spread + structuredClone');
+  var proto={x:1,y:2};
+  var child=Object.create(proto);
+  child.z=3;
+  var obs=[];
+  // Instala getter que muta o proto durante acesso
+  Object.defineProperty(proto,'x',{
+    get:function(){
+      obs.push('get-x-'+obs.length);
+      if(obs.length===2){
+        // Mid-spread: adiciona propriedade ao proto
+        Object.defineProperty(proto,'injected',{value:42,enumerable:true,configurable:true});
+      }
+      return obs.length*10;
+    },
+    enumerable:true,configurable:true
+  });
+  try{
+    var spread1={...child};
+    log('  spread1: '+JSON.stringify(spread1));
+    log('  obs: '+obs.join(','));
+  }catch(e){ log('  spread exc: '+e.name); }
+  // structuredClone com objeto que tem getters (getters não são clonados)
+  try{
+    var cloned=structuredClone(child);
+    log('  cloned: '+JSON.stringify(cloned)+' (getters devem ser valores)');
+  }catch(e){ log('  clone exc: '+e.name); }
+  // Object.assign com getters (deve chamar o getter)
+  obs=[];
+  try{
+    var assigned=Object.assign({},child,proto);
+    log('  assigned: '+JSON.stringify(assigned));
+    log('  obs após assign: '+obs.join(','));
+  }catch(e){ log('  assign exc: '+e.name); }
+  // Limpa
+  try{ delete proto['injected']; Object.defineProperty(proto,'x',{value:1,enumerable:true,configurable:true}); }catch(e){}
+  log('[T11] done');
+}
+
+function t12(){
+  log('[T12] Generator delegado (yield*) com throw mid-delegation + return()');
+  var events=[];
+  function* sub1(){
+    try{
+      events.push('sub1:start');
+      yield 's1-a';
+      events.push('sub1:mid');
+      yield 's1-b';
+      events.push('sub1:end');
+    }catch(e){
+      events.push('sub1:catch:'+e.message);
+      yield 's1-caught';
+    }finally{
+      events.push('sub1:finally');
+    }
+  }
+  function* sub2(){
+    events.push('sub2:start');
+    try{
+      yield 's2-a';
+      yield 's2-b';
+    }finally{
+      events.push('sub2:finally');
+    }
+  }
+  function* main(){
+    events.push('main:before-s1');
+    yield* sub1();
+    events.push('main:between');
+    yield* sub2();
+    events.push('main:after-s2');
+    yield 'main-end';
+  }
+  var gen=main();
+  var collected=[];
+  try{
+    collected.push(gen.next().value);   // s1-a
+    collected.push(gen.next().value);   // s1-b
+    // throw durante delegação em sub1 (já terminou mas testa path)
+    var tr=gen.throw(new Error('mid-deleg'));
+    collected.push(tr.value);           // s1-caught ou s2-a
+    collected.push(gen.next().value);   // próximo
+    // return() força encerramento
+    var ret=gen.return('forced-return');
+    events.push('return:'+ret.value+':done='+ret.done);
+    // Tenta chamar next() depois de return
+    var after=gen.next();
+    events.push('after-return:done='+after.done+':val='+after.value);
+  }catch(e){ events.push('exc:'+e.name+':'+e.message); }
+  log('  collected: '+collected.join(' | '));
+  log('  events: '+events.join(' → '));
+  log('[T12] done');
+}
+
+function t13(){
+  log('[T13] Proxy com has-trap em for...in + prototype dinâmico');
+  var dynamicProto={a:1,b:2};
+  var target={c:3,d:4};
+  var hasLog=[];
+  var getLog=[];
+  var ownKeysLog=0;
+  var proxy=new Proxy(target,{
+    has:function(t,key){
+      hasLog.push(key);
+      // Muta o proto durante o has-trap
+      if(hasLog.length===3) dynamicProto['injected_'+hasLog.length]=hasLog.length;
+      return key in t || key in dynamicProto;
+    },
+    get:function(t,key,recv){
+      getLog.push(String(key));
+      if(key in t) return Reflect.get(t,key,recv);
+      if(key in dynamicProto) return dynamicProto[key];
+      return undefined;
+    },
+    ownKeys:function(t){
+      ownKeysLog++;
+      // Combina keys do target e do proto dinâmico
+      return [...new Set([...Object.keys(t),...Object.keys(dynamicProto)])];
+    },
+    getOwnPropertyDescriptor:function(t,key){
+      if(key in t) return Object.getOwnPropertyDescriptor(t,key);
+      if(key in dynamicProto) return {value:dynamicProto[key],writable:true,enumerable:true,configurable:true};
+      return undefined;
+    }
+  });
+  var iterKeys=[];
+  try{
+    for(var k in proxy){
+      iterKeys.push(k);
+      if(iterKeys.length>20) break;
+    }
+    log('  for..in keys: '+iterKeys.join(','));
+    log('  hasLog: '+hasLog.slice(0,8).join(','));
+    log('  getLog: '+getLog.slice(0,8).join(','));
+    log('  ownKeysLog: '+ownKeysLog);
+    // in operator
+    log('  "a" in proxy: '+('a' in proxy));
+    log('  "injected_3" in proxy: '+('injected_3' in proxy));
+  }catch(e){ log('  exc: '+e.name+' '+e.message); }
+  log('[T13] done');
+}
+
+function t14(){
+  log('[T14] FinalizationRegistry callback durante generator.next()');
+  var cleanupLog=[];
+  var registry=new FinalizationRegistry(function(token){
+    cleanupLog.push('cleanup:'+token);
+  });
+  function* genWithReg(){
+    for(var i=0;i<10;i++){
+      // Cria objeto registrado que pode ser coletado
+      var obj={data:new Float64Array(512),idx:i};
+      registry.register(obj,'token-'+i);
+      yield {i:i,cleanups:cleanupLog.length};
+      obj=null; // elegível para GC
+      gc();
+    }
+    return 'gen-done:cleanups='+cleanupLog.length;
+  }
+  var gen=genWithReg();
+  var steps=[];
+  try{
+    var r;
+    for(var s=0;s<12;s++){
+      gc(); // pressão GC antes de cada next()
+      r=gen.next();
+      steps.push(r.value);
+      if(r.done) break;
+    }
+    log('  steps[0]: '+JSON.stringify(steps[0]));
+    log('  steps[5]: '+JSON.stringify(steps[5]));
+    log('  final: '+JSON.stringify(r.value));
+    log('  cleanupLog: '+cleanupLog.slice(0,5).join(' | '));
+  }catch(e){ log('  exc: '+e.name+' '+e.message); }
+  log('[T14] done');
+}
+
+function t15(){
+  log('[T15] BigInt + DataView: leitura/escrita com endianness e offsets extremos');
+  var ab=new ArrayBuffer(64);
+  var dv=new DataView(ab);
+  var u64=new BigUint64Array(ab);
+  var i64=new BigInt64Array(ab);
+  // Escreve BigInt64 e BigUint64 com endianness
+  var testValues=[
+    0n, 1n, -1n,
+    0x7FFFFFFFFFFFFFFFn,  // INT64_MAX
+    -0x8000000000000000n, // INT64_MIN
+    0xFFFFFFFFFFFFFFFFn,  // UINT64_MAX (só BigUint64)
+    0xDEADBEEFCAFEBABEn,
+    BigInt(Number.MAX_SAFE_INTEGER),
+  ];
+  testValues.forEach(function(v,i){
+    var off=i*8;
+    if(off+8>64) return;
+    try{
+      // BigInt64 little-endian
+      dv.setBigInt64(off,v,true);
+      var readLE=dv.getBigInt64(off,true);
+      // BigInt64 big-endian
+      dv.setBigInt64(off,v,false);
+      var readBE=dv.getBigInt64(off,false);
+      // Deve ser idêntico (apenas endianness da representação interna)
+      log('  ['+i+'] v='+v.toString().slice(0,12)+' LE='+readLE+' BE='+readBE+' match='+(readLE===v&&readBE===v));
+    }catch(e){ log('  ['+i+'] exc: '+e.name); }
+  });
+  // Offset extremo
+  var offsetCases=[0,1,7,56,57,63,64,65,-1];
+  offsetCases.forEach(function(off){
+    try{
+      dv.setBigUint64(off,0xDEADn,true);
+      var r=dv.getBigUint64(off,true);
+      log('  offset='+off+': ok r=0x'+r.toString(16));
+    }catch(e){ log('  offset='+off+': exc '+e.name+' (esperado para fora dos bounds)'); }
+  });
+  log('[T15] done');
+}
+
+function runAll(){
+  var L=document.getElementById('log'); L.textContent='';
+  log('=== 01 BigInt + Proto + Generator ===\n');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){
+    if(i>=tests.length){log('\n=== FIM ===');return;}
+    log('');
+    try{tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);}
+    i++;setTimeout(next,350);
+  }
+  next();
+}
+</script></body></html>

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>PS4 WebKit Crash v6</title>
+<style>
+body{background:#0a0a0f;color:#ccc;font:13px monospace;padding:16px}
+h2{color:#4af;margin-bottom:4px}
+p{color:#666;font-size:11px;margin-bottom:12px}
+a{display:block;padding:8px 14px;margin:4px 0;background:#111;color:#4af;text-decoration:none;border-left:3px solid #4af}
+a:hover{background:#1a1a2e}
+.tag{font-size:10px;color:#555;float:right}
+hr{border:none;border-top:1px solid #222;margin:12px 0}
+</style></head>
+<body>
+<h2>PS4 WebKit Crash v6 — Lógica Complexa</h2>
+<p>Perfil confirmado: BigInt ✓ Float64 punning ✓ Shadow DOM ✓ Web Animations ✓ Custom Elements ✓ MutationObserver ✓ Range ✓</p>
+<p>LLInt (sem JIT) · Sem SharedArrayBuffer · Sem TouchEvent · ArrayBuffer até 512MB</p>
+<p>Estratégia: combinação de múltiplas APIs, máquinas de estado, reentrância profunda, prototype corruption, GC coordenada</p>
+<hr>
+<a href="01_bigint_proto_gen.html">01 — BigInt + Prototype Corruption + Generator State Machine<span class="tag">15 testes</span></a>
+<a href="02_shadow_anim_mutob.html">02 — Shadow DOM + Animations + MutationObserver Reentrância<span class="tag">15 testes</span></a>
+<a href="03_ce_lifecycle_storm.html">03 — Custom Elements + Lifecycle Storm + Cross-Document Adoption<span class="tag">15 testes</span></a>
+<a href="04_canvas_path_stress.html">04 — Canvas 2D + Path2D + ImageData + Gradient Stress<span class="tag">15 testes</span></a>
+<a href="05_observer_promise_storm.html">05 — Observer Storm + Layout Thrashing + Promise Microtask Chain<span class="tag">15 testes</span></a>
+<script>document.write('<p style="color:#333;font-size:10px;margin-top:16px">UA: '+navigator.userAgent+'</p>')</script>
+</body>
+</html>
