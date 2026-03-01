@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>PS4 Browser — Verificação Completa de APIs</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0a0a0f; color: #ccc; font: 13px/1.5 monospace; padding: 12px; }
+  h1 { color: #4af; font-size: 16px; margin-bottom: 4px; }
+  .subtitle { color: #666; font-size: 11px; margin-bottom: 14px; }
+
+  .section { margin-bottom: 18px; }
+  .section-title {
+    background: #1a1a2e; color: #4af; padding: 5px 10px;
+    font-size: 13px; font-weight: bold; border-left: 3px solid #4af;
+    margin-bottom: 2px; cursor: pointer; user-select: none;
+  }
+  .section-title:hover { background: #1e2040; }
+  .section-body { display: flex; flex-wrap: wrap; gap: 2px; padding: 4px 0; }
+
+  .item {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 8px; font-size: 11px; border-radius: 2px;
+    min-width: 180px; max-width: 340px;
+  }
+  .ok    { background: #0d2d0d; color: #4f4; border: 1px solid #1a4a1a; }
+  .fail  { background: #2d0d0d; color: #f44; border: 1px solid #4a1a1a; }
+  .warn  { background: #2d2000; color: #fa4; border: 1px solid #4a3000; }
+  .info  { background: #0d1a2d; color: #48f; border: 1px solid #1a3050; }
+
+  .dot { font-size: 9px; }
+  .ok   .dot { color: #4f4; }
+  .fail .dot { color: #f44; }
+  .warn .dot { color: #fa4; }
+  .info .dot { color: #48f; }
+
+  .label { flex: 1; }
+  .value { color: #aaa; font-size: 10px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  #summary {
+    position: sticky; top: 0; background: #0a0a0f;
+    border-bottom: 1px solid #222; padding: 6px 0 8px;
+    margin-bottom: 10px; z-index: 10;
+  }
+  #summary-bar { display: flex; gap: 16px; flex-wrap: wrap; }
+  .sbox { padding: 4px 12px; border-radius: 3px; font-size: 12px; font-weight: bold; }
+  .sbox-ok   { background: #0d2d0d; color: #4f4; border: 1px solid #1a4a1a; }
+  .sbox-fail { background: #2d0d0d; color: #f44; border: 1px solid #4a1a1a; }
+  .sbox-warn { background: #2d2000; color: #fa4; border: 1px solid #4a3000; }
+  .sbox-ua   { background: #1a1a2e; color: #aaa; border: 1px solid #333; font-size: 10px; font-weight: normal; max-width: 500px; }
+
+  #ua-box { font-size: 10px; color: #888; word-break: break-all; margin-bottom: 4px; }
+  #ts-box { font-size: 10px; color: #555; }
+
+  .search-bar { margin-bottom: 8px; }
+  #search { background: #111; border: 1px solid #333; color: #ccc; padding: 5px 10px; font: 12px monospace; width: 280px; border-radius: 2px; }
+  #search:focus { outline: none; border-color: #4af; }
+  button.export-btn {
+    background: #1a3050; color: #4af; border: 1px solid #336; padding: 5px 12px;
+    font: 12px monospace; cursor: pointer; border-radius: 2px; margin-left: 8px;
+  }
+  button.export-btn:hover { background: #1e4070; }
+</style>
+</head>
+<body>
+
+<div id="summary">
+  <h1>PS4 WebKit — Verificação Completa de APIs</h1>
+  <div id="ua-box">Carregando...</div>
+  <div id="ts-box"></div>
+  <div class="search-bar" style="margin-top:6px">
+    <input id="search" type="text" placeholder="Filtrar por nome..." oninput="filterItems(this.value)">
+    <button class="export-btn" onclick="exportResults()">Exportar JSON</button>
+    <button class="export-btn" onclick="copySummaryText()">Copiar Resumo</button>
+  </div>
+  <div id="summary-bar">
+    <div class="sbox sbox-ok"  id="cnt-ok">OK: —</div>
+    <div class="sbox sbox-fail" id="cnt-fail">AUSENTE: —</div>
+    <div class="sbox sbox-warn" id="cnt-warn">PARCIAL: —</div>
+    <div class="sbox sbox-ua"  id="cnt-info">INFO: —</div>
+  </div>
+</div>
+
+<div id="sections"></div>
+
+<script>
+// ─── Estado global ────────────────────────────────────────────────────────────
+var results = [];   // { section, name, status, value }
+var cntOk = 0, cntFail = 0, cntWarn = 0, cntInfo = 0;
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function has(path) {
+    var parts = path.split('.');
+    var obj = window;
+    for (var i = 0; i < parts.length; i++) {
+        if (obj == null || typeof obj[parts[i]] === 'undefined') return false;
+        obj = obj[parts[i]];
+    }
+    return true;
+}
+
+function get(path) {
+    var parts = path.split('.');
+    var obj = window;
+    for (var i = 0; i < parts.length; i++) {
+        if (obj == null) return undefined;
+        obj = obj[parts[i]];
+    }
+    return obj;
+}
+
+function tryCall(fn) {
+    try { return { ok: true, val: fn() }; }
+    catch(e) { return { ok: false, err: e.name + ': ' + e.message }; }
+}
+
+function tryEval(code) {
+    try { return { ok: true, val: eval(code) }; }
+    catch(e) { return { ok: false, err: e.name }; }
+}
+
+// ─── Renderer ─────────────────────────────────────────────────────────────────
+var sectionsEl = document.getElementById('sections');
+var currentSection = null;
+var currentBody = null;
+
+function section(title) {
+    var div = document.createElement('div');
+    div.className = 'section';
+    var tit = document.createElement('div');
+    tit.className = 'section-title';
+    tit.textContent = title;
+    tit.onclick = function() {
+        var b = div.querySelector('.section-body');
+        b.style.display = b.style.display === 'none' ? '' : 'none';
+    };
+    var body = document.createElement('div');
+    body.className = 'section-body';
+    div.appendChild(tit);
+    div.appendChild(body);
+    sectionsEl.appendChild(div);
+    currentSection = title;
+    currentBody = body;
+}
+
+function add(name, status, value) {
+    // status: 'ok' | 'fail' | 'warn' | 'info'
+    results.push({ section: currentSection, name: name, status: status, value: value || '' });
+    if (status === 'ok')   cntOk++;
+    if (status === 'fail') cntFail++;
+    if (status === 'warn') cntWarn++;
+    if (status === 'info') cntInfo++;
+
+    var item = document.createElement('div');
+    item.className = 'item ' + status;
+    item.dataset.name = name.toLowerCase();
+
+    var dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.textContent = '●';
+
+    var label = document.createElement('span');
+    label.className = 'label';
+    label.textContent = name;
+
+    var val = document.createElement('span');
+    val.className = 'value';
+    val.title = String(value);
+    val.textContent = String(value).slice(0, 50);
+
+    item.appendChild(dot);
+    item.appendChild(label);
+    item.appendChild(val);
+    currentBody.appendChild(item);
+}
+
+function check(name, condition, okVal, failVal) {
+    if (condition) add(name, 'ok', okVal !== undefined ? okVal : 'PRESENTE');
+    else           add(name, 'fail', failVal !== undefined ? failVal : 'AUSENTE');
+}
+
+function checkAPI(name, path) {
+    check(name, has(path));
+}
+
+function checkVal(name, path, transform) {
+    if (has(path)) {
+        var v = get(path);
+        add(name, 'info', transform ? transform(v) : String(v));
+    } else {
+        add(name, 'fail', 'AUSENTE');
+    }
+}
+
+// ─── Atualiza contadores ──────────────────────────────────────────────────────
+function updateCounts() {
+    document.getElementById('cnt-ok').textContent   = 'PRESENTE: ' + cntOk;
+    document.getElementById('cnt-fail').textContent = 'AUSENTE: '  + cntFail;
+    document.getElementById('cnt-warn').textContent = 'PARCIAL: '  + cntWarn;
+    document.getElementById('cnt-info').textContent = 'INFO: '     + cntInfo;
+}
+
+// ─── Filtro de busca ─────────────────────────────────────────────────────────
+function filterItems(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('.item').forEach(function(el) {
+        el.style.display = (!q || el.dataset.name.indexOf(q) >= 0) ? '' : 'none';
+    });
+}
+
+// ─── Export JSON ──────────────────────────────────────────────────────────────
+function exportResults() {
+    var json = JSON.stringify({ ua: navigator.userAgent, ts: new Date().toISOString(), results: results }, null, 2);
+    var blob = new Blob([json], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'ps4-api-check.json'; a.click();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+}
+
+function copySummaryText() {
+    var lines = ['PS4 API Check — ' + new Date().toISOString()];
+    lines.push('UA: ' + navigator.userAgent);
+    lines.push('OK: ' + cntOk + ' | AUSENTE: ' + cntFail + ' | PARCIAL: ' + cntWarn);
+    lines.push('');
+    var sections = {};
+    results.forEach(function(r) {
+        if (!sections[r.section]) sections[r.section] = [];
+        sections[r.section].push('[' + r.status.toUpperCase() + '] ' + r.name + (r.value ? ': ' + r.value : ''));
+    });
+    Object.keys(sections).forEach(function(s) {
+        lines.push('=== ' + s + ' ===');
+        sections[s].forEach(function(l){ lines.push('  ' + l); });
+        lines.push('');
+    });
+    try { navigator.clipboard.writeText(lines.join('\n')); alert('Copiado!'); }
+    catch(e) { alert('Não suportado — use Export JSON.'); }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// INÍCIO DAS VERIFICAÇÕES
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ─── 1. IDENTIFICAÇÃO ────────────────────────────────────────────────────────
+section('1 · Identificação do Dispositivo');
+add('User-Agent', 'info', navigator.userAgent);
+add('Platform', 'info', navigator.platform || 'N/A');
+add('appVersion', 'info', navigator.appVersion ? navigator.appVersion.slice(0,60) : 'N/A');
+add('cookieEnabled', navigator.cookieEnabled ? 'ok' : 'warn', String(navigator.cookieEnabled));
+add('onLine', 'info', String(navigator.onLine));
+add('language', 'info', navigator.language || 'N/A');
+add('doNotTrack', 'info', String(navigator.doNotTrack));
+
+// Detecta PS4 e extrai firmware
+var ua = navigator.userAgent;
+var isPS4 = /PlayStation 4/i.test(ua);
+add('É PlayStation 4', isPS4 ? 'ok' : 'fail', isPS4 ? 'SIM' : 'NÃO');
+var fwMatch = ua.match(/PlayStation 4\/(\S+)/);
+add('Firmware detectado', fwMatch ? 'ok' : 'warn', fwMatch ? fwMatch[1] : 'N/A');
+var wkMatch = ua.match(/AppleWebKit\/([\d.]+)/);
+add('WebKit build', wkMatch ? 'ok' : 'fail', wkMatch ? wkMatch[1] : 'N/A');
+var safMatch = ua.match(/Version\/([\d.]+)/);
+add('Safari Version', safMatch ? 'ok' : 'fail', safMatch ? safMatch[1] : 'N/A');
+
+// ─── 2. JAVASCRIPT ENGINE ────────────────────────────────────────────────────
+section('2 · JavaScript Engine — Tipos Primitivos');
+check('typeof undefined', typeof undefined === 'undefined', 'OK');
+check('typeof null → object', typeof null === 'object', 'OK');
+check('typeof Symbol', typeof Symbol === 'function', 'PRESENTE');
+check('typeof Proxy', typeof Proxy === 'function', 'PRESENTE');
+check('typeof Promise', typeof Promise === 'function', 'PRESENTE');
+check('typeof WeakRef', typeof WeakRef === 'function', 'PRESENTE');
+check('typeof FinalizationRegistry', typeof FinalizationRegistry === 'function', 'PRESENTE');
+check('typeof BigInt', typeof BigInt === 'function', 'PRESENTE');
+check('typeof BigUint64Array', typeof BigUint64Array === 'function', 'PRESENTE');
+check('typeof BigInt64Array', typeof BigInt64Array === 'function', 'PRESENTE');
+check('typeof globalThis', typeof globalThis !== 'undefined', 'PRESENTE');
+check('typeof Atomics', typeof Atomics !== 'undefined', 'PRESENTE');
+check('typeof SharedArrayBuffer', typeof SharedArrayBuffer === 'function', 'PRESENTE');
+check('typeof queueMicrotask', typeof queueMicrotask === 'function', 'PRESENTE');
+check('typeof structuredClone', typeof structuredClone === 'function', 'PRESENTE');
+
+section('2b · JavaScript Engine — Classes e Construtores');
+check('Map', typeof Map === 'function');
+check('Set', typeof Set === 'function');
+check('WeakMap', typeof WeakMap === 'function');
+check('WeakSet', typeof WeakSet === 'function');
+check('ArrayBuffer', typeof ArrayBuffer === 'function');
+check('DataView', typeof DataView === 'function');
+check('Int8Array', typeof Int8Array === 'function');
+check('Uint8Array', typeof Uint8Array === 'function');
+check('Uint8ClampedArray', typeof Uint8ClampedArray === 'function');
+check('Int16Array', typeof Int16Array === 'function');
+check('Uint16Array', typeof Uint16Array === 'function');
+check('Int32Array', typeof Int32Array === 'function');
+check('Uint32Array', typeof Uint32Array === 'function');
+check('Float32Array', typeof Float32Array === 'function');
+check('Float64Array', typeof Float64Array === 'function');
+check('BigInt64Array', typeof BigInt64Array === 'function');
+check('BigUint64Array', typeof BigUint64Array === 'function');
+check('Error', typeof Error === 'function');
+check('TypeError', typeof TypeError === 'function');
+check('RangeError', typeof RangeError === 'function');
+check('SyntaxError', typeof SyntaxError === 'function');
+check('URIError', typeof URIError === 'function');
+check('EvalError', typeof EvalError === 'function');
+
+section('2c · JavaScript Engine — ES2020+ Features');
+check('Optional chaining (?.)', tryEval('({a:1})?.a === 1').ok);
+check('Nullish coalescing (??)', tryEval('(null ?? 42) === 42').ok);
+check('Logical assignment (||=)', tryEval('let x=0; x||=1; x===1').ok);
+check('Logical assignment (&&=)', tryEval('let x=1; x&&=2; x===2').ok);
+check('Logical assignment (??=)', tryEval('let x=null; x??=3; x===3').ok);
+check('BigInt literals', tryEval('42n === BigInt(42)').ok);
+check('BigInt arithmetic', tryEval('(2n ** 64n) === 18446744073709551616n').ok);
+check('Symbol.iterator', has('Symbol.iterator'));
+check('Symbol.asyncIterator', has('Symbol.asyncIterator'));
+check('Symbol.hasInstance', has('Symbol.hasInstance'));
+check('Symbol.species', has('Symbol.species'));
+check('Symbol.toPrimitive', has('Symbol.toPrimitive'));
+check('Symbol.toStringTag', has('Symbol.toStringTag'));
+check('for...of iterable', tryEval('[...new Set([1,2,3])].length === 3').ok);
+check('Destructuring (array)', tryEval('var [a,b]=[1,2]; a===1&&b===2').ok);
+check('Destructuring (object)', tryEval('var {x}={x:42}; x===42').ok);
+check('Rest/Spread (...)', tryEval('Math.max(...[1,2,3])===3').ok);
+check('Arrow functions', tryEval('((x)=>x+1)(41)===42').ok);
+check('Class syntax', tryEval('class A{}; typeof A==="function"').ok);
+check('Private class fields (#)', tryEval('class A{#x=1;get(){return this.#x}} new A().get()===1').ok);
+check('async/await', tryEval('typeof (async function(){})() === "object"').ok);
+check('Generator function*', tryEval('function* g(){yield 1}; g().next().value===1').ok);
+check('Async generator', tryEval('async function* g(){yield 1}; typeof g()==="object"').ok);
+check('for await...of', tryEval('async function f(){for await(var x of [1]);} typeof f()==="object"').ok);
+check('Template literals', tryEval('`${"a"+"b"}`==="ab"').ok);
+check('Tagged templates', tryEval('function t(s,...v){return v[0]} t`${42}`===42').ok);
+check('Computed property keys', tryEval('var k="x"; ({[k]:1}).x===1').ok);
+check('Object.fromEntries', typeof Object.fromEntries === 'function');
+check('Object.entries', typeof Object.entries === 'function');
+check('Object.values', typeof Object.values === 'function');
+check('Object.assign', typeof Object.assign === 'function');
+check('Object.getOwnPropertyDescriptors', typeof Object.getOwnPropertyDescriptors === 'function');
+check('Array.from', typeof Array.from === 'function');
+check('Array.prototype.flat', typeof [].flat === 'function');
+check('Array.prototype.flatMap', typeof [].flatMap === 'function');
+check('Array.prototype.at', typeof [].at === 'function');
+check('Array.prototype.findLast', typeof [].findLast === 'function');
+check('String.prototype.matchAll', typeof ''.matchAll === 'function');
+check('String.prototype.replaceAll', typeof ''.replaceAll === 'function');
+check('String.prototype.at', typeof ''.at === 'function');
+check('String.prototype.padStart', typeof ''.padStart === 'function');
+check('String.prototype.trimStart', typeof ''.trimStart === 'function');
+check('Promise.allSettled', typeof Promise.allSettled === 'function');
+check('Promise.any', typeof Promise.any === 'function');
+check('Promise.all', typeof Promise.all === 'function');
+check('Promise.race', typeof Promise.race === 'function');
+
+section('2d · JIT / Performance');
+(function(){
+    var t0 = performance.now();
+    var s = 0; for (var i = 0; i < 1000000; i++) s += i;
+    var dt = performance.now() - t0;
+    var hasJIT = dt < 30;
+    add('JIT (heurística <30ms para 1M ops)', hasJIT ? 'ok' : 'warn',
+        dt.toFixed(1) + 'ms — ' + (hasJIT ? 'Provavelmente ATIVO' : 'Provavelmente DESATIVADO'));
+    check('performance.now()', typeof performance !== 'undefined' && typeof performance.now === 'function');
+    check('performance.memory', has('performance.memory'));
+    check('performance.timing', has('performance.timing'));
+    check('performance.getEntries', typeof performance.getEntries === 'function');
+    check('performance.mark', typeof performance.mark === 'function');
+    check('performance.measure', typeof performance.measure === 'function');
+})();
+
+// ─── 3. MEMÓRIA ───────────────────────────────────────────────────────────────
+section('3 · Memória — ArrayBuffer / Limites');
+(function(){
+    function testBuf(size, label) {
+        var r = tryCall(function(){ return new ArrayBuffer(size); });
+        if (r.ok) add('ArrayBuffer ' + label, 'ok', 'OK (' + (size/1024/1024) + 'MB)');
+        else      add('ArrayBuffer ' + label, 'fail', r.err.slice(0,40));
+    }
+    testBuf(1*1024*1024,    '1 MB');
+    testBuf(16*1024*1024,   '16 MB');
+    testBuf(64*1024*1024,   '64 MB');
+    testBuf(128*1024*1024,  '128 MB');
+    testBuf(256*1024*1024,  '256 MB');
+    testBuf(512*1024*1024,  '512 MB');
+
+    check('Float64Array ops', tryEval('var a=new Float64Array(1024); a[0]=1.5; a[0]===1.5').ok);
+    check('DataView get/set', tryEval('var b=new ArrayBuffer(8),d=new DataView(b); d.setUint32(0,0xDEAD); d.getUint32(0)===0xDEAD').ok);
+    check('TypedArray.set()', tryEval('var a=new Uint8Array(4),b=new Uint8Array([1,2,3,4]); a.set(b); a[3]===4').ok);
+    check('TypedArray.subarray()', tryEval('var a=new Uint8Array([1,2,3,4]); a.subarray(1,3)[0]===2').ok);
+    check('TypedArray.fill()', tryEval('new Uint8Array(4).fill(7)[0]===7').ok);
+    check('TypedArray.copyWithin()', tryEval('var a=new Uint8Array([1,2,3,4]); a.copyWithin(0,2); a[0]===3').ok);
+    check('BigUint64Array r/w', tryEval('var b=new ArrayBuffer(8),u=new BigUint64Array(b); u[0]=0xDEADBEEFn; u[0]===0xDEADBEEFn').ok);
+    check('Float64↔BigUint64 punning', tryEval('var b=new ArrayBuffer(8),f=new Float64Array(b),u=new BigUint64Array(b); f[0]=1.0; u[0]>0n').ok);
+})();
+
+// ─── 4. DOM / WEB APIS ───────────────────────────────────────────────────────
+section('4 · DOM — Observers');
+checkAPI('MutationObserver', 'MutationObserver');
+checkAPI('IntersectionObserver', 'IntersectionObserver');
+checkAPI('ResizeObserver', 'ResizeObserver');
+checkAPI('PerformanceObserver', 'PerformanceObserver');
+checkAPI('ReportingObserver', 'ReportingObserver');
+
+section('4b · DOM — Eventos e Dispatch');
+checkAPI('EventTarget', 'EventTarget');
+checkAPI('CustomEvent', 'CustomEvent');
+checkAPI('Event', 'Event');
+checkAPI('MouseEvent', 'MouseEvent');
+checkAPI('KeyboardEvent', 'KeyboardEvent');
+checkAPI('InputEvent', 'InputEvent');
+checkAPI('PointerEvent', 'PointerEvent');
+checkAPI('TouchEvent', 'TouchEvent');
+checkAPI('WheelEvent', 'WheelEvent');
+checkAPI('FocusEvent', 'FocusEvent');
+checkAPI('CompositionEvent', 'CompositionEvent');
+checkAPI('ErrorEvent', 'ErrorEvent');
+checkAPI('MessageEvent', 'MessageEvent');
+checkAPI('CloseEvent', 'CloseEvent');
+checkAPI('ProgressEvent', 'ProgressEvent');
+checkAPI('AnimationEvent', 'AnimationEvent');
+checkAPI('TransitionEvent', 'TransitionEvent');
+checkAPI('StorageEvent', 'StorageEvent');
+checkAPI('HashChangeEvent', 'HashChangeEvent');
+checkAPI('PopStateEvent', 'PopStateEvent');
+check('dispatchEvent funcional', (function(){
+    var el=document.createElement('div'), fired=false;
+    el.addEventListener('test',function(){fired=true;});
+    el.dispatchEvent(new Event('test'));
+    return fired;
+})());
+
+section('4c · DOM — Shadow DOM');
+checkAPI('attachShadow', 'Element.prototype.attachShadow');
+checkAPI('shadowRoot property', 'Element.prototype.shadowRoot');
+(function(){
+    var host = document.createElement('div');
+    var r1 = tryCall(function(){ return host.attachShadow({mode:'open'}); });
+    add('attachShadow mode:open', r1.ok ? 'ok' : 'fail', r1.ok ? 'OK' : r1.err);
+    var host2 = document.createElement('div');
+    var r2 = tryCall(function(){ return host2.attachShadow({mode:'closed'}); });
+    add('attachShadow mode:closed', r2.ok ? 'ok' : 'fail', r2.ok ? 'OK' : r2.err);
+    add('shadowRoot.innerHTML', r1.ok && r1.val ? 'ok' : 'fail', r1.ok ? 'OK' : 'N/A');
+    var hasDelegates = tryEval('document.createElement("div").attachShadow({mode:"open",delegatesFocus:true}); true').ok;
+    add('delegatesFocus', hasDelegates ? 'ok' : 'warn', hasDelegates ? 'SUPORTADO' : 'NÃO SUPORTADO');
+})();
+checkAPI('HTMLSlotElement.assignedNodes', 'HTMLSlotElement.prototype.assignedNodes');
+checkAPI('HTMLSlotElement.assignedElements', 'HTMLSlotElement.prototype.assignedElements');
+
+section('4d · DOM — Range e Selection');
+checkAPI('Range', 'Range');
+checkAPI('document.createRange', 'document.createRange');
+checkAPI('Selection', 'Selection');
+checkAPI('window.getSelection', 'getSelection');
+checkAPI('TreeWalker', 'TreeWalker');
+checkAPI('document.createTreeWalker', 'document.createTreeWalker');
+checkAPI('NodeIterator', 'NodeIterator');
+checkAPI('document.createNodeIterator', 'document.createNodeIterator');
+(function(){
+    var r = tryCall(function(){ var rng=document.createRange(); rng.selectNodeContents(document.body); return rng.toString().length >= 0; });
+    add('Range.selectNodeContents', r.ok ? 'ok' : 'fail', r.ok ? 'OK' : r.err);
+    var r2 = tryCall(function(){ var rng=document.createRange(); return typeof rng.getBoundingClientRect === 'function'; });
+    add('Range.getBoundingClientRect', r2.ok && r2.val ? 'ok' : 'fail');
+    var r3 = tryCall(function(){ var rng=document.createRange(); return typeof rng.getClientRects === 'function'; });
+    add('Range.getClientRects', r3.ok && r3.val ? 'ok' : 'fail');
+})();
+
+section('4e · DOM — Custom Elements');
+checkAPI('customElements', 'customElements');
+checkAPI('customElements.define', 'customElements.define');
+checkAPI('customElements.get', 'customElements.get');
+checkAPI('customElements.upgrade', 'customElements.upgrade');
+checkAPI('customElements.whenDefined', 'customElements.whenDefined');
+(function(){
+    var r = tryCall(function(){
+        customElements.define('ce-check-01', class extends HTMLElement {
+            connectedCallback() { this._connected = true; }
+        });
+        var el = document.createElement('ce-check-01');
+        document.body.appendChild(el);
+        var ok = el._connected === true;
+        document.body.removeChild(el);
+        return ok;
+    });
+    add('CE connectedCallback', r.ok && r.val ? 'ok' : 'fail', r.ok ? 'OK' : r.err);
+})();
+
+section('4f · DOM — iframe / Cross-Document');
+checkAPI('HTMLIFrameElement', 'HTMLIFrameElement');
+checkAPI('document.implementation', 'document.implementation');
+checkAPI('document.implementation.createHTMLDocument', 'document.implementation.createHTMLDocument');
+checkAPI('document.implementation.createDocument', 'document.implementation.createDocument');
+checkAPI('document.adoptNode', 'document.adoptNode');
+checkAPI('document.importNode', 'document.importNode');
+(function(){
+    var f = document.createElement('iframe');
+    f.style.display='none';
+    document.body.appendChild(f);
+    var r = tryCall(function(){ return f.contentDocument !== null; });
+    add('iframe.contentDocument', r.ok && r.val ? 'ok' : 'fail');
+    var r2 = tryCall(function(){ return f.contentWindow !== null; });
+    add('iframe.contentWindow', r2.ok && r2.val ? 'ok' : 'fail');
+    var r3 = tryCall(function(){
+        var el = document.createElement('div'); el.textContent='adopt';
+        document.body.appendChild(el);
+        f.contentDocument.adoptNode(el);
+        return true;
+    });
+    add('document.adoptNode cross-doc', r3.ok ? 'ok' : 'fail', r3.ok ? 'OK' : r3.err);
+    document.body.removeChild(f);
+})();
+
+section('4g · DOM — ContentEditable / execCommand');
+checkAPI('document.execCommand', 'document.execCommand');
+checkAPI('document.queryCommandEnabled', 'document.queryCommandEnabled');
+checkAPI('document.queryCommandState', 'document.queryCommandState');
+checkAPI('document.queryCommandSupported', 'document.queryCommandSupported');
+(function(){
+    var el = document.createElement('div');
+    el.contentEditable = 'true';
+    el.textContent = 'test';
+    document.body.appendChild(el);
+    var r = tryCall(function(){ return document.execCommand('bold', false, null); });
+    add('execCommand bold', r.ok ? 'ok' : 'fail', r.ok ? 'OK' : r.err);
+    document.body.removeChild(el);
+})();
+
+// ─── 5. GRÁFICOS ──────────────────────────────────────────────────────────────
+section('5 · Gráficos — Canvas 2D');
+(function(){
+    var c = document.createElement('canvas');
+    c.width = c.height = 128;
+    var ctx = c.getContext('2d');
+    add('getContext(2d)', ctx ? 'ok' : 'fail', ctx ? 'OK' : 'FALHOU');
+    if (!ctx) return;
+
+    check('fillRect', typeof ctx.fillRect === 'function');
+    check('strokeRect', typeof ctx.strokeRect === 'function');
+    check('clearRect', typeof ctx.clearRect === 'function');
+    check('beginPath', typeof ctx.beginPath === 'function');
+    check('closePath', typeof ctx.closePath === 'function');
+    check('moveTo / lineTo', typeof ctx.moveTo === 'function' && typeof ctx.lineTo === 'function');
+    check('arc / arcTo', typeof ctx.arc === 'function' && typeof ctx.arcTo === 'function');
+    check('bezierCurveTo', typeof ctx.bezierCurveTo === 'function');
+    check('quadraticCurveTo', typeof ctx.quadraticCurveTo === 'function');
+    check('ellipse', typeof ctx.ellipse === 'function');
+    check('fill / stroke', typeof ctx.fill === 'function' && typeof ctx.stroke === 'function');
+    check('clip', typeof ctx.clip === 'function');
+    check('isPointInPath', typeof ctx.isPointInPath === 'function');
+    check('isPointInStroke', typeof ctx.isPointInStroke === 'function');
+    check('save / restore', typeof ctx.save === 'function' && typeof ctx.restore === 'function');
+    check('translate / scale / rotate', typeof ctx.translate === 'function');
+    check('transform / setTransform', typeof ctx.transform === 'function');
+    check('getTransform', typeof ctx.getTransform === 'function');
+    check('resetTransform', typeof ctx.resetTransform === 'function');
+    check('drawImage', typeof ctx.drawImage === 'function');
+    check('createImageData', typeof ctx.createImageData === 'function');
+    check('getImageData', typeof ctx.getImageData === 'function');
+    check('putImageData', typeof ctx.putImageData === 'function');
+    check('createLinearGradient', typeof ctx.createLinearGradient === 'function');
+    check('createRadialGradient', typeof ctx.createRadialGradient === 'function');
+    check('createConicGradient', typeof ctx.createConicGradient === 'function');
+    check('createPattern', typeof ctx.createPattern === 'function');
+    check('fillText / strokeText', typeof ctx.fillText === 'function');
+    check('measureText', typeof ctx.measureText === 'function');
+    check('canvas.toDataURL', typeof c.toDataURL === 'function');
+    check('canvas.toBlob', typeof c.toBlob === 'function');
+    check('Path2D', typeof Path2D === 'function');
+    check('DOMMatrix', typeof DOMMatrix === 'function');
+    check('Path2D.addPath', (function(){ var p=new Path2D(); return typeof p.addPath==='function'; })());
+    check('Path2D SVG string', tryEval('new Path2D("M 0 0 L 100 100"); true').ok);
+    add('filter property', typeof ctx.filter !== 'undefined' ? 'ok' : 'warn', typeof ctx.filter !== 'undefined' ? 'PRESENTE' : 'AUSENTE');
+    add('imageSmoothingEnabled', typeof ctx.imageSmoothingEnabled !== 'undefined' ? 'ok' : 'warn');
+    add('imageSmoothingQuality', typeof ctx.imageSmoothingQuality !== 'undefined' ? 'ok' : 'warn');
+
+    // Compositing
+    var ops = ['source-over','destination-over','lighter','xor','multiply','screen','overlay',
+               'darken','lighten','color-dodge','color-burn','hard-light','soft-light',
+               'difference','exclusion','hue','saturation','color','luminosity'];
+    var supportedOps = [];
+    ops.forEach(function(op){
+        ctx.globalCompositeOperation = op;
+        if (ctx.globalCompositeOperation === op) supportedOps.push(op);
+    });
+    add('globalCompositeOperation modos', supportedOps.length > 10 ? 'ok' : 'warn', supportedOps.length + '/' + ops.length + ' suportados');
+
+    // Teste real de pixel
+    ctx.fillStyle = 'rgb(255,0,0)';
+    ctx.fillRect(0,0,10,10);
+    var px = ctx.getImageData(5,5,1,1).data;
+    add('pixel real (vermelho)', (px[0]===255&&px[1]===0&&px[2]===0) ? 'ok' : 'fail', px[0]+','+px[1]+','+px[2]+','+px[3]);
+})();
+
+section('5b · Gráficos — WebGL');
+(function(){
+    var c = document.createElement('canvas');
+    var gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+    add('WebGL 1.0', gl ? 'ok' : 'fail', gl ? 'PRESENTE' : 'AUSENTE');
+    if (gl) {
+        add('  WebGL vendor', 'info', gl.getParameter(gl.VENDOR));
+        add('  WebGL renderer', 'info', gl.getParameter(gl.RENDERER));
+        add('  WebGL version', 'info', gl.getParameter(gl.VERSION));
+        add('  MAX_TEXTURE_SIZE', 'info', gl.getParameter(gl.MAX_TEXTURE_SIZE));
+    }
+    var c2 = document.createElement('canvas');
+    var gl2 = c2.getContext('webgl2');
+    add('WebGL 2.0', gl2 ? 'ok' : 'fail', gl2 ? 'PRESENTE' : 'AUSENTE');
+    var c3 = document.createElement('canvas');
+    add('OffscreenCanvas', typeof OffscreenCanvas === 'function' ? 'ok' : 'fail');
+    if (typeof OffscreenCanvas === 'function') {
+        var oc = new OffscreenCanvas(256, 256);
+        var octx = oc.getContext('2d');
+        add('  OffscreenCanvas 2D ctx', octx ? 'ok' : 'fail');
+    }
+})();
+
+section('5c · Gráficos — Web Animations API');
+checkAPI('Element.animate', 'Element.prototype.animate');
+checkAPI('Animation', 'Animation');
+checkAPI('KeyframeEffect', 'KeyframeEffect');
+checkAPI('AnimationTimeline', 'AnimationTimeline');
+checkAPI('document.timeline', 'document.timeline');
+checkAPI('document.getAnimations', 'document.getAnimations');
+(function(){
+    var el = document.createElement('div');
+    document.body.appendChild(el);
+    var r = tryCall(function(){
+        var a = el.animate([{opacity:0},{opacity:1}],{duration:1000});
+        var ps = a.playState;
+        a.cancel();
+        return ps;
+    });
+    add('animate() funcional', r.ok ? 'ok' : 'fail', r.ok ? r.val : r.err);
+    document.body.removeChild(el);
+
+    check('Animation.commitStyles', has('Animation.prototype.commitStyles'));
+    check('Animation.effect setter', (function(){ var a=new Animation(); return 'effect' in a; })());
+})();
+
+// ─── 6. REDE ──────────────────────────────────────────────────────────────────
+section('6 · Rede');
+checkAPI('fetch', 'fetch');
+checkAPI('XMLHttpRequest', 'XMLHttpRequest');
+checkAPI('XMLHttpRequest.send', 'XMLHttpRequest.prototype.send');
+checkAPI('XMLHttpRequest.responseType', 'XMLHttpRequest.prototype.responseType');
+checkAPI('WebSocket', 'WebSocket');
+checkAPI('EventSource', 'EventSource');
+checkAPI('navigator.sendBeacon', 'navigator.sendBeacon');
+checkAPI('Request (Fetch API)', 'Request');
+checkAPI('Response (Fetch API)', 'Response');
+checkAPI('Headers (Fetch API)', 'Headers');
+checkAPI('AbortController', 'AbortController');
+checkAPI('AbortSignal', 'AbortSignal');
+checkAPI('URL', 'URL');
+checkAPI('URLSearchParams', 'URLSearchParams');
+checkAPI('Blob', 'Blob');
+checkAPI('File', 'File');
+checkAPI('FileReader', 'FileReader');
+checkAPI('FormData', 'FormData');
+checkAPI('ReadableStream', 'ReadableStream');
+checkAPI('WritableStream', 'WritableStream');
+checkAPI('TransformStream', 'TransformStream');
+checkAPI('TextEncoder', 'TextEncoder');
+checkAPI('TextDecoder', 'TextDecoder');
+checkAPI('URL.createObjectURL', 'URL.createObjectURL');
+checkAPI('URL.revokeObjectURL', 'URL.revokeObjectURL');
+(function(){
+    // Testa TextEncoder
+    var r = tryCall(function(){
+        var enc = new TextEncoder();
+        var buf = enc.encode('hello');
+        return buf[0] === 104; // 'h'
+    });
+    add('TextEncoder funcional', r.ok && r.val ? 'ok' : 'fail', r.ok ? 'OK' : r.err);
+
+    var r2 = tryCall(function(){
+        var dec = new TextDecoder();
+        return dec.decode(new Uint8Array([104,105])) === 'hi';
+    });
+    add('TextDecoder funcional', r2.ok && r2.val ? 'ok' : 'fail', r2.ok ? 'OK' : r2.err);
+})();
+
+// ─── 7. ARMAZENAMENTO ────────────────────────────────────────────────────────
+section('7 · Armazenamento');
+checkAPI('localStorage', 'localStorage');
+checkAPI('sessionStorage', 'sessionStorage');
+checkAPI('indexedDB', 'indexedDB');
+checkAPI('caches (Cache API)', 'caches');
+checkAPI('cookieStore', 'cookieStore');
+(function(){
+    var r = tryCall(function(){ localStorage.setItem('_ps4test','1'); return localStorage.getItem('_ps4test')==='1'; });
+    add('localStorage r/w', r.ok && r.val ? 'ok' : 'fail', r.ok ? 'OK' : r.err);
+    if (r.ok) localStorage.removeItem('_ps4test');
+
+    var r2 = tryCall(function(){ sessionStorage.setItem('_ps4test','1'); return sessionStorage.getItem('_ps4test')==='1'; });
+    add('sessionStorage r/w', r2.ok && r2.val ? 'ok' : 'fail', r2.ok ? 'OK' : r2.err);
+    if (r2.ok) sessionStorage.removeItem('_ps4test');
+})();
+
+// ─── 8. CSS / LAYOUT ─────────────────────────────────────────────────────────
+section('8 · CSS — Features');
+(function(){
+    function cssSup(prop, val) {
+        return CSS.supports ? CSS.supports(prop, val) : 'N/A';
+    }
+    checkAPI('CSS.supports', 'CSS.supports');
+    checkAPI('CSS.escape', 'CSS.escape');
+    check('@container queries', cssSup('container-type','inline-size') === true);
+    check('@layer', tryEval('var s=document.createElement("style");s.textContent="@layer base{}";document.head.appendChild(s);document.head.removeChild(s);true').ok &&
+        (CSS.supports ? CSS.supports('@layer') : false));
+    check('CSS Nesting', CSS.supports ? CSS.supports('selector(&)') : false);
+    check('CSS Animations', cssSup('animation','none 1s') === true || cssSup('-webkit-animation','none 1s') === true);
+    check('CSS Transitions', cssSup('transition','all 1s') === true);
+    check('CSS Grid', cssSup('display','grid') === true);
+    check('CSS Flexbox', cssSup('display','flex') === true);
+    check('CSS Variables (--)', cssSup('--test','0') === true);
+    check('CSS calc()', cssSup('width','calc(100% - 10px)') === true);
+    check('CSS clamp()', cssSup('width','clamp(1px,5vw,100px)') === true);
+    check('CSS min() / max()', cssSup('width','min(100px,50%)') === true);
+    check('CSS aspect-ratio', cssSup('aspect-ratio','16/9') === true);
+    check('CSS gap', cssSup('gap','10px') === true);
+    check('CSS overscroll-behavior', cssSup('overscroll-behavior','contain') === true);
+    check('CSS scroll-behavior', cssSup('scroll-behavior','smooth') === true);
+    check('CSS position:sticky', cssSup('position','sticky') === true);
+    check('CSS backdrop-filter', cssSup('backdrop-filter','blur(10px)') === true || cssSup('-webkit-backdrop-filter','blur(10px)') === true);
+    check('CSS filter', cssSup('filter','blur(0)') === true);
+    check('CSS writing-mode', cssSup('writing-mode','vertical-rl') === true);
+    check('CSS text-decoration-thickness', cssSup('text-decoration-thickness','2px') === true);
+    check('CSS color-scheme', cssSup('color-scheme','dark') === true);
+    check('CSS font-feature-settings', cssSup('font-feature-settings','"liga"') === true);
+    check('CSS @font-face', (function(){
+        var s=document.createElement('style');
+        s.textContent='@font-face{font-family:t;src:local("Arial")}';
+        try{document.head.appendChild(s);document.head.removeChild(s);return true;}catch(e){return false;}
+    })());
+    check('CSS @keyframes', (function(){
+        var s=document.createElement('style');
+        s.textContent='@keyframes _ps4t{from{opacity:0}to{opacity:1}}';
+        try{document.head.appendChild(s);document.head.removeChild(s);return true;}catch(e){return false;}
+    })());
+    check('CSS scrollbar-width', cssSup('scrollbar-width','thin') === true);
+    check('CSS resize', cssSup('resize','both') === true);
+    check('CSS user-select', cssSup('user-select','none') === true || cssSup('-webkit-user-select','none') === true);
+    check('CSS pointer-events', cssSup('pointer-events','none') === true);
+    check('CSS touch-action', cssSup('touch-action','manipulation') === true);
+    check('CSS will-change', cssSup('will-change','transform') === true);
+    check('CSS subgrid', cssSup('grid-template-rows','subgrid') === true);
+    check('CSS :has() selector', CSS.supports ? CSS.supports('selector(:has(*))') : false);
+    check('CSS :is() selector', CSS.supports ? CSS.supports('selector(:is(*))') : false);
+    check('CSS :where() selector', CSS.supports ? CSS.supports('selector(:where(*))') : false);
+    check('CSS :not() complex', CSS.supports ? CSS.supports('selector(:not(.a,.b))') : false);
+    check('CSS color-mix()', cssSup('color','color-mix(in srgb, red, blue)') === true);
+    check('CSS oklch()', cssSup('color','oklch(50% 0.2 240)') === true);
+    check('CSS lch()', cssSup('color','lch(50% 50 240)') === true);
+})();
+
+section('8b · CSS CSSOM');
+checkAPI('CSSStyleSheet', 'CSSStyleSheet');
+checkAPI('CSSRule', 'CSSRule');
+checkAPI('CSSStyleRule', 'CSSStyleRule');
+checkAPI('CSSMediaRule', 'CSSMediaRule');
+checkAPI('CSSKeyframesRule', 'CSSKeyframesRule');
+checkAPI('CSSSupportsRule', 'CSSSupportsRule');
+checkAPI('CSSLayerStatementRule', 'CSSLayerStatementRule');
+checkAPI('CSSContainerRule', 'CSSContainerRule');
+checkAPI('document.adoptedStyleSheets', 'document.adoptedStyleSheets');
+(function(){
+    var r = tryCall(function(){
+        var s = document.createElement('style');
+        s.textContent = '.ps4csstest{color:red}';
+        document.head.appendChild(s);
+        var sheet = s.sheet;
+        var rule = sheet.cssRules[0];
+        var val = rule.style.color;
+        document.head.removeChild(s);
+        return val;
+    });
+    add('CSSStyleSheet.cssRules', r.ok ? 'ok' : 'fail', r.ok ? r.val : r.err);
+})();
+
+// ─── 9. MEDIA / AUDIO / VIDEO ────────────────────────────────────────────────
+section('9 · Media');
+checkAPI('HTMLAudioElement / Audio', 'Audio');
+checkAPI('HTMLVideoElement', 'HTMLVideoElement');
+checkAPI('HTMLMediaElement.play', 'HTMLMediaElement.prototype.play');
+checkAPI('HTMLMediaElement.pause', 'HTMLMediaElement.prototype.pause');
+checkAPI('MediaStream', 'MediaStream');
+checkAPI('MediaSource', 'MediaSource');
+checkAPI('SourceBuffer', 'SourceBuffer');
+checkAPI('navigator.mediaDevices', 'navigator.mediaDevices');
+checkAPI('navigator.mediaDevices.getUserMedia', 'navigator.mediaDevices.getUserMedia');
+checkAPI('navigator.mediaDevices.enumerateDevices', 'navigator.mediaDevices.enumerateDevices');
+checkAPI('RTCPeerConnection', 'RTCPeerConnection');
+checkAPI('RTCDataChannel', 'RTCDataChannel');
+checkAPI('MediaRecorder', 'MediaRecorder');
+checkAPI('ImageCapture', 'ImageCapture');
+
+section('9b · Web Audio API');
+checkAPI('AudioContext', 'AudioContext');
+checkAPI('webkitAudioContext', 'webkitAudioContext');
+checkAPI('OfflineAudioContext', 'OfflineAudioContext');
+checkAPI('AudioBuffer', 'AudioBuffer');
+checkAPI('AudioBufferSourceNode', 'AudioBufferSourceNode');
+checkAPI('GainNode', 'GainNode');
+checkAPI('AnalyserNode', 'AnalyserNode');
+checkAPI('OscillatorNode', 'OscillatorNode');
+
+// ─── 10. WORKERS / THREADS ───────────────────────────────────────────────────
+section('10 · Workers / Concorrência');
+checkAPI('Worker', 'Worker');
+checkAPI('SharedWorker', 'SharedWorker');
+checkAPI('ServiceWorker / navigator.serviceWorker', 'navigator.serviceWorker');
+checkAPI('SharedArrayBuffer', 'SharedArrayBuffer');
+checkAPI('Atomics', 'Atomics');
+checkAPI('Atomics.wait', 'Atomics.wait');
+checkAPI('Atomics.notify', 'Atomics.notify');
+checkAPI('Atomics.add', 'Atomics.add');
+checkAPI('Atomics.compareExchange', 'Atomics.compareExchange');
+checkAPI('MessageChannel', 'MessageChannel');
+checkAPI('BroadcastChannel', 'BroadcastChannel');
+checkAPI('Comlink (externo)', 'Comlink');
+
+// ─── 11. CRIPTOGRAFIA ────────────────────────────────────────────────────────
+section('11 · Criptografia');
+checkAPI('crypto', 'crypto');
+checkAPI('crypto.subtle', 'crypto.subtle');
+checkAPI('crypto.getRandomValues', 'crypto.getRandomValues');
+checkAPI('crypto.randomUUID', 'crypto.randomUUID');
+checkAPI('SubtleCrypto.encrypt', 'crypto.subtle.encrypt');
+checkAPI('SubtleCrypto.decrypt', 'crypto.subtle.decrypt');
+checkAPI('SubtleCrypto.digest', 'crypto.subtle.digest');
+checkAPI('SubtleCrypto.sign', 'crypto.subtle.sign');
+checkAPI('SubtleCrypto.verify', 'crypto.subtle.verify');
+checkAPI('SubtleCrypto.generateKey', 'crypto.subtle.generateKey');
+checkAPI('SubtleCrypto.importKey', 'crypto.subtle.importKey');
+checkAPI('SubtleCrypto.exportKey', 'crypto.subtle.exportKey');
+checkAPI('SubtleCrypto.deriveBits', 'crypto.subtle.deriveBits');
+checkAPI('SubtleCrypto.deriveKey', 'crypto.subtle.deriveKey');
+checkAPI('SubtleCrypto.wrapKey', 'crypto.subtle.wrapKey');
+checkAPI('SubtleCrypto.unwrapKey', 'crypto.subtle.unwrapKey');
+(function(){
+    var r = tryCall(function(){
+        var buf = new Uint8Array(16);
+        crypto.getRandomValues(buf);
+        return buf[0] !== undefined;
+    });
+    add('crypto.getRandomValues funcional', r.ok && r.val ? 'ok' : 'fail', r.ok ? 'OK' : r.err);
+})();
+
+// ─── 12. NAVEGAÇÃO / HISTÓRIA ────────────────────────────────────────────────
+section('12 · Navegação / History / Location');
+checkAPI('history.pushState', 'history.pushState');
+checkAPI('history.replaceState', 'history.replaceState');
+checkAPI('history.state', 'history.state');
+checkAPI('location.href', 'location.href');
+checkAPI('location.origin', 'location.origin');
+checkAPI('location.assign', 'location.assign');
+checkAPI('location.replace', 'location.replace');
+checkAPI('Navigation API', 'navigation');
+checkAPI('window.open', 'open');
+checkAPI('window.close', 'close');
+checkAPI('window.scrollTo', 'scrollTo');
+checkAPI('window.scrollBy', 'scrollBy');
+checkAPI('window.scroll', 'scroll');
+checkAPI('document.referrer', 'document.referrer');
+checkAPI('document.fullscreenElement', 'document.fullscreenElement');
+checkAPI('document.fullscreenEnabled', 'document.fullscreenEnabled');
+checkAPI('Element.requestFullscreen', 'Element.prototype.requestFullscreen');
+checkAPI('Element.requestPointerLock', 'Element.prototype.requestPointerLock');
+
+// ─── 13. APIS MODERNAS / WEB PLATFORM ────────────────────────────────────────
+section('13 · APIs Modernas');
+checkAPI('IntersectionObserver v2 (isVisible)', 'IntersectionObserverEntry.prototype.isVisible');
+checkAPI('ResizeObserverEntry.borderBoxSize', 'ResizeObserverEntry.prototype.borderBoxSize');
+checkAPI('Clipboard API', 'navigator.clipboard');
+checkAPI('navigator.clipboard.readText', 'navigator.clipboard.readText');
+checkAPI('navigator.clipboard.writeText', 'navigator.clipboard.writeText');
+checkAPI('navigator.share', 'navigator.share');
+checkAPI('navigator.canShare', 'navigator.canShare');
+checkAPI('Web Notifications', 'Notification');
+checkAPI('Notification.requestPermission', 'Notification.requestPermission');
+checkAPI('navigator.permissions', 'navigator.permissions');
+checkAPI('navigator.permissions.query', 'navigator.permissions.query');
+checkAPI('navigator.getBattery', 'navigator.getBattery');
+checkAPI('navigator.vibrate', 'navigator.vibrate');
+checkAPI('navigator.geolocation', 'navigator.geolocation');
+checkAPI('Geolocation.getCurrentPosition', 'navigator.geolocation.getCurrentPosition');
+checkAPI('PaymentRequest', 'PaymentRequest');
+checkAPI('Credential (Credential Management)', 'Credential');
+checkAPI('CredentialsContainer', 'CredentialsContainer');
+checkAPI('PublicKeyCredential (WebAuthn)', 'PublicKeyCredential');
+checkAPI('CSS Houdini (CSS.paintWorklet)', 'CSS.paintWorklet');
+checkAPI('CSS Houdini (CSS.layoutWorklet)', 'CSS.layoutWorklet');
+checkAPI('Worklet', 'Worklet');
+checkAPI('PaintWorklet', 'PaintWorklet');
+checkAPI('HTMLDialogElement (dialog)', 'HTMLDialogElement');
+checkAPI('dialog.showModal', 'HTMLDialogElement.prototype.showModal');
+checkAPI('Popover API (.popover)', 'HTMLElement.prototype.popover');
+checkAPI('ElementInternals (form-associated CE)', 'ElementInternals');
+checkAPI('ViewTransition API', 'document.startViewTransition');
+checkAPI('Compression (CompressionStream)', 'CompressionStream');
+checkAPI('DecompressionStream', 'DecompressionStream');
+checkAPI('EyeDropper API', 'EyeDropper');
+checkAPI('File System Access API', 'showOpenFilePicker');
+checkAPI('Barcode Detection', 'BarcodeDetector');
+checkAPI('FaceDetector', 'FaceDetector');
+checkAPI('TextDetector', 'TextDetector');
+checkAPI('Screen Wake Lock', 'navigator.wakeLock');
+checkAPI('Idle Detection', 'IdleDetector');
+checkAPI('Web NFC', 'NDEFReader');
+checkAPI('Web Serial', 'navigator.serial');
+checkAPI('Web USB', 'navigator.usb');
+checkAPI('Web Bluetooth', 'navigator.bluetooth');
+checkAPI('Web MIDI', 'navigator.requestMIDIAccess');
+checkAPI('WebGPU', 'navigator.gpu');
+checkAPI('WebNN (ML API)', 'navigator.ml');
+checkAPI('WebTransport', 'WebTransport');
+checkAPI('WebCodecs (VideoDecoder)', 'VideoDecoder');
+checkAPI('WebCodecs (AudioDecoder)', 'AudioDecoder');
+checkAPI('WebCodecs (ImageDecoder)', 'ImageDecoder');
+
+section('13b · Gamepad / PS4 Specific');
+checkAPI('Gamepad API', 'navigator.getGamepads');
+checkAPI('GamepadHapticActuator', 'GamepadHapticActuator');
+checkAPI('GamepadPose', 'GamepadPose');
+checkAPI('PointerLock', 'document.pointerLockElement');
+checkAPI('DeviceOrientation events', 'ondeviceorientation' in window);
+checkAPI('DeviceMotion events', 'ondevicemotion' in window);
+checkAPI('SpeechSynthesis', 'speechSynthesis');
+checkAPI('SpeechRecognition', 'SpeechRecognition');
+checkAPI('window.PS4 (custom)', 'PS4');
+checkAPI('window.Sceimi (custom)', 'Sceimi');
+checkAPI('window.SceLibc (custom)', 'SceLibc');
+(function(){
+    var gamepads = tryCall(function(){ return navigator.getGamepads(); });
+    add('getGamepads() funcional', gamepads.ok ? 'ok' : 'fail', gamepads.ok ? 'length=' + gamepads.val.length : gamepads.err);
+})();
+
+// ─── 14. SEGURANÇA / POLICIES ────────────────────────────────────────────────
+section('14 · Segurança / CSP / Policies');
+checkAPI('document.featurePolicy', 'document.featurePolicy');
+checkAPI('document.permissionsPolicy', 'document.permissionsPolicy');
+checkAPI('trustedTypes', 'trustedTypes');
+checkAPI('TrustedHTML', 'TrustedHTML');
+checkAPI('TrustedScript', 'TrustedScript');
+checkAPI('TrustedScriptURL', 'TrustedScriptURL');
+checkAPI('window.isSecureContext', 'isSecureContext');
+add('isSecureContext', has('isSecureContext') ? 'info' : 'warn', has('isSecureContext') ? String(isSecureContext) : 'N/A');
+checkAPI('crossOriginIsolated', 'crossOriginIsolated');
+add('crossOriginIsolated', has('crossOriginIsolated') ? 'info' : 'warn', has('crossOriginIsolated') ? String(crossOriginIsolated) : 'N/A');
+
+// ─── 15. INFORMAÇÕES DE TELA ─────────────────────────────────────────────────
+section('15 · Tela / Viewport');
+add('screen.width × height', 'info', screen.width + ' × ' + screen.height);
+add('screen.availWidth × availHeight', 'info', screen.availWidth + ' × ' + screen.availHeight);
+add('devicePixelRatio', 'info', String(window.devicePixelRatio));
+add('window.innerWidth × innerHeight', 'info', window.innerWidth + ' × ' + window.innerHeight);
+add('window.outerWidth × outerHeight', 'info', window.outerWidth + ' × ' + window.outerHeight);
+add('screen.colorDepth', 'info', String(screen.colorDepth) + ' bits');
+add('screen.pixelDepth', 'info', String(screen.pixelDepth) + ' bits');
+checkAPI('screen.orientation', 'screen.orientation');
+add('screen.orientation.type', has('screen.orientation') ? 'info' : 'warn', has('screen.orientation') ? screen.orientation.type : 'N/A');
+checkAPI('window.matchMedia', 'matchMedia');
+(function(){
+    if (typeof matchMedia === 'function') {
+        add('prefers-color-scheme dark', matchMedia('(prefers-color-scheme:dark)').matches ? 'ok' : 'info', matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light/não-detectado');
+        add('prefers-reduced-motion', matchMedia('(prefers-reduced-motion:reduce)').matches ? 'warn' : 'ok', matchMedia('(prefers-reduced-motion:reduce)').matches ? 'reduce' : 'no-preference');
+        add('hover: hover', matchMedia('(hover:hover)').matches ? 'ok' : 'warn', matchMedia('(hover:hover)').matches ? 'hover' : 'none');
+        add('pointer: fine', matchMedia('(pointer:fine)').matches ? 'ok' : 'info', matchMedia('(pointer:fine)').matches ? 'fine' : 'coarse/none');
+    }
+})();
+
+// ─── Atualiza resumo final ────────────────────────────────────────────────────
+document.getElementById('ua-box').textContent = 'UA: ' + navigator.userAgent;
+document.getElementById('ts-box').textContent = 'Executado em: ' + new Date().toLocaleString();
+updateCounts();
+</script>
+</body>
+</html>
