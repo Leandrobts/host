@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>03 — Animations + Shadow + Observers</title>
+<style>
+body{background:#08080f;color:#ccc;font:12px monospace;padding:12px}
+h3{color:#5bf;margin-bottom:8px}
+#log{height:420px;overflow:auto;background:#0a0a12;color:#0f0;padding:8px;white-space:pre;border:1px solid #1a2a3a;margin-bottom:8px}
+button{background:#0f1a2a;color:#5bf;border:1px solid #1a3a5a;padding:5px 10px;margin:2px;font:11px monospace;cursor:pointer}
+#stage{position:fixed;left:-9999px;top:0;width:300px;height:200px}
+</style></head>
+<body>
+<h3>03 — Web Animations + Shadow DOM + Observer Interleave + CSS Keyframes</h3>
+<div id="log"></div>
+<div id="stage"></div>
+<button onclick="t01()">T01 animate() em nó removido do DOM</button>
+<button onclick="t02()">T02 Animation.commitStyles() em elemento desconectado</button>
+<button onclick="t03()">T03 Shadow DOM: animação no host + remove host durante anim</button>
+<button onclick="t04()">T04 KeyframeEffect: mudar effect em runtime</button>
+<button onclick="t05()">T05 Animation timeline: currentTime NaN/Infinity/-1</button>
+<button onclick="t06()">T06 getAnimations() em shadow DOM + subtree</button>
+<button onclick="t07()">T07 ResizeObserver + animate: race condition width/height</button>
+<button onclick="t08()">T08 IntersectionObserver + animação: visibilidade durante anim</button>
+<button onclick="t09()">T09 CSS @keyframes redefinido durante animação ativa</button>
+<button onclick="t10()">T10 Animation finish/cancel: event handlers + remove mid-event</button>
+<button onclick="t11()">T11 Animate com infinite iterations + cancel() mid-flight</button>
+<button onclick="t12()">T12 MutationObserver + animationend: remove durante evento</button>
+<button onclick="t13()">T13 Shadow DOM: slot animation + slotchange event</button>
+<button onclick="t14()">T14 Multiple animations no mesmo elemento: interleave + cancel</button>
+<button onclick="t15()">T15 Animation.effect = new KeyframeEffect() em runtime</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html" style="color:#5bf">← Index</a>
+
+<script>
+'use strict';
+var _L=document.getElementById('log');
+var _stage=document.getElementById('stage');
+function log(m){_L.textContent+=m+'\n';_L.scrollTop=_L.scrollHeight;}
+function fresh(tag,css){
+  var el=document.createElement(tag||'div');
+  if(css) el.style.cssText=css;
+  return el;
+}
+function cleanup(){_stage.innerHTML='';}
+function wait(ms){return new Promise(function(r){setTimeout(r,ms);});}
+
+function t01(){
+  log('[T01] animate() em nó fora do DOM (desconectado)');
+  cleanup();
+  var el=fresh('div','width:100px;height:100px;background:red');
+  // NÃO adiciona ao DOM
+  try{
+    var anim=el.animate(
+      [{opacity:0,transform:'scale(0)'},{opacity:1,transform:'scale(1)'}],
+      {duration:500,fill:'both'}
+    );
+    log('  animation criada: playState='+anim.playState);
+    log('  currentTime: '+anim.currentTime);
+    // Avança o tempo
+    anim.currentTime=250;
+    log('  currentTime=250: playState='+anim.playState);
+    // Adiciona ao DOM depois — a animação continua?
+    _stage.appendChild(el);
+    log('  após add ao DOM: playState='+anim.playState);
+    // Remove novamente
+    _stage.removeChild(el);
+    log('  após remove: playState='+anim.playState);
+    try{anim.commitStyles(); log('  commitStyles pós-remove: ok');}catch(e){log('  commitStyles exc: '+e.name);}
+    anim.cancel();
+    log('  após cancel: playState='+anim.playState);
+  }catch(e){log('  exc: '+e.name+' '+e.message);}
+  cleanup();
+  log('[T01] done\n');
+}
+
+function t02(){
+  log('[T02] Animation.commitStyles() em vários estados extremos');
+  cleanup();
+  var el=fresh('div','width:50px;height:50px;background:blue;position:absolute');
+  _stage.appendChild(el);
+  var anim=el.animate([{opacity:0,left:'0px'},{opacity:1,left:'100px'}],{duration:1000,fill:'both'});
+  try{
+    // commitStyles com fill:both antes de terminar
+    anim.currentTime=500;
+    anim.pause();
+    try{anim.commitStyles(); log('  commitStyles mid-anim: ok, opacity='+el.style.opacity);}
+    catch(e){log('  commitStyles mid exc: '+e.name);}
+    // Cancela e tenta commitStyles
+    anim.cancel();
+    try{anim.commitStyles(); log('  commitStyles post-cancel: ok');}
+    catch(e){log('  commitStyles post-cancel exc: '+e.name);}
+    // Remove o elemento e tenta commitStyles
+    _stage.removeChild(el);
+    var anim2=el.animate([{opacity:0},{opacity:1}],{duration:500,fill:'both'});
+    anim2.currentTime=250;
+    try{anim2.commitStyles(); log('  commitStyles disconnected: ok');}
+    catch(e){log('  commitStyles disconnected exc: '+e.name);}
+    // currentTime negativo
+    var el3=fresh('div','opacity:1');
+    _stage.appendChild(el3);
+    var anim3=el3.animate([{opacity:0},{opacity:1}],{duration:1000,fill:'both'});
+    try{
+      anim3.currentTime=-500;
+      log('  currentTime=-500: playState='+anim3.playState+' currentTime='+anim3.currentTime);
+    }catch(e){log('  neg currentTime exc: '+e.name);}
+    anim3.cancel();
+  }catch(e){log('  exc: '+e.name+' '+e.message);}
+  cleanup();
+  log('[T02] done\n');
+}
+
+function t03(){
+  log('[T03] Shadow DOM: animação dentro do shadow + remove host');
+  cleanup();
+  var host=fresh('div','width:200px;height:100px;background:#222');
+  _stage.appendChild(host);
+  var shadow;
+  try{shadow=host.attachShadow({mode:'open'});}catch(e){log('  no shadow: '+e.name);log('[T03] done\n');return;}
+  var inner=fresh('div','width:50px;height:50px;background:cyan');
+  shadow.appendChild(inner);
+  try{
+    var anim=inner.animate([{transform:'translateX(0)'},{transform:'translateX(100px)'}],
+      {duration:2000,iterations:Infinity});
+    log('  anim em shadow: playState='+anim.playState);
+    log('  inner.getAnimations(): '+inner.getAnimations().length);
+    // Remove o host durante animação
+    _stage.removeChild(host);
+    log('  após remove host: playState='+anim.playState);
+    log('  inner.isConnected: '+inner.isConnected);
+    // A animação ainda existe no elemento desconectado?
+    log('  inner.getAnimations pós-remove: '+inner.getAnimations().length);
+    // Tenta avançar o tempo
+    try{
+      anim.currentTime=500;
+      log('  currentTime=500 pós-remove: ok');
+    }catch(e){log('  currentTime exc: '+e.name);}
+    // Re-adiciona o host
+    _stage.appendChild(host);
+    log('  após re-add: playState='+anim.playState);
+    anim.cancel();
+  }catch(e){log('  exc: '+e.name+' '+e.message);}
+  cleanup();
+  log('[T03] done\n');
+}
+
+function t04(){
+  log('[T04] KeyframeEffect: troca effect em runtime via Animation.effect');
+  cleanup();
+  var el=fresh('div','width:80px;height:80px;background:green;position:absolute');
+  _stage.appendChild(el);
+  if(typeof KeyframeEffect==='undefined'){log('  KeyframeEffect ausente');log('[T04] done\n');return;}
+  try{
+    var effect1=new KeyframeEffect(el,[{opacity:0},{opacity:1}],{duration:1000,fill:'both'});
+    var effect2=new KeyframeEffect(el,[{transform:'rotate(0)'},{transform:'rotate(360deg)'}],{duration:2000,fill:'both'});
+    var effect3=new KeyframeEffect(null,[{left:'0px'},{left:'200px'}],{duration:500,fill:'both'});
+    var anim=new Animation(effect1,document.timeline);
+    anim.play();
+    log('  anim.effect: '+anim.effect.constructor.name);
+    log('  playState: '+anim.playState);
+    // Troca o effect durante execução
+    anim.effect=effect2;
+    log('  após effect swap: playState='+anim.playState);
+    log('  currentTime: '+anim.currentTime);
+    // Effect com target=null
+    anim.effect=effect3;
+    log('  effect com target null: playState='+anim.playState);
+    // Effect=null
+    if('effect' in anim){
+      try{anim.effect=null; log('  effect=null: playState='+anim.playState);}
+      catch(e){log('  effect=null exc: '+e.name);}
+    }
+    anim.cancel();
+  }catch(e){log('  exc: '+e.name+' '+e.message);}
+  cleanup();
+  log('[T04] done\n');
+}
+
+function t05(){
+  log('[T05] Animation.currentTime: valores extremos NaN/Infinity/-Inf/MAX');
+  cleanup();
+  var el=fresh('div','opacity:1');
+  _stage.appendChild(el);
+  var extremes=[
+    [NaN,'NaN'],
+    [Infinity,'Infinity'],
+    [-Infinity,'-Infinity'],
+    [Number.MAX_VALUE,'MAX_VALUE'],
+    [Number.MIN_VALUE,'MIN_VALUE'],
+    [-1,'-1'],
+    [0,'0'],
+    [1e20,'1e20'],
+    [null,'null'],
+    [undefined,'undefined'],
+  ];
+  extremes.forEach(function(c){
+    var anim=el.animate([{opacity:0},{opacity:1}],{duration:1000,fill:'both'});
+    try{
+      anim.currentTime=c[0];
+      log('  currentTime='+c[1]+': set='+anim.currentTime+' state='+anim.playState);
+    }catch(e){log('  currentTime='+c[1]+' exc: '+e.name);}
+    try{anim.cancel();}catch(e){}
+  });
+  // pause() + play() com currentTime extremo
+  var el2=fresh('div','opacity:0.5');
+  _stage.appendChild(el2);
+  var anim2=el2.animate([{opacity:0},{opacity:1}],{duration:1000,iterations:3});
+  try{
+    anim2.pause();
+    anim2.currentTime=5000; // Além da duração total (3000ms)
+    log('  beyond total: currentTime='+anim2.currentTime+' playState='+anim2.playState);
+    anim2.play();
+    log('  play após beyond: playState='+anim2.playState);
+    anim2.cancel();
+  }catch(e){log('  extreme time exc: '+e.name);}
+  cleanup();
+  log('[T05] done\n');
+}
+
+function t06(){
+  log('[T06] getAnimations() em shadow DOM + document.getAnimations()');
+  cleanup();
+  var host=fresh('div');
+  _stage.appendChild(host);
+  var shadow;
+  try{shadow=host.attachShadow({mode:'open'});}catch(e){log('  no shadow: '+e.name);log('[T06] done\n');return;}
+  // Cria elementos na shadow
+  var a=fresh('div','width:50px;height:50px'), b=fresh('div','width:50px;height:50px');
+  shadow.appendChild(a); shadow.appendChild(b);
+  var anim1=a.animate([{opacity:0},{opacity:1}],{duration:2000,iterations:Infinity});
+  var anim2=b.animate([{transform:'scale(0)'},{transform:'scale(1)'}],{duration:1500,iterations:Infinity});
+  // Também anima um elemento fora do shadow
+  var outside=fresh('div','width:50px;height:50px');
+  _stage.appendChild(outside);
+  var anim3=outside.animate([{left:'0px'},{left:'100px'}],{duration:1000,iterations:Infinity});
+  try{
+    log('  a.getAnimations(): '+a.getAnimations().length);
+    log('  shadow.getAnimations({subtree:true}): '+(shadow.getAnimations?shadow.getAnimations({subtree:true}).length:'N/A'));
+    log('  host.getAnimations({subtree:true}): '+host.getAnimations({subtree:true}).length);
+    log('  document.getAnimations(): '+document.getAnimations().length);
+    log('  _stage.getAnimations({subtree:true}): '+_stage.getAnimations({subtree:true}).length);
+    // Remove o host
+    _stage.removeChild(host);
+    log('  após remove host:');
+    log('    a.getAnimations: '+a.getAnimations().length);
+    log('    document.getAnimations: '+document.getAnimations().length);
+  }catch(e){log('  exc: '+e.name+' '+e.message);}
+  [anim1,anim2,anim3].forEach(function(a){try{a.cancel();}catch(e){}});
+  cleanup();
+  log('[T06] done\n');
+}
+
+function t07(){
+  log('[T07] ResizeObserver + animate(): race condition dimensões durante animação');
+  cleanup();
+  var container=fresh('div','width:200px;height:200px;position:relative;overflow:hidden');
+  var inner=fresh('div','width:50px;height:50px;background:red;position:absolute');
+  container.appendChild(inner);
+  _stage.appendChild(container);
+  var roLog=[];
+  var ro=new ResizeObserver(function(entries){
+    entries.forEach(function(e){
+      roLog.push('resize:'+Math.round(e.contentRect.width)+'×'+Math.round(e.contentRect.height));
+      // Dentro do observer: modifica a animação
+      if(roLog.length===1){
+        try{
+          var currentAnims=e.target.getAnimations();
+          if(currentAnims.length>0){
+            currentAnims[0].currentTime=100;
+            roLog.push('anim-seek:'+currentAnims[0].currentTime);
+          }
+        }catch(ex){roLog.push('anim-exc:'+ex.name);}
+      }
+    });
+  });
+  ro.observe(inner);
+  return wait(50).then(function(){
+    try{
+      var anim=inner.animate(
+        [{width:'50px',height:'50px'},{width:'150px',height:'150px'}],
+        {duration:300,fill:'both',iterations:3}
+      );
+      return wait(400).then(function(){
+        log('  roLog: '+roLog.slice(0,8).join(' | '));
+        log('  anim.playState: '+anim.playState);
+        anim.cancel();
+        ro.disconnect();
+        cleanup();
+        log('[T07] done\n');
+      });
+    }catch(e){log('  exc: '+e.name+' '+e.message);ro.disconnect();cleanup();log('[T07] done\n');}
+  });
+}
+
+function t08(){
+  log('[T08] IntersectionObserver + animate: visibilidade durante animação opacity');
+  cleanup();
+  var container=fresh('div','width:200px;height:200px;overflow:hidden');
+  var target=fresh('div','width:100px;height:100px;background:yellow');
+  container.appendChild(target);
+  _stage.style.left='10px'; // torna visível para IntersectionObserver
+  _stage.style.top='10px';
+  _stage.appendChild(container);
+  var ioLog=[];
+  var io=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      ioLog.push('io:'+e.isIntersecting+':'+e.intersectionRatio.toFixed(2));
+      // Dentro do callback: modifica a animação
+      var anims=e.target.getAnimations();
+      if(anims.length>0){
+        try{
+          if(e.isIntersecting) anims[0].play();
+          else anims[0].pause();
+          ioLog.push('anim-state:'+anims[0].playState);
+        }catch(ex){ioLog.push('anim-exc:'+ex.name);}
+      }
+    });
+  },{threshold:[0,0.5,1.0]});
+  try{
+    io.observe(target);
+    var anim=target.animate([{opacity:0},{opacity:1}],{duration:1000,iterations:Infinity});
+    return wait(200).then(function(){
+      // Move o container para fora da viewport durante a animação
+      container.style.marginLeft='-9999px';
+      return wait(200).then(function(){
+        log('  ioLog: '+ioLog.slice(0,8).join(' | '));
+        log('  anim.playState: '+anim.playState);
+        anim.cancel();
+        io.disconnect();
+        _stage.style.left='-9999px';
+        cleanup();
+        log('[T08] done\n');
+      });
+    });
+  }catch(e){
+    log('  exc: '+e.name+' '+e.message);
+    io.disconnect();
+    _stage.style.left='-9999px';
+    cleanup();
+    log('[T08] done\n');
+  }
+}
+
+function t09(){
+  log('[T09] CSS @keyframes redefinido via CSSOM durante animação ativa');
+  cleanup();
+  var el=fresh('div','width:100px;height:100px;background:purple');
+  _stage.appendChild(el);
+  var style=document.createElement('style');
+  style.textContent='@keyframes ps4test { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }';
+  document.head.appendChild(style);
+  try{
+    el.style.animation='ps4test 1s linear infinite';
+    var before=el.getAnimations().length;
+    log('  animations antes: '+before);
+    // Modifica o @keyframes via CSSOM
+    var sheet=style.sheet;
+    var kfRule=null;
+    for(var i=0;i<sheet.cssRules.length;i++){
+      if(sheet.cssRules[i].type===CSSRule.KEYFRAMES_RULE||sheet.cssRules[i].type===7){
+        kfRule=sheet.cssRules[i]; break;
+      }
+    }
+    if(kfRule){
+      log('  @keyframes encontrado: '+kfRule.name);
+      try{
+        // Modifica keyframe durante animação ativa
+        kfRule.appendRule('50% { transform: scale(2) rotate(180deg) }');
+        log('  appendRule: ok, rules='+kfRule.cssRules.length);
+        kfRule.deleteRule('0%');
+        log('  deleteRule(0%): ok, rules='+kfRule.cssRules.length);
+      }catch(e){log('  modify kf exc: '+e.name);}
+    } else { log('  @keyframes não encontrado no CSSOM'); }
+    var after=el.getAnimations().length;
+    log('  animations depois: '+after);
+    // Redefine completamente
+    style.textContent='@keyframes ps4test { 0%{opacity:0} 100%{opacity:1} }';
+    log('  após redefine: '+el.getAnimations().length+' animations');
+  }catch(e){log('  exc: '+e.name+' '+e.message);}
+  el.style.animation='';
+  document.head.removeChild(style);
+  cleanup();
+  log('[T09] done\n');
+}
+
+function t10(){
+  log('[T10] Animation events: finish/cancel + remove nó no handler');
+  cleanup();
+  var events=[];
+  var el=fresh('div','opacity:0');
+  _stage.appendChild(el);
+  var anim=el.animate([{opacity:0},{opacity:1}],{duration:50,fill:'both'});
+  anim.addEventListener('finish',function(){
+    events.push('finish:'+el.isConnected);
+    // Remove o elemento no handler de finish
+    if(el.parentNode) el.parentNode.removeChild(el);
+    events.push('finish:removed:isConnected='+el.isConnected);
+    // Tenta commitStyles após remove no evento
+    try{anim.commitStyles(); events.push('commitStyles:ok');}
+    catch(e){events.push('commitStyles:exc:'+e.name);}
+  });
+  anim.addEventListener('cancel',function(){
+    events.push('cancel:'+el.isConnected);
+  });
+  return wait(200).then(function(){
+    log('  events: '+events.join(' | '));
+    log('  playState: '+anim.playState);
+    cleanup();
+    log('[T10] done\n');
+  });
+}
+
+function t11(){
+  log('[T11] Animation infinite iterations + cancel() during requestAnimationFrame');
+  cleanup();
+  var el=fresh('div','width:50px;height:50px;background:lime');
+  _stage.appendChild(el);
+  var rafLog=[];
+  var anim=el.animate(
+    [{transform:'translateX(0px)',opacity:1},{transform:'translateX(200px)',opacity:0.1}],
+    {duration:100,iterations:Infinity,direction:'alternate',easing:'ease-in-out'}
+  );
+  log('  initial playState: '+anim.playState);
+  var frameCount=0;
+  function frame(){
+    frameCount++;
+    var ct=anim.currentTime;
+    rafLog.push('f'+frameCount+':t='+Math.round(ct||0)+'ms:'+anim.playState);
+    if(frameCount===3){
+      // Pausa durante RAF
+      anim.pause();
+      rafLog.push('paused');
+    }
+    if(frameCount===5){
+      // Reverte durante RAF
+      anim.reverse();
+      rafLog.push('reversed');
+    }
+    if(frameCount===8){
+      // Cancela durante RAF
+      anim.cancel();
+      rafLog.push('cancelled');
+      log('  rafLog: '+rafLog.slice(0,10).join(' | '));
+      log('  finalPlayState: '+anim.playState);
+      cleanup();
+      log('[T11] done\n');
+      return;
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  // Retorna uma promise que resolve quando o teste terminar
+  return new Promise(function(resolve){setTimeout(resolve,1500);});
+}
+
+function t12(){
+  log('[T12] MutationObserver + animationend: remove elemento durante evento');
+  cleanup();
+  var style=document.createElement('style');
+  style.textContent='@keyframes ps4t12{0%{opacity:0}100%{opacity:1}} .anim12{animation:ps4t12 50ms forwards}';
+  document.head.appendChild(style);
+  var el=fresh('div');
+  _stage.appendChild(el);
+  var mutLog=[];
+  var obs=new MutationObserver(function(muts){
+    muts.forEach(function(m){mutLog.push('mut:'+m.type+':'+m.target.className);});
+  });
+  obs.observe(_stage,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});
+  el.addEventListener('animationend',function(e){
+    mutLog.push('animend:'+e.animationName);
+    // Remove o elemento dentro do animationend handler
+    if(el.parentNode) el.parentNode.removeChild(el);
+    mutLog.push('removed');
+    // Tenta adicionar novamente e re-animar
+    _stage.appendChild(el);
+    el.className='';
+    void el.offsetHeight; // force reflow
+    el.className='anim12';
+    mutLog.push('re-anim');
+  });
+  el.className='anim12';
+  return new Promise(function(resolve){
+    setTimeout(function(){
+      log('  mutLog: '+mutLog.slice(0,10).join(' | '));
+      obs.disconnect();
+      document.head.removeChild(style);
+      cleanup();
+      log('[T12] done\n');
+      resolve();
+    },500);
+  });
+}
+
+function t13(){
+  log('[T13] Shadow DOM: slot + slotchange + animação no slot content');
+  cleanup();
+  var host=fresh('div','width:200px');
+  _stage.appendChild(host);
+  var shadow;
+  try{shadow=host.attachShadow({mode:'open'});}catch(e){log('  no shadow: '+e.name);log('[T13] done\n');return;}
+  shadow.innerHTML='<slot name="main"></slot>';
+  var slotLog=[];
+  var slot=shadow.querySelector('slot');
+  slot.addEventListener('slotchange',function(){
+    slotLog.push('slotchange:assigned='+slot.assignedElements().length);
+    // Anima os elementos slotted durante o slotchange
+    slot.assignedElements().forEach(function(el,i){
+      try{
+        var a=el.animate([{opacity:0},{opacity:1}],{duration:200,fill:'both'});
+        slotLog.push('anim-started:'+a.playState);
+      }catch(e){slotLog.push('anim-exc:'+e.name);}
+    });
+  });
+  // Adiciona e remove elementos do slot
+  var slotted=fresh('div','width:50px;height:50px;background:orange');
+  slotted.slot='main';
+  host.appendChild(slotted);
+  return wait(100).then(function(){
+    var slotted2=fresh('div','width:50px;height:50px;background:pink');
+    slotted2.slot='main';
+    host.appendChild(slotted2);
+    return wait(100).then(function(){
+      host.removeChild(slotted);
+      return wait(100).then(function(){
+        log('  slotLog: '+slotLog.join(' | '));
+        log('  assigned agora: '+slot.assignedElements().length);
+        cleanup();
+        log('[T13] done\n');
+      });
+    });
+  });
+}
+
+function t14(){
+  log('[T14] Múltiplas animações no mesmo elemento: interleave + cancel seletivo');
+  cleanup();
+  var el=fresh('div','width:100px;height:100px;background:teal;position:absolute;opacity:1;transform:none');
+  _stage.appendChild(el);
+  var anims=[];
+  try{
+    anims.push(el.animate([{opacity:1},{opacity:0},{opacity:1}],{duration:300,iterations:Infinity}));
+    anims.push(el.animate([{transform:'translateX(0)'},{transform:'translateX(100px)'}],{duration:500,iterations:Infinity,direction:'alternate'}));
+    anims.push(el.animate([{backgroundColor:'teal'},{backgroundColor:'coral'}],{duration:200,iterations:Infinity}));
+    anims.push(el.animate([{width:'100px'},{width:'200px'},{width:'50px'}],{duration:400,iterations:3}));
+    log('  animations criadas: '+el.getAnimations().length);
+    // Avança tempos de forma assimétrica
+    anims.forEach(function(a,i){ try{a.currentTime=i*50;} catch(e){} });
+    log('  playStates: '+anims.map(function(a){return a.playState;}).join(','));
+    // Cancela alternados
+    anims[1].cancel();
+    anims[3].cancel();
+    log('  após cancel [1,3]: '+el.getAnimations().length+' animations');
+    // Modifica currentTime das restantes
+    anims[0].currentTime=150;
+    anims[2].currentTime=100;
+    log('  currentTimes: '+anims[0].currentTime+', '+anims[2].currentTime);
+    // Remove o elemento
+    _stage.removeChild(el);
+    log('  pós-remove: '+el.getAnimations().length+' animations');
+    // Cancela tudo
+    anims.forEach(function(a){try{a.cancel();}catch(e){}});
+  }catch(e){log('  exc: '+e.name+' '+e.message);}
+  cleanup();
+  log('[T14] done\n');
+}
+
+function t15(){
+  log('[T15] Animation.effect substituído por novo KeyframeEffect em runtime');
+  cleanup();
+  if(typeof KeyframeEffect==='undefined'){log('  KeyframeEffect ausente');log('[T15] done\n');return;}
+  var el=fresh('div','width:80px;height:80px;background:navy;position:absolute;top:0;left:0');
+  _stage.appendChild(el);
+  try{
+    var kf1=new KeyframeEffect(el,[{left:'0px'},{left:'100px'}],{duration:1000,fill:'both'});
+    var anim=new Animation(kf1,document.timeline);
+    anim.play();
+    log('  initial: playState='+anim.playState+' currentTime='+anim.currentTime);
+    // Deixa rodar um pouco
+    return wait(50).then(function(){
+      log('  após 50ms: currentTime='+anim.currentTime);
+      // Troca o KeyframeEffect por um completamente diferente
+      var kf2=new KeyframeEffect(el,
+        [{transform:'rotate(0deg) scale(1)'},{transform:'rotate(180deg) scale(2)'}],
+        {duration:500,fill:'both',iterations:2}
+      );
+      anim.effect=kf2;
+      log('  após effect swap: playState='+anim.playState+' currentTime='+anim.currentTime);
+      // Troca o target do KeyframeEffect
+      var el2=fresh('div','width:50px;height:50px;background:maroon');
+      _stage.appendChild(el2);
+      var kf3=new KeyframeEffect(el2,[{opacity:0},{opacity:1}],{duration:300,fill:'both'});
+      anim.effect=kf3;
+      log('  após target swap: el.getAnimations='+el.getAnimations().length+' el2='+el2.getAnimations().length);
+      // Effect com iterações restantes = 0
+      kf3.target=null; // target null se suportado
+      log('  target=null: playState='+anim.playState);
+      anim.cancel();
+      cleanup();
+      log('[T15] done\n');
+    });
+  }catch(e){log('  exc: '+e.name+' '+e.message);cleanup();log('[T15] done\n');}
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 03 — Web Animations + Shadow DOM + Observers ===\n');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){
+    if(i>=tests.length){log('\n=== FIM ===');return;}
+    var r; try{r=tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);}
+    i++;
+    if(r&&typeof r.then==='function'){r.then(function(){setTimeout(next,400);}).catch(function(){setTimeout(next,400);});}
+    else setTimeout(next,300);
+  }
+  next();
+}
+</script></body></html>

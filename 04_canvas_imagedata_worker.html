@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>04 — Canvas 2D + Path2D + ImageData</title>
+<style>
+body{background:#08080f;color:#ccc;font:12px monospace;padding:12px}
+h3{color:#5bf;margin-bottom:8px}
+#log{height:420px;overflow:auto;background:#0a0a12;color:#0f0;padding:8px;white-space:pre;border:1px solid #1a2a3a;margin-bottom:8px}
+button{background:#0f1a2a;color:#5bf;border:1px solid #1a3a5a;padding:5px 10px;margin:2px;font:11px monospace;cursor:pointer}
+</style></head>
+<body>
+<h3>04 — Canvas 2D + Path2D + ImageData + Gradient Stress + Float64</h3>
+<div id="log"></div>
+<button onclick="t01()">T01 Canvas context reset via resize durante operação ativa</button>
+<button onclick="t02()">T02 Path2D com DOMMatrix singular/NaN/Infinity em addPath</button>
+<button onclick="t03()">T03 createImageData extremo + putImageData com offset negativo</button>
+<button onclick="t04()">T04 Float64Array → Canvas pixel loop: punning via ImageData</button>
+<button onclick="t05()">T05 Gradient com ColorStop out-of-range e NaN</button>
+<button onclick="t06()">T06 drawImage: canvas para si mesmo + crop negativo</button>
+<button onclick="t07()">T07 save/restore deep stack: 100+ levels + transform acumulado</button>
+<button onclick="t08()">T08 isPointInPath com Path2D complexo + transform extremo</button>
+<button onclick="t09()">T09 Canvas.toBlob + revokeObjectURL + re-uso do blob</button>
+<button onclick="t10()">T10 globalCompositeOperation em loop: todos os modos + pixel check</button>
+<button onclick="t11()">T11 Path2D SVG string malformada e limites extremos</button>
+<button onclick="t12()">T12 Canvas fora do DOM: operações e toDataURL</button>
+<button onclick="t13()">T13 clipping stack profundo: clip + transform encadeados</button>
+<button onclick="t14()">T14 ImageData: buffer compartilhado com Float64Array + modify</button>
+<button onclick="t15()">T15 createRadialGradient: raios degenerados + focal points</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html" style="color:#5bf">← Index</a>
+<script>
+'use strict';
+var _L=document.getElementById('log');
+function log(m){_L.textContent+=m+'\n';_L.scrollTop=_L.scrollHeight;}
+var _ab=new ArrayBuffer(8),_f64=new Float64Array(_ab),_u64=new BigUint64Array(_ab);
+function f2i(v){_f64[0]=v;return _u64[0];}
+function i2f(v){_u64[0]=BigInt(v);return _f64[0];}
+function mkCanvas(w,h){var c=document.createElement('canvas');c.width=w||256;c.height=h||256;return c;}
+
+function t01(){
+  log('[T01] Canvas context reset via resize durante operação ativa');
+  var c=mkCanvas(256,256);
+  var ctx=c.getContext('2d');
+  if(!ctx){log('  no ctx');log('[T01] done\n');return;}
+  try{
+    // Configura estado complexo
+    ctx.fillStyle='red'; ctx.strokeStyle='blue';
+    ctx.lineWidth=5; ctx.globalAlpha=0.7;
+    ctx.translate(50,50); ctx.rotate(0.5); ctx.scale(1.5,1.5);
+    ctx.save(); ctx.translate(20,20);
+    ctx.fillRect(0,0,50,50);
+    log('  estado configurado: lineWidth='+ctx.lineWidth+' alpha='+ctx.globalAlpha);
+    // Resize: reseta o contexto!
+    c.width=512;
+    log('  após resize width: lineWidth='+ctx.lineWidth+' alpha='+ctx.globalAlpha+' fillStyle='+ctx.fillStyle);
+    // Tenta restore após reset (stack foi limpo pelo resize)
+    try{ctx.restore(); log('  restore após reset: ok lineWidth='+ctx.lineWidth);}
+    catch(e){log('  restore exc: '+e.name);}
+    // Continua usando o contexto
+    ctx.fillStyle='green';
+    ctx.fillRect(10,10,100,100);
+    // Resize para tamanho 0
+    c.width=0; c.height=0;
+    log('  após resize 0×0: width='+c.width+' height='+c.height);
+    try{ctx.fillRect(0,0,1,1); log('  fillRect em 0×0: ok');}
+    catch(e){log('  fillRect 0×0 exc: '+e.name);}
+    // Restaura tamanho
+    c.width=128; c.height=128;
+    ctx.fillStyle='rgba(255,0,0,0.5)';
+    ctx.fillRect(0,0,128,128);
+    var px=ctx.getImageData(64,64,1,1).data;
+    log('  pixel após restore: ['+Array.from(px).join(',')+']');
+  }catch(e){log('  exc: '+e.name+' '+e.message);}
+  log('[T01] done\n');
+}
+
+function t02(){
+  log('[T02] Path2D.addPath com DOMMatrix degenerada');
+  if(typeof Path2D==='undefined'||typeof DOMMatrix==='undefined'){log('  Path2D ou DOMMatrix ausente');log('[T02] done\n');return;}
+  var c=mkCanvas(256,256), ctx=c.getContext('2d');
+  var basePath=new Path2D('M 0 0 L 100 100 L 200 0 Z');
+  var matrices=[
+    // [a,b,c,d,e,f]
+    [1,0,0,1,50,50],          // normal: translate
+    [0,0,0,0,0,0],            // singular: todos zeros
+    [NaN,0,0,1,0,0],          // NaN na diagonal
+    [Infinity,0,0,1,0,0],     // Infinity
+    [-Infinity,0,0,1,0,0],    // -Infinity
+    [1e308,0,0,1,0,0],        // muito grande
+    [1e-308,0,0,1,0,0],       // muito pequeno
+    [0,1,-1,0,0,0],           // rotação 90° (det=-1, espelho)
+    [1,0,0,1,NaN,0],          // translation NaN
+  ];
+  matrices.forEach(function(m,i){
+    try{
+      var mat=new DOMMatrix(m);
+      var path=new Path2D();
+      path.addPath(basePath,mat);
+      // Testa se o path resultante é usável
+      ctx.beginPath();
+      ctx.fill(path);
+      var inPath=ctx.isPointInPath(path,50,50);
+      log('  mat['+i+'] addPath ok, isPointInPath(50,50)='+inPath);
+    }catch(e){log('  mat['+i+'] exc: '+e.name);}
+  });
+  log('[T02] done\n');
+}
+
+function t03(){
+  log('[T03] createImageData extremo + putImageData com offsets e dirty rect');
+  var c=mkCanvas(256,256),ctx=c.getContext('2d');
+  if(!ctx){log('  no ctx');log('[T03] done\n');return;}
+  // createImageData com dimensões extremas
+  var extremeDims=[[1,1],[256,256],[0,1],[1,0],[-1,256],[256,-1],[0.5,100],[NaN,100],[Infinity,1]];
+  extremeDims.forEach(function(d){
+    try{
+      var imd=ctx.createImageData(d[0],d[1]);
+      log('  createImageData('+d[0]+','+d[1]+'): width='+imd.width+' height='+imd.height+' data='+imd.data.length);
+    }catch(e){log('  createImageData('+d[0]+','+d[1]+'): exc '+e.name);}
+  });
+  // getImageData com offsets e dimensões fora dos limites
+  var getOffsets=[
+    [0,0,256,256],    // normal
+    [-10,-10,50,50],  // fora do canvas
+    [200,200,100,100],// parcialmente fora
+    [0,0,0,0],        // dimensão zero
+    [0,0,-1,-1],      // dimensão negativa
+  ];
+  ctx.fillStyle='red'; ctx.fillRect(0,0,256,256);
+  getOffsets.forEach(function(o){
+    try{
+      var imd=ctx.getImageData(o[0],o[1],o[2],o[3]);
+      log('  getImageData('+o.join(',')+') ok: '+imd.data.length+' bytes');
+    }catch(e){log('  getImageData('+o.join(',')+') exc: '+e.name);}
+  });
+  // putImageData com dirty rect
+  var imd=ctx.createImageData(100,100);
+  // Preenche com azul
+  for(var i=0;i<imd.data.length;i+=4){imd.data[i]=0;imd.data[i+1]=0;imd.data[i+2]=255;imd.data[i+3]=255;}
+  var putCases=[
+    [0,0],            // normal
+    [-50,-50],        // parcialmente fora (início)
+    [200,200],        // parcialmente fora (fim)
+    [0,0,10,10,50,50],// com dirty rect
+    [0,0,-1,-1,200,200],// dirty rect negativo
+  ];
+  putCases.forEach(function(args){
+    try{
+      ctx.putImageData.apply(ctx,[imd].concat(args));
+      log('  putImageData('+args.join(',')+'): ok');
+    }catch(e){log('  putImageData('+args.join(',')+'): exc '+e.name);}
+  });
+  log('[T03] done\n');
+}
+
+function t04(){
+  log('[T04] Float64Array → Canvas: punning float64 bits como pixels RGBA');
+  var c=mkCanvas(256,256),ctx=c.getContext('2d');
+  if(!ctx){log('  no ctx');log('[T04] done\n');return;}
+  // Float64Array interpretado como Uint8Array via buffer compartilhado
+  var floatBuf=new ArrayBuffer(256*256*8); // 8 bytes por "pixel" (1 float64)
+  var f64View=new Float64Array(floatBuf);
+  var u8View=new Uint8Array(floatBuf);
+  // Preenche com valores de double interessantes
+  var patterns=[Math.PI, Math.E, 1.0/3.0, -1.5, 0.0, Infinity, NaN, -0.0];
+  for(var i=0;i<f64View.length;i++){
+    f64View[i]=patterns[i%patterns.length];
+  }
+  // Cria ImageData a partir dos bytes raw
+  var imd=ctx.createImageData(256,256);
+  // Copia os primeiros 256*256*4 bytes do Float64Array como pixels
+  for(var j=0;j<imd.data.length;j++){
+    imd.data[j]=u8View[j];
+  }
+  try{
+    ctx.putImageData(imd,0,0);
+    var check=ctx.getImageData(0,0,1,1);
+    log('  pixel[0,0]: ['+Array.from(check.data).join(',')+']');
+    // Verifica que os bytes de Math.PI (0x400921FB54442D18)
+    _f64[0]=Math.PI;
+    var piBytes=new Uint8Array(_ab);
+    log('  Math.PI bytes: '+Array.from(piBytes).join(','));
+    log('  imd.data[0..7]: '+Array.from(imd.data.slice(0,8)).join(','));
+    log('  match: '+(piBytes[0]===imd.data[0]&&piBytes[1]===imd.data[1]));
+    // Agora usa o buffer de um Float64Array como source do ImageData
+    var smallBuf=new ArrayBuffer(4*4*4); // 4×4 RGBA
+    var smallF64=new Float64Array(smallBuf); // 8 floats de 8 bytes = 64 bytes mas só 64 bytes!
+    var smallU8=new Uint8ClampedArray(smallBuf);
+    for(var k=0;k<smallF64.length;k++) smallF64[k]=Math.random()*1e10;
+    try{
+      var imd2=new ImageData(smallU8,4,4); // usa o buffer diretamente
+      ctx.putImageData(imd2,128,128);
+      log('  ImageData com buffer Float64: ok');
+    }catch(e){log('  ImageData Float64 buf exc: '+e.name);}
+  }catch(e){log('  exc: '+e.name+' '+e.message);}
+  log('[T04] done\n');
+}
+
+function t05(){
+  log('[T05] Gradient: ColorStop fora do range + NaN + manipulação em loop');
+  var c=mkCanvas(256,256),ctx=c.getContext('2d');
+  if(!ctx){log('  no ctx');log('[T05] done\n');return;}
+  // LinearGradient: stops fora de [0,1]
+  var grad=ctx.createLinearGradient(0,0,256,0);
+  var stopCases=[
+    [0,'red'],[0.5,'green'],[1,'blue'],    // normais
+    [-0.5,'yellow'],                        // negativo
+    [1.5,'purple'],                         // >1
+    [NaN,'orange'],                         // NaN
+    [Infinity,'pink'],                      // Infinity
+    [-Infinity,'white'],                    // -Infinity
+    [0,'rgba(255,0,0,0)'],                  // alpha 0
+    [1,'rgba(0,0,255,2.0)'],                // alpha >1
+  ];
+  stopCases.forEach(function(s){
+    try{
+      grad.addColorStop(s[0],s[1]);
+      log('  addColorStop('+s[0]+','+s[1]+'): ok');
+    }catch(e){log('  addColorStop('+s[0]+','+s[1]+'): exc '+e.name);}
+  });
+  try{
+    ctx.fillStyle=grad;
+    ctx.fillRect(0,0,256,256);
+    var px=ctx.getImageData(128,128,1,1).data;
+    log('  pixel centro: ['+Array.from(px).join(',')+']');
+  }catch(e){log('  apply grad exc: '+e.name);}
+  // Gradient de tamanho zero
+  try{
+    var g2=ctx.createLinearGradient(100,100,100,100); // start=end
+    g2.addColorStop(0,'red'); g2.addColorStop(1,'blue');
+    ctx.fillStyle=g2;
+    ctx.fillRect(0,128,128,128);
+    var px2=ctx.getImageData(50,180,1,1).data;
+    log('  zero-length gradient pixel: ['+Array.from(px2).join(',')+']');
+  }catch(e){log('  zero grad exc: '+e.name);}
+  // ConicalGradient se disponível
+  if(ctx.createConicGradient){
+    try{
+      var cg=ctx.createConicGradient(NaN,128,128);
+      cg.addColorStop(0,'red');
+      cg.addColorStop(1,'blue');
+      ctx.fillStyle=cg;
+      ctx.fillRect(128,128,128,128);
+      log('  conicGradient NaN angle: ok');
+    }catch(e){log('  conicGradient NaN exc: '+e.name);}
+  }
+  log('[T05] done\n');
+}
+
+function t06(){
+  log('[T06] drawImage: canvas para si mesmo + crops extremos + scale 0');
+  var c=mkCanvas(256,256),ctx=c.getContext('2d');
+  if(!ctx){log('  no ctx');log('[T06] done\n');return;}
+  ctx.fillStyle='red'; ctx.fillRect(0,0,128,128);
+  ctx.fillStyle='blue'; ctx.fillRect(128,0,128,128);
+  ctx.fillStyle='green'; ctx.fillRect(0,128,128,128);
+  ctx.fillStyle='yellow'; ctx.fillRect(128,128,128,128);
+  // drawImage canvas→si mesmo
+  try{
+    ctx.drawImage(c,0,0);
+    log('  drawImage self: ok');
+  }catch(e){log('  drawImage self exc: '+e.name);}
+  // 9-arg com crop negativo
+  var cropCases=[
+    [c, 0,0,128,128, 128,128,128,128],  // normal quadrant copy
+    [c, -50,-50,150,150, 0,0,256,256],  // sx,sy negativos
+    [c, 300,300,100,100, 0,0,100,100],  // sx,sy fora dos bounds
+    [c, 0,0,0,0, 0,0,256,256],          // sw,sh=0
+    [c, 0,0,-100,-100, 0,0,100,100],    // sw,sh negativos
+    [c, 0,0,256,256, 0,0,0,0],          // dw,dh=0
+    [c, 0,0,256,256, 0,0,-100,-100],    // dw,dh negativos
+    [c, 0,0,NaN,256, 0,0,256,256],      // sw=NaN
+    [c, 0,0,256,256, Infinity,0,256,256], // dx=Infinity
+  ];
+  cropCases.forEach(function(args,i){
+    try{
+      ctx.drawImage.apply(ctx,args);
+      log('  crop['+i+']: ok');
+    }catch(e){log('  crop['+i+'] exc: '+e.name);}
+  });
+  // Scale extremo
+  ctx.save();
+  ctx.scale(0,0);
+  try{ctx.drawImage(c,0,0); log('  scale(0,0) drawImage: ok');}
+  catch(e){log('  scale 0 exc: '+e.name);}
+  ctx.restore();
+  ctx.save();
+  ctx.scale(Infinity,1);
+  try{ctx.drawImage(c,0,0); log('  scale(Inf,1) drawImage: ok');}
+  catch(e){log('  scale Inf exc: '+e.name);}
+  ctx.restore();
+  log('[T06] done\n');
+}
+
+function t07(){
+  log('[T07] save/restore deep stack: 100+ levels + transform acumulado');
+  var c=mkCanvas(256,256),ctx=c.getContext('2d');
+  if(!ctx){log('  no ctx');log('[T07] done\n');return;}
+  var maxDepth=0;
+  try{
+    // Empilha 200 saves
+    for(var i=0;i<200;i++){
+      ctx.save();
+      ctx.translate(1,1);
+      ctx.rotate(0.01);
+      ctx.scale(0.99,0.99);
+      maxDepth=i+1;
+    }
+    log('  save stack depth: '+maxDepth);
+    // Verifica o transform acumulado
+    try{
+      var t=ctx.getTransform();
+      log('  transform após 200 saves: a='+t.a.toFixed(6)+' e='+t.e.toFixed(3));
+    }catch(e){log('  getTransform exc: '+e.name);}
+    // Tenta desenhar com transform extremo
+    ctx.fillStyle='red';
+    try{ctx.fillRect(0,0,10,10); log('  fillRect em transform extremo: ok');}
+    catch(e){log('  fillRect exc: '+e.name);}
+    // Restaura todos
+    var restoreCount=0;
+    for(var j=0;j<210;j++){ // 10 a mais do que saves
+      try{ctx.restore(); restoreCount++;}
+      catch(e){log('  restore['+j+'] exc: '+e.name+' (total restores: '+restoreCount+')'); break;}
+    }
+    log('  restores feitos: '+restoreCount+' (de '+maxDepth+' saves)');
+    try{
+      var t2=ctx.getTransform();
+      log('  transform após restore tudo: a='+t2.a.toFixed(3)+' e='+t2.e.toFixed(3));
+    }catch(e){}
+  }catch(e){log('  exc: '+e.name+' (na iteração '+maxDepth+')');}
+  log('[T07] done\n');
+}
+
+function t08(){
+  log('[T08] isPointInPath/isPointInStroke com Path2D + transforms extremos');
+  var c=mkCanvas(256,256),ctx=c.getContext('2d');
+  if(!ctx||typeof Path2D==='undefined'){log('  no ctx/Path2D');log('[T08] done\n');return;}
+  var rect=new Path2D('M 50 50 L 150 50 L 150 150 L 50 150 Z');
+  var circle=new Path2D();
+  circle.arc(128,128,50,0,Math.PI*2);
+  // Normal
+  log('  in rect(100,100): '+ctx.isPointInPath(rect,100,100));
+  log('  in rect(200,200): '+ctx.isPointInPath(rect,200,200));
+  log('  in circle(128,128): '+ctx.isPointInPath(circle,128,128));
+  log('  in circle(200,128): '+ctx.isPointInPath(circle,200,128));
+  // Com transform aplicado
+  ctx.save();
+  ctx.translate(100,100);
+  log('  in rect(100,100) +translate: '+ctx.isPointInPath(rect,100,100));
+  log('  in rect(200,200) +translate: '+ctx.isPointInPath(rect,200,200));
+  ctx.restore();
+  // Coordenadas extremas
+  var extremes=[[NaN,0],[Infinity,0],[0,Infinity],[-Infinity,100],[0,-Infinity],[1e308,0],[0,1e-308]];
+  extremes.forEach(function(pt){
+    try{
+      var r=ctx.isPointInPath(rect,pt[0],pt[1]);
+      log('  isPointInPath('+pt[0]+','+pt[1]+'): '+r);
+    }catch(e){log('  isPointInPath('+pt[0]+','+pt[1]+'): exc '+e.name);}
+  });
+  // isPointInStroke
+  try{
+    log('  inStroke rect(50,100): '+ctx.isPointInStroke(rect,50,100)); // na borda
+    log('  inStroke rect(100,100): '+ctx.isPointInStroke(rect,100,100)); // no centro
+  }catch(e){log('  inStroke exc: '+e.name);}
+  log('[T08] done\n');
+}
+
+function t09(){
+  log('[T09] Canvas.toBlob + ObjectURL lifecycle');
+  var c=mkCanvas(64,64),ctx=c.getContext('2d');
+  if(!ctx){log('  no ctx');log('[T09] done\n');return;}
+  ctx.fillStyle='purple'; ctx.fillRect(0,0,64,64);
+  var blobUrl=null;
+  return new Promise(function(resolve){
+    c.toBlob(function(blob){
+      if(!blob){log('  toBlob returned null');log('[T09] done\n');resolve();return;}
+      log('  blob size: '+blob.size+' type: '+blob.type);
+      blobUrl=URL.createObjectURL(blob);
+      log('  blobUrl: '+blobUrl.slice(0,30)+'...');
+      // Carrega a URL como imagem
+      var img=new Image();
+      img.onload=function(){
+        log('  img load: '+img.width+'×'+img.height);
+        // Revoga a URL
+        URL.revokeObjectURL(blobUrl);
+        log('  URL revogada');
+        // Tenta usar a URL revogada
+        var img2=new Image();
+        img2.onerror=function(){log('  img2 load após revoke: falhou (esperado)');};
+        img2.onload=function(){log('  img2 load após revoke: ok (inesperado)');};
+        img2.src=blobUrl;
+        // Dupla revogação
+        try{URL.revokeObjectURL(blobUrl); log('  double revoke: ok');}
+        catch(e){log('  double revoke exc: '+e.name);}
+        // toDataURL
+        try{
+          var dataUrl=c.toDataURL('image/png');
+          log('  toDataURL length: '+dataUrl.length);
+          var dataUrl2=c.toDataURL('image/jpeg',0.1);
+          log('  toDataURL jpeg 0.1: '+dataUrl2.length);
+          var dataUrl3=c.toDataURL('image/webp',0.5);
+          log('  toDataURL webp: '+dataUrl3.slice(0,25));
+        }catch(e){log('  toDataURL exc: '+e.name);}
+        log('[T09] done\n');
+        resolve();
+      };
+      img.onerror=function(){
+        log('  img load error');
+        URL.revokeObjectURL(blobUrl);
+        log('[T09] done\n');
+        resolve();
+      };
+      img.src=blobUrl;
+    },'image/png');
+  });
+}
+
+function t10(){
+  log('[T10] globalCompositeOperation: todos os modos + pixel verification');
+  var c=mkCanvas(100,100),ctx=c.getContext('2d');
+  if(!ctx){log('  no ctx');log('[T10] done\n');return;}
+  var modes=['source-over','source-in','source-out','source-atop',
+    'destination-over','destination-in','destination-out','destination-atop',
+    'lighter','copy','xor','multiply','screen','overlay','darken','lighten',
+    'color-dodge','color-burn','hard-light','soft-light','difference','exclusion',
+    'hue','saturation','color','luminosity'];
+  var supported=[], unsupported=[];
+  modes.forEach(function(mode){
+    ctx.clearRect(0,0,100,100);
+    // Fundo: verde
+    ctx.globalCompositeOperation='source-over';
+    ctx.fillStyle='rgba(0,255,0,1)'; ctx.fillRect(0,0,100,100);
+    // Aplica o modo
+    ctx.globalCompositeOperation=mode;
+    if(ctx.globalCompositeOperation===mode){
+      // Desena vermelho por cima
+      ctx.fillStyle='rgba(255,0,0,0.8)'; ctx.fillRect(20,20,60,60);
+      var px=ctx.getImageData(50,50,1,1).data;
+      supported.push(mode+':['+Array.from(px).join(',').slice(0,15)+']');
+    } else {
+      unsupported.push(mode);
+    }
+  });
+  log('  suportados: '+supported.length+'/'+modes.length);
+  log('  primeiros 3: '+supported.slice(0,3).join(' | '));
+  if(unsupported.length>0) log('  não suportados: '+unsupported.join(','));
+  log('[T10] done\n');
+}
+
+function t11(){
+  log('[T11] Path2D: SVG strings malformadas, extremas e edge cases');
+  if(typeof Path2D==='undefined'){log('  Path2D ausente');log('[T11] done\n');return;}
+  var c=mkCanvas(256,256),ctx=c.getContext('2d');
+  var svgCases=[
+    ['M 50 50 L 100 100 Z', 'normal triângulo'],
+    ['M 0 0', 'sem close/end'],
+    ['', 'string vazia'],
+    ['Z', 'só Z'],
+    ['M', 'M sem coords'],
+    ['M NaN 0 L 100 100', 'NaN coord'],
+    ['M Infinity 0 L 100 100', 'Infinity coord'],
+    ['M 1e308 0 L 100 100', '1e308 coord'],
+    ['M 0 0 L 100 100 L 200 0 L 300 100 L 400 0 L 500 100 L 600 0', 'muitos segmentos'],
+    ['M 0,0 C 0,0 100,0 100,100 S 200,200 200,100', 'cubic bezier + S'],
+    ['M 0 0 A 50 50 0 0 1 100 0', 'arc SVG'],
+    ['m 10 10 l 50 50 z', 'relativo minúsculo'],
+    [null, 'null'],
+    [undefined, 'undefined'],
+    [123, 'número'],
+    ['M'.repeat(1000)+'0 0', 'string longa repetida'],
+  ];
+  svgCases.forEach(function(c2){
+    try{
+      var p=new Path2D(c2[0]);
+      ctx.beginPath();
+      // Testa se o path é utilizável
+      var inPath=false;
+      try{inPath=ctx.isPointInPath(p,50,50);}catch(e){}
+      log('  "'+c2[1]+'": ok inPath='+inPath);
+    }catch(e){log('  "'+c2[1]+'": exc '+e.name);}
+  });
+  // Path2D.addPath com outro Path2D vazio
+  try{
+    var empty=new Path2D('');
+    var full=new Path2D('M 0 0 L 100 100');
+    full.addPath(empty);
+    log('  addPath(empty): ok');
+    empty.addPath(full);
+    log('  empty.addPath(full): ok');
+    // Auto-referência
+    try{full.addPath(full); log('  self addPath: ok');}
+    catch(e){log('  self addPath exc: '+e.name);}
+  }catch(e){log('  path ops exc: '+e.name);}
+  log('[T11] done\n');
+}
+
+function t12(){
+  log('[T12] Canvas fora do DOM: operações completas e getImageData/toDataURL');
+  var c=document.createElement('canvas'); // não adiciona ao DOM
+  c.width=128; c.height=128;
+  var ctx=c.getContext('2d');
+  if(!ctx){log('  no ctx');log('[T12] done\n');return;}
+  try{
+    // Todas as operações funcionam fora do DOM?
+    ctx.fillStyle='#f00'; ctx.fillRect(0,0,64,64);
+    ctx.fillStyle='#0f0'; ctx.fillRect(64,0,64,64);
+    ctx.fillStyle='#00f'; ctx.fillRect(0,64,64,64);
+    ctx.fillStyle='#ff0'; ctx.fillRect(64,64,64,64);
+    // Transform
+    ctx.save(); ctx.rotate(Math.PI/4); ctx.fillStyle='rgba(255,255,255,0.5)';
+    ctx.fillRect(0,0,50,50); ctx.restore();
+    // Path
+    ctx.beginPath(); ctx.arc(64,64,40,0,Math.PI*2);
+    ctx.strokeStyle='white'; ctx.lineWidth=3; ctx.stroke();
+    // Gradiente
+    var g=ctx.createRadialGradient(64,64,0,64,64,40);
+    g.addColorStop(0,'rgba(255,255,255,0.8)'); g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g; ctx.fill();
+    // getImageData
+    var imd=ctx.getImageData(0,0,128,128);
+    log('  getImageData fora do DOM: ok, size='+imd.data.length);
+    var px=ctx.getImageData(32,32,1,1).data;
+    log('  pixel[32,32]: ['+Array.from(px).join(',')+']');
+    // drawImage: outro canvas
+    var c2=document.createElement('canvas'); c2.width=64; c2.height=64;
+    var ctx2=c2.getContext('2d'); ctx2.fillStyle='magenta'; ctx2.fillRect(0,0,64,64);
+    ctx.drawImage(c2,32,32);
+    log('  drawImage entre canvas off-DOM: ok');
+    // toDataURL
+    var url=c.toDataURL();
+    log('  toDataURL: length='+url.length+' prefix='+url.slice(0,20));
+    // toBlob
+    if(c.toBlob){
+      c.toBlob(function(blob){
+        log('  toBlob: size='+blob.size+' type='+blob.type);
+      });
+    }
+  }catch(e){log('  exc: '+e.name+' '+e.message);}
+  log('[T12] done\n');
+}
+
+function t13(){
+  log('[T13] Clipping stack profundo: clip + save/restore encadeados');
+  var c=mkCanvas(256,256),ctx=c.getContext('2d');
+  if(!ctx){log('  no ctx');log('[T13] done\n');return;}
+  // Preenche de vermelho
+  ctx.fillStyle='red'; ctx.fillRect(0,0,256,256);
+  // Aplica clips em cascata
+  var DEPTH=20;
+  for(var i=0;i<DEPTH;i++){
+    ctx.save();
+    ctx.beginPath();
+    // Cada clip é um círculo menor
+    var r=120-i*5;
+    ctx.arc(128,128,Math.max(r,5),0,Math.PI*2);
+    ctx.clip();
+    // Preenche com cor alternada dentro do clip
+    ctx.fillStyle=i%2===0?'blue':'green';
+    ctx.fillRect(0,0,256,256);
+  }
+  var px_center=ctx.getImageData(128,128,1,1).data;
+  var px_edge=ctx.getImageData(250,128,1,1).data;
+  log('  pixel centro após '+DEPTH+' clips: ['+Array.from(px_center).join(',')+']');
+  log('  pixel borda após '+DEPTH+' clips: ['+Array.from(px_edge).join(',')+']');
+  // Restaura todos
+  for(var j=0;j<DEPTH+5;j++){ // 5 a mais
+    try{ctx.restore();}catch(e){log('  restore['+j+'] exc: '+e.name);break;}
+  }
+  var px_after=ctx.getImageData(250,128,1,1).data;
+  log('  pixel borda após restore tudo: ['+Array.from(px_after).join(',')+']');
+  log('[T13] done\n');
+}
+
+function t14(){
+  log('[T14] ImageData: buffer compartilhado Float64Array + BigUint64 modify');
+  var c=mkCanvas(4,4),ctx=c.getContext('2d');
+  if(!ctx){log('  no ctx');log('[T14] done\n');return;}
+  // Um pixel = 4 bytes RGBA, então 4×4 = 64 bytes = 8 × Float64
+  var sharedBuf=new ArrayBuffer(64);
+  var u8View=new Uint8ClampedArray(sharedBuf);
+  var f64View=new Float64Array(sharedBuf);
+  var u64View=new BigUint64Array(sharedBuf);
+  // Preenche via Float64
+  for(var i=0;i<8;i++) f64View[i]=Math.random()*1e15;
+  log('  f64[0]: '+f64View[0].toFixed(3));
+  log('  u8[0..7]: '+Array.from(u8View.slice(0,8)).join(','));
+  // Cria ImageData a partir do buffer Uint8Clamped
+  try{
+    var imd=new ImageData(u8View,4,4);
+    ctx.putImageData(imd,0,0);
+    log('  putImageData com buffer compartilhado: ok');
+    // Modifica o Float64Array → deve refletir no u8View → mas ImageData já foi copiado?
+    f64View[0]=0xDEADBEEFn; // Isso vai gerar TypeError — Float64Array não aceita BigInt
+    log('  f64[0]=BigInt: ok (inesperado)');
+  }catch(e){log('  f64=BigInt exc (esperado): '+e.name);}
+  // Modifica via BigUint64
+  u64View[0]=0xFFFF0000FF00FF00n; // RGBA pattern
+  log('  u8 após BigUint64 write: '+Array.from(u8View.slice(0,8)).join(','));
+  try{
+    var imd2=new ImageData(u8View.slice(),4,4); // cópia
+    ctx.putImageData(imd2,0,0);
+    var px=ctx.getImageData(0,0,1,1).data;
+    log('  pixel após BigUint64 pattern: ['+Array.from(px).join(',')+']');
+  }catch(e){log('  imd2 exc: '+e.name);}
+  // DataView sobre o mesmo buffer
+  var dv=new DataView(sharedBuf);
+  dv.setUint8(0,255); dv.setUint8(1,0); dv.setUint8(2,0); dv.setUint8(3,255);
+  log('  após DataView set RGBA[0]=[255,0,0,255]: u8='+Array.from(u8View.slice(0,4)).join(','));
+  log('[T14] done\n');
+}
+
+function t15(){
+  log('[T15] createRadialGradient: casos degenerados + focal points extremos');
+  var c=mkCanvas(256,256),ctx=c.getContext('2d');
+  if(!ctx){log('  no ctx');log('[T15] done\n');return;}
+  var radialCases=[
+    [128,128,0,128,128,64,'r0=0 (cone)'],
+    [128,128,64,128,128,0,'r1=0 (cone invertido)'],
+    [128,128,0,128,128,0,'ambos 0 (ponto)'],
+    [128,128,-10,128,128,64,'r0 negativo'],
+    [128,128,64,128,128,-10,'r1 negativo'],
+    [128,128,NaN,128,128,64,'r0=NaN'],
+    [128,128,64,128,128,NaN,'r1=NaN'],
+    [128,128,Infinity,128,128,64,'r0=Infinity'],
+    [0,0,0,256,256,64,'centros distantes'],
+    [128,128,100,128,128,50,'r0>r1 (invertido)'],
+    [128,128,64,128,128,64,'r0=r1 (cilíndrico)'],
+    [128,128,64,300,128,64,'focal fora do círculo'],  // x1 fora
+  ];
+  radialCases.forEach(function(args){
+    var label=args.pop();
+    try{
+      var grad=ctx.createRadialGradient.apply(ctx,args);
+      grad.addColorStop(0,'rgba(255,0,0,1)');
+      grad.addColorStop(0.5,'rgba(0,255,0,0.5)');
+      grad.addColorStop(1,'rgba(0,0,255,0)');
+      ctx.fillStyle=grad;
+      ctx.fillRect(0,0,256,256);
+      var px=ctx.getImageData(128,128,1,1).data;
+      log('  '+label+': ok px=['+Array.from(px).join(',')+']');
+    }catch(e){log('  '+label+': exc '+e.name);}
+  });
+  log('[T15] done\n');
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 04 — Canvas 2D + Path2D + ImageData ===\n');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){
+    if(i>=tests.length){log('\n=== FIM ===');return;}
+    var r; try{r=tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);}
+    i++;
+    if(r&&typeof r.then==='function'){r.then(function(){setTimeout(next,300);}).catch(function(){setTimeout(next,300);});}
+    else setTimeout(next,250);
+  }
+  next();
+}
+</script></body></html>

@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>02 — Range + Selection + MutationObserver</title>
+<style>
+body{background:#08080f;color:#ccc;font:12px monospace;padding:12px}
+h3{color:#5bf;margin-bottom:8px}
+#log{height:420px;overflow:auto;background:#0a0a12;color:#0f0;padding:8px;white-space:pre;border:1px solid #1a2a3a;margin-bottom:8px}
+button{background:#0f1a2a;color:#5bf;border:1px solid #1a3a5a;padding:5px 10px;margin:2px;font:11px monospace;cursor:pointer}
+button:hover{background:#1a2a3a}
+#sandbox{position:absolute;left:-9999px;top:0;width:400px}
+</style></head>
+<body>
+<h3>02 — DOM Range + Selection + MutationObserver Reentrante + ContentEditable</h3>
+<div id="log"></div>
+<div id="sandbox"></div>
+<button onclick="t01()">T01 Range em nó removido mid-selection</button>
+<button onclick="t02()">T02 MutationObserver reentrante: muta durante callback</button>
+<button onclick="t03()">T03 Range.surroundContents com árvore mutada</button>
+<button onclick="t04()">T04 Selection collapse + extend cross-shadow</button>
+<button onclick="t05()">T05 ContentEditable + MutationObserver + Range simultâneos</button>
+<button onclick="t06()">T06 Range.extractContents + reinserção durante observer</button>
+<button onclick="t07()">T07 TreeWalker: nó removido durante travessia</button>
+<button onclick="t08()">T08 Range boundaries em TextNode splitText</button>
+<button onclick="t09()">T09 MutationObserver: observar childList + attributeFilter em loop</button>
+<button onclick="t10()">T10 Range cross-document após adoptNode</button>
+<button onclick="t11()">T11 Selection.addRange múltiplos + remoção de nós</button>
+<button onclick="t12()">T12 NodeIterator com filter dinâmico: modifica DOM no filter</button>
+<button onclick="t13()">T13 ContentEditable: execCommand durante MutationObserver batch</button>
+<button onclick="t14()">T14 Range.cloneContents de árvore modificada mid-clone</button>
+<button onclick="t15()">T15 MutationObserver: observe + unobserve + re-observe em cascade</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html" style="color:#5bf">← Index</a>
+<script>
+'use strict';
+var _L=document.getElementById('log');
+var _sb=document.getElementById('sandbox');
+function log(m){_L.textContent+=m+'\n';_L.scrollTop=_L.scrollHeight;}
+function fresh(tag,txt){var el=document.createElement(tag||'div');if(txt)el.textContent=txt;return el;}
+function cleanup(){_sb.innerHTML='';}
+
+function t01(){
+  log('[T01] Range em nó removido mid-selection');
+  cleanup();
+  var p=fresh('p','Hello World Test Content');
+  var span=fresh('span',' SPAN ');
+  p.appendChild(span);
+  _sb.appendChild(p);
+  var rng=document.createRange();
+  try{
+    rng.setStart(p.firstChild,0);
+    rng.setEnd(span.firstChild,3);
+    log('  collapsed antes: '+rng.collapsed+' toString: '+rng.toString().slice(0,20));
+    // Remove o nó de fim enquanto o Range ainda existe
+    _sb.removeChild(p);
+    log('  p.isConnected após remove: '+p.isConnected);
+    // Range ainda válido? Testa operações
+    try{ log('  toString pós-remove: '+rng.toString().slice(0,20)); }catch(e){log('  toString exc: '+e.name);}
+    try{ var r=rng.getBoundingClientRect(); log('  rect: '+JSON.stringify({t:r.top,l:r.left,w:r.width})); }catch(e){log('  rect exc: '+e.name);}
+    try{ var f=rng.cloneContents(); log('  clone childCount: '+f.childNodes.length); }catch(e){log('  clone exc: '+e.name);}
+    // Tenta mover boundaries para o nó removido
+    try{ rng.setStart(p.firstChild,2); log('  setStart em nó removido: ok'); }catch(e){log('  setStart exc: '+e.name);}
+  }catch(e){log('  exc: '+e.name+' '+e.message);}
+  log('[T01] done\n');
+}
+
+function t02(){
+  log('[T02] MutationObserver reentrante: callback muta o DOM causando novo callback');
+  cleanup();
+  var root=fresh('div');
+  _sb.appendChild(root);
+  var callbackCount=0;
+  var mutationLog=[];
+  var obs=new MutationObserver(function(mutations){
+    callbackCount++;
+    mutationLog.push('cb'+callbackCount+':'+mutations.length+'muts');
+    if(callbackCount<=3){
+      // Reentrância: muta o DOM dentro do callback
+      var child=fresh('span','cb-child-'+callbackCount);
+      root.appendChild(child);
+      // Modifica atributo também
+      root.setAttribute('data-cb',callbackCount);
+    }
+    if(callbackCount===2){
+      // Remove filho durante callback
+      if(root.firstChild) root.removeChild(root.firstChild);
+    }
+  });
+  obs.observe(root,{childList:true,attributes:true,subtree:true,characterData:true});
+  // Dispara a primeira mutação
+  root.appendChild(fresh('div','initial'));
+  // Mais mutações síncronas
+  root.setAttribute('data-init','1');
+  root.appendChild(fresh('p','second'));
+  // Processa a fila de microtasks
+  return Promise.resolve().then(function(){
+    return new Promise(function(resolve){
+      setTimeout(function(){
+        log('  callbackCount: '+callbackCount);
+        log('  mutationLog: '+mutationLog.join(' | '));
+        log('  root.children: '+root.children.length);
+        obs.disconnect();
+        cleanup();
+        log('[T02] done\n');
+        resolve();
+      },100);
+    });
+  });
+}
+
+function t03(){
+  log('[T03] Range.surroundContents com árvore mutada durante wrap');
+  cleanup();
+  var div=fresh('div');
+  div.innerHTML='<b>Bold</b> middle <i>Italic</i>';
+  _sb.appendChild(div);
+  var rng=document.createRange();
+  try{
+    // Seleciona conteúdo que cruza nós (deve falhar com HierarchyRequestError)
+    rng.setStart(div.querySelector('b').firstChild,0);
+    rng.setEnd(div.querySelector('i').firstChild,3);
+    log('  range cruza nós: toString='+rng.toString().slice(0,30));
+    var wrap=fresh('mark');
+    try{
+      rng.surroundContents(wrap);
+      log('  surroundContents cross-node: OK (inesperado)');
+    }catch(e){ log('  surroundContents cross-node exc (esperado): '+e.name); }
+    // Range que não cruza nós: deve funcionar
+    var rng2=document.createRange();
+    rng2.selectNodeContents(div.querySelector('b'));
+    var wrap2=fresh('u');
+    try{
+      rng2.surroundContents(wrap2);
+      log('  surroundContents same-node: ok, html='+div.innerHTML.slice(0,60));
+    }catch(e){ log('  surroundContents same-node exc: '+e.name); }
+    // Muta a árvore e tenta usar o range antigo
+    div.innerHTML='<span>replaced</span>';
+    try{
+      log('  rng.toString pós-replace: '+rng.toString().slice(0,20));
+      rng.surroundContents(fresh('div'));
+      log('  surroundContents após replace: ok');
+    }catch(e){ log('  após replace exc: '+e.name); }
+  }catch(e){ log('  exc: '+e.name+' '+e.message); }
+  cleanup();
+  log('[T03] done\n');
+}
+
+function t04(){
+  log('[T04] Selection: collapse + extend + addRange em shadow DOM');
+  cleanup();
+  var host=fresh('div');
+  _sb.appendChild(host);
+  var shadow;
+  try{ shadow=host.attachShadow({mode:'open'}); }catch(e){ log('  no shadow: '+e.name); log('[T04] done\n'); return; }
+  shadow.innerHTML='<p id="sp">Shadow Text Content</p>';
+  var sel=window.getSelection();
+  if(!sel){ log('  no selection API'); log('[T04] done\n'); return; }
+  try{
+    var pInShadow=shadow.getElementById('sp');
+    log('  shadow p: '+pInShadow.textContent);
+    sel.removeAllRanges();
+    // Range dentro de shadow DOM
+    var rng=document.createRange();
+    rng.setStart(pInShadow.firstChild,0);
+    rng.setEnd(pInShadow.firstChild,6);
+    try{
+      sel.addRange(rng);
+      log('  addRange shadow: rangeCount='+sel.rangeCount);
+    }catch(e){ log('  addRange shadow exc: '+e.name); }
+    // Collapse para fora do shadow
+    var outside=fresh('p','Outside');
+    _sb.appendChild(outside);
+    sel.collapse(outside,0);
+    log('  collapse outside: rangeCount='+sel.rangeCount);
+    // Extend de fora para dentro do shadow (cross-tree)
+    try{
+      sel.extend(pInShadow.firstChild,6);
+      log('  extend cross-shadow: rangeCount='+sel.rangeCount);
+    }catch(e){ log('  extend cross-shadow exc: '+e.name); }
+    // Testa composed selection
+    log('  sel.toString: '+sel.toString().slice(0,20));
+    // Remove o host durante seleção ativa
+    _sb.removeChild(host);
+    log('  host removed, sel.rangeCount: '+sel.rangeCount);
+    log('  sel.toString pós-remove: '+sel.toString().slice(0,20));
+  }catch(e){ log('  exc: '+e.name+' '+e.message); }
+  sel.removeAllRanges();
+  cleanup();
+  log('[T04] done\n');
+}
+
+function t05(){
+  log('[T05] ContentEditable + MutationObserver + Range: triângulo simultâneo');
+  cleanup();
+  var editor=fresh('div');
+  editor.contentEditable='true';
+  editor.innerHTML='<p>Line <b>one</b> here</p><p>Line <i>two</i> here</p>';
+  _sb.appendChild(editor);
+  var obsLog=[];
+  var obs=new MutationObserver(function(muts){
+    muts.forEach(function(m){
+      obsLog.push(m.type+':'+m.target.nodeName);
+      // Dentro do observer: modifica range
+      var sel=window.getSelection();
+      if(sel&&sel.rangeCount>0){
+        var rng=sel.getRangeAt(0);
+        obsLog.push('range:'+rng.toString().slice(0,10));
+      }
+    });
+  });
+  obs.observe(editor,{childList:true,subtree:true,characterData:true,attributes:true});
+  var sel=window.getSelection();
+  try{
+    // Cria range dentro do editor
+    var rng=document.createRange();
+    var firstP=editor.querySelector('p');
+    rng.selectNodeContents(firstP);
+    sel.removeAllRanges();
+    sel.addRange(rng);
+    // Modifica o DOM dentro do editor (dispara MutationObserver)
+    var newNode=fresh('span','[INSERTED]');
+    firstP.insertBefore(newNode,firstP.firstChild);
+    // O MutationObserver callback deve rodar na próxima microtask
+    // Mas o range pode já estar desatualizado
+    log('  sel.toString após insert: '+sel.toString().slice(0,30));
+    log('  rng.toString após insert: '+rng.toString().slice(0,30));
+    // Modifica characterData
+    if(firstP.firstChild.nodeType===3){
+      firstP.firstChild.data='MODIFIED';
+    }
+  }catch(e){ log('  exc: '+e.name+' '+e.message); }
+  return new Promise(function(resolve){
+    setTimeout(function(){
+      log('  obsLog: '+obsLog.slice(0,8).join(' | '));
+      obs.disconnect();
+      sel.removeAllRanges();
+      cleanup();
+      log('[T05] done\n');
+      resolve();
+    },150);
+  });
+}
+
+function t06(){
+  log('[T06] Range.extractContents + reinserção durante MutationObserver');
+  cleanup();
+  var div=fresh('div');
+  div.innerHTML='<span>A</span><span>B</span><span>C</span><span>D</span><span>E</span>';
+  _sb.appendChild(div);
+  var extractLog=[];
+  var obs=new MutationObserver(function(muts){
+    extractLog.push('obs:'+muts.length+'muts:children='+div.children.length);
+  });
+  obs.observe(div,{childList:true,subtree:true});
+  var rng=document.createRange();
+  try{
+    rng.setStartBefore(div.children[1]); // antes de B
+    rng.setEndAfter(div.children[3]);    // depois de D
+    log('  range: '+rng.toString());
+    var frag=rng.extractContents();
+    log('  extracted: childCount='+frag.childNodes.length+' text='+frag.textContent);
+    log('  div após extract: '+div.textContent);
+    // Reinsere o fragmento (inversão)
+    var insertPoint=document.createRange();
+    insertPoint.setStart(div,0);
+    insertPoint.insertNode(frag);
+    log('  div após reinsert: '+div.textContent);
+    // Extrai de novo com range que já foi usado
+    try{
+      var frag2=rng.extractContents();
+      log('  re-extract: '+frag2.childNodes.length+' children');
+    }catch(e){ log('  re-extract exc: '+e.name); }
+  }catch(e){ log('  exc: '+e.name+' '+e.message); }
+  return new Promise(function(resolve){
+    setTimeout(function(){
+      log('  obsLog: '+extractLog.join(' | '));
+      obs.disconnect();
+      cleanup();
+      log('[T06] done\n');
+      resolve();
+    },100);
+  });
+}
+
+function t07(){
+  log('[T07] TreeWalker: nó removido durante travessia');
+  cleanup();
+  var root=fresh('div');
+  for(var i=0;i<10;i++){
+    var child=fresh('p','node-'+i);
+    for(var j=0;j<3;j++) child.appendChild(fresh('span','s'+i+'-'+j));
+    root.appendChild(child);
+  }
+  _sb.appendChild(root);
+  var walker=document.createTreeWalker(
+    root,
+    NodeFilter.SHOW_ELEMENT,
+    {acceptNode:function(node){ return NodeFilter.FILTER_ACCEPT; }}
+  );
+  var visited=[];
+  var removeCount=0;
+  try{
+    var node;
+    var steps=0;
+    while((node=walker.nextNode()) && steps<50){
+      visited.push(node.nodeName+':'+(node.textContent||'').slice(0,8));
+      steps++;
+      // Remove um irmão durante a travessia
+      if(steps===5 && node.parentNode){
+        var next=node.nextSibling;
+        if(next && next.parentNode){
+          next.parentNode.removeChild(next);
+          removeCount++;
+          log('  [step 5] removeu irmão durante travessia');
+        }
+      }
+      // Remove o próprio nó atual
+      if(steps===10){
+        var parent=node.parentNode;
+        var savedNext=node.nextSibling;
+        if(parent){
+          parent.removeChild(node);
+          removeCount++;
+          log('  [step 10] removeu nó ATUAL durante travessia');
+        }
+      }
+    }
+    log('  visitados: '+visited.length+' removes: '+removeCount);
+    log('  primeiros: '+visited.slice(0,6).join(' | '));
+    log('  walker.currentNode: '+(walker.currentNode?walker.currentNode.nodeName:'null'));
+    // Tenta previousNode depois de remove
+    try{
+      var prev=walker.previousNode();
+      log('  previousNode pós-remove: '+(prev?prev.nodeName:'null'));
+    }catch(e){ log('  previousNode exc: '+e.name); }
+  }catch(e){ log('  exc: '+e.name+' '+e.message); }
+  cleanup();
+  log('[T07] done\n');
+}
+
+function t08(){
+  log('[T08] Range boundaries em TextNode splitText: invalida ranges');
+  cleanup();
+  var div=fresh('div');
+  var txt=document.createTextNode('Hello World Testing Here');
+  div.appendChild(txt);
+  _sb.appendChild(div);
+  var rng1=document.createRange(), rng2=document.createRange();
+  try{
+    // Estabelece ranges no TextNode original
+    rng1.setStart(txt,0); rng1.setEnd(txt,5);   // "Hello"
+    rng2.setStart(txt,6); rng2.setEnd(txt,11);  // "World"
+    log('  rng1: "'+rng1.toString()+'"');
+    log('  rng2: "'+rng2.toString()+'"');
+    // splitText em posição 8 — invalida ranges
+    var newTxt=txt.splitText(8);
+    log('  após splitText(8): txt="'+txt.data+'" newTxt="'+newTxt.data+'"');
+    // Os ranges devem ser atualizados automaticamente pelo DOM
+    log('  rng1 após split: "'+rng1.toString()+'" start='+rng1.startOffset+' end='+rng1.endOffset);
+    log('  rng2 após split: "'+rng2.toString()+'" start='+rng2.startOffset+' end='+rng2.endOffset);
+    // Split do novo nó também
+    var newTxt2=newTxt.splitText(3);
+    log('  rng2 após 2º split: "'+rng2.toString()+'"');
+    // Modifica o data do txt original
+    txt.data='REPLACED';
+    log('  rng1 após data replace: "'+rng1.toString()+'" off='+rng1.startOffset+'-'+rng1.endOffset);
+    // insertData
+    txt.insertData(0,'PREFIX-');
+    log('  rng1 após insertData: "'+rng1.toString()+'" start='+rng1.startOffset);
+    // deleteData
+    txt.deleteData(0,4);
+    log('  rng1 após deleteData: "'+rng1.toString()+'" start='+rng1.startOffset);
+  }catch(e){ log('  exc: '+e.name+' '+e.message); }
+  cleanup();
+  log('[T08] done\n');
+}
+
+function t09(){
+  log('[T09] MutationObserver: observar + reobservar com opções diferentes em loop');
+  cleanup();
+  var target=fresh('div');
+  target.setAttribute('data-start','1');
+  _sb.appendChild(target);
+  var logs=[];
+  var obs=new MutationObserver(function(muts){
+    muts.forEach(function(m){
+      logs.push(m.type+':'+m.attributeName);
+    });
+  });
+  // Muda as opções de observação a cada iteração
+  var optionSets=[
+    {attributes:true,attributeFilter:['data-a']},
+    {attributes:true,attributeFilter:['data-b']},
+    {attributes:true},
+    {childList:true},
+    {attributes:true,childList:true,subtree:true},
+  ];
+  try{
+    for(var i=0;i<20;i++){
+      var opts=optionSets[i%optionSets.length];
+      obs.observe(target,opts);
+      // Dispara mudanças de vários tipos
+      target.setAttribute('data-a','val-'+i);
+      target.setAttribute('data-b','val-'+i);
+      target.setAttribute('data-c','val-'+i);
+      if(i%3===0) target.appendChild(fresh('span','child-'+i));
+    }
+  }catch(e){ log('  exc: '+e.name+' '+e.message); }
+  return new Promise(function(resolve){
+    setTimeout(function(){
+      log('  logs: '+logs.slice(0,10).join(' | '));
+      log('  total mutations captured: '+logs.length);
+      obs.disconnect();
+      cleanup();
+      log('[T09] done\n');
+      resolve();
+    },100);
+  });
+}
+
+function t10(){
+  log('[T10] Range cross-document: após adoptNode e importNode');
+  cleanup();
+  var iframe=document.createElement('iframe');
+  iframe.style.display='none';
+  _sb.appendChild(iframe);
+  try{
+    var iDoc=iframe.contentDocument;
+    if(!iDoc){ log('  no iframe doc'); log('[T10] done\n'); return; }
+    iDoc.open(); iDoc.write('<html><body><p id="tp">iframe text content</p></body></html>'); iDoc.close();
+    var iP=iDoc.getElementById('tp');
+    if(!iP){ iP=iDoc.body&&iDoc.body.firstChild; }
+    if(!iP){ log('  no iframe paragraph'); log('[T10] done\n'); return; }
+    // Cria Range no documento do iframe
+    var iRng=iDoc.createRange();
+    iRng.selectNodeContents(iP);
+    log('  iRng.toString: '+iRng.toString().slice(0,20));
+    // adoptNode move o nó para o documento principal
+    var adopted=document.adoptNode(iP);
+    _sb.appendChild(adopted);
+    log('  após adoptNode: adopted.ownerDocument===document: '+(adopted.ownerDocument===document));
+    // O Range do iframe agora tem o nó movido — o que acontece?
+    try{ log('  iRng após adopt: '+iRng.toString().slice(0,20)); }catch(e){ log('  iRng exc: '+e.name); }
+    // Range no documento principal para o nó adotado
+    var mRng=document.createRange();
+    mRng.selectNodeContents(adopted);
+    log('  mRng.toString: '+mRng.toString().slice(0,20));
+    // importNode (cópia, não move)
+    var iP2=iDoc.createElement('p'); iP2.textContent='importado';
+    var imported=document.importNode(iP2,true);
+    log('  imported.ownerDocument===document: '+(imported.ownerDocument===document));
+    log('  imported.isConnected: '+imported.isConnected);
+  }catch(e){ log('  exc: '+e.name+' '+e.message); }
+  cleanup();
+  log('[T10] done\n');
+}
+
+function t11(){
+  log('[T11] Selection.addRange múltiplos + remoção de nós selecionados');
+  cleanup();
+  var div=fresh('div');
+  div.innerHTML='<span>Alpha </span><span>Beta </span><span>Gamma </span><span>Delta</span>';
+  _sb.appendChild(div);
+  var sel=window.getSelection();
+  sel.removeAllRanges();
+  var spans=div.querySelectorAll('span');
+  var ranges=[];
+  // Cria múltiplos ranges
+  spans.forEach(function(span,i){
+    var r=document.createRange();
+    r.selectNodeContents(span);
+    ranges.push(r);
+    try{ sel.addRange(r); }catch(e){ log('  addRange['+i+'] exc: '+e.name); }
+  });
+  log('  rangeCount após adds: '+sel.rangeCount);
+  log('  sel.toString: '+sel.toString().slice(0,40));
+  // Remove o nó do 2º range enquanto ainda está selecionado
+  div.removeChild(spans[1]);
+  log('  após remove spans[1]: rangeCount='+sel.rangeCount);
+  try{ log('  range[0].toString: '+sel.getRangeAt(0).toString()); }catch(e){ log('  range[0] exc: '+e.name); }
+  // Remove o nó do 1º range
+  div.removeChild(spans[0]);
+  log('  após remove spans[0]: rangeCount='+sel.rangeCount);
+  // Collapse para nó ainda presente
+  try{
+    sel.collapse(spans[2],0);
+    log('  collapse ok: rangeCount='+sel.rangeCount);
+  }catch(e){ log('  collapse exc: '+e.name); }
+  sel.removeAllRanges();
+  cleanup();
+  log('[T11] done\n');
+}
+
+function t12(){
+  log('[T12] NodeIterator com filter dinâmico: modifica DOM no filter callback');
+  cleanup();
+  var root=fresh('div');
+  for(var i=0;i<8;i++) root.appendChild(fresh('p','para-'+i));
+  _sb.appendChild(root);
+  var filterCallCount=0;
+  var injected=[];
+  var iter=document.createNodeIterator(
+    root,
+    NodeFilter.SHOW_ELEMENT,
+    {acceptNode:function(node){
+      filterCallCount++;
+      // Na 3ª chamada do filter: injeta um nó
+      if(filterCallCount===3){
+        var newEl=fresh('span','injected-'+filterCallCount);
+        node.parentNode&&node.parentNode.insertBefore(newEl,node.nextSibling);
+        injected.push(newEl);
+        log('  [filter 3] nó injetado após '+node.textContent);
+      }
+      // Na 5ª: remove o nó atual do DOM
+      if(filterCallCount===5){
+        if(node.parentNode){
+          node.parentNode.removeChild(node);
+          log('  [filter 5] nó removido: '+node.textContent);
+        }
+        return NodeFilter.FILTER_REJECT;
+      }
+      return node.nodeName==='P' ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+    }}
+  );
+  var nodes=[];
+  try{
+    var n;
+    var steps=0;
+    while((n=iter.nextNode()) && steps<20){
+      nodes.push(n.textContent.slice(0,10));
+      steps++;
+    }
+    log('  nodes visited: '+nodes.join(' | '));
+    log('  filterCallCount: '+filterCallCount);
+    log('  injected: '+injected.length);
+  }catch(e){ log('  exc: '+e.name+' '+e.message); }
+  cleanup();
+  log('[T12] done\n');
+}
+
+function t13(){
+  log('[T13] ContentEditable: execCommand durante MutationObserver batch acumulado');
+  cleanup();
+  var editor=fresh('div');
+  editor.contentEditable='true';
+  editor.innerHTML='<p>Edit <b>me</b> please</p>';
+  _sb.appendChild(editor);
+  var batchLog=[];
+  var obs=new MutationObserver(function(muts){
+    batchLog.push('batch:'+muts.length);
+    // Tenta execCommand durante observer callback
+    try{
+      var ok=document.execCommand('bold',false,null);
+      batchLog.push('execCmd:'+ok);
+    }catch(e){ batchLog.push('execCmd-exc:'+e.name); }
+  });
+  obs.observe(editor,{childList:true,subtree:true,characterData:true});
+  // Seleciona conteúdo do editor
+  var sel=window.getSelection();
+  var rng=document.createRange();
+  rng.selectNodeContents(editor);
+  sel.removeAllRanges();
+  sel.addRange(rng);
+  try{
+    document.execCommand('bold',false,null);
+    document.execCommand('italic',false,null);
+    editor.innerHTML+='<p>Appended</p>';
+    document.execCommand('underline',false,null);
+  }catch(e){ log('  execCommand exc: '+e.name); }
+  sel.removeAllRanges();
+  return new Promise(function(resolve){
+    setTimeout(function(){
+      log('  batchLog: '+batchLog.slice(0,8).join(' | '));
+      log('  editor.innerHTML: '+editor.innerHTML.slice(0,60));
+      obs.disconnect();
+      cleanup();
+      log('[T13] done\n');
+      resolve();
+    },100);
+  });
+}
+
+function t14(){
+  log('[T14] Range.cloneContents: árvore modificada durante a operação');
+  cleanup();
+  var div=fresh('div');
+  div.innerHTML='<b>A</b><i>B</i><u>C</u><s>D</s><mark>E</mark>';
+  _sb.appendChild(div);
+  var rng=document.createRange();
+  rng.setStartBefore(div.firstChild);
+  rng.setEndAfter(div.lastChild);
+  log('  range: '+rng.toString());
+  // Instala MutationObserver que muta durante clone
+  var cloneStarted=false;
+  var obs=new MutationObserver(function(muts){
+    if(cloneStarted){
+      log('  obs durante clone: '+muts.length+' mutations');
+    }
+  });
+  obs.observe(div,{childList:true,subtree:true});
+  try{
+    cloneStarted=true;
+    // Clone não deve ser afetado por mutações posteriores
+    var frag=rng.cloneContents();
+    log('  cloned: children='+frag.childNodes.length+' text='+frag.textContent);
+    // Muta o original após o clone
+    div.innerHTML='<span>REPLACED</span>';
+    log('  original após replace: '+div.textContent);
+    log('  clone ainda preservado: '+frag.textContent);
+  }catch(e){ log('  exc: '+e.name+' '+e.message); }
+  obs.disconnect();
+  // Testa cloneRange
+  var rng2=document.createRange();
+  try{
+    rng2.selectNodeContents(div);
+    var rng2clone=rng2.cloneRange();
+    div.innerHTML='';
+    log('  rng2clone.toString após clear: "'+rng2clone.toString()+'"');
+  }catch(e){ log('  cloneRange exc: '+e.name); }
+  cleanup();
+  log('[T14] done\n');
+}
+
+function t15(){
+  log('[T15] MutationObserver: observe + unobserve + re-observe em cascata durante callback');
+  cleanup();
+  var target=fresh('div');
+  _sb.appendChild(target);
+  var log15=[];
+  var observing=true;
+  var obs=new MutationObserver(function(muts){
+    log15.push('cb:'+muts.length);
+    // Dentro do callback: desconecta e reconecta
+    obs.disconnect();
+    observing=false;
+    log15.push('disconnected');
+    if(log15.length<20){
+      // Re-observa com opções diferentes
+      obs.observe(target,{attributes:true,childList:true,characterData:true,subtree:true});
+      observing=true;
+      log15.push('reconnected');
+      // Dispara nova mutação enquanto acabou de reconectar
+      target.setAttribute('data-reconnect',log15.length);
+    }
+  });
+  obs.observe(target,{attributes:true,childList:true});
+  try{
+    target.setAttribute('data-1','a');
+    target.appendChild(fresh('span','child'));
+    target.setAttribute('data-2','b');
+  }catch(e){ log('  exc: '+e.name+' '+e.message); }
+  return new Promise(function(resolve){
+    setTimeout(function(){
+      log('  log15: '+log15.slice(0,12).join(' → '));
+      obs.disconnect();
+      cleanup();
+      log('[T15] done\n');
+      resolve();
+    },300);
+  });
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 02 — Range + Selection + MutationObserver ===\n');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){
+    if(i>=tests.length){log('\n=== FIM ===');return;}
+    var r; try{r=tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);}
+    i++;
+    if(r&&typeof r.then==='function'){r.then(function(){setTimeout(next,300);}).catch(function(){setTimeout(next,300);});}
+    else setTimeout(next,300);
+  }
+  next();
+}
+</script></body></html>

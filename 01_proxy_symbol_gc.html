@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>01 — Proxy + Symbol + GC</title>
+<style>
+body{background:#08080f;color:#ccc;font:12px monospace;padding:12px}
+h3{color:#5bf;margin-bottom:8px}
+#log{height:420px;overflow:auto;background:#0a0a12;color:#0f0;padding:8px;white-space:pre;border:1px solid #1a2a3a;margin-bottom:8px}
+button{background:#0f1a2a;color:#5bf;border:1px solid #1a3a5a;padding:5px 10px;margin:2px;font:11px monospace;cursor:pointer}
+button:hover{background:#1a2a3a}
+</style></head>
+<body>
+<h3>01 — Proxy + Symbol + FinalizationRegistry + GC Pressure Coordenada</h3>
+<div id="log"></div>
+<button onclick="t01()">T01 Proxy handler mutation mid-trap chain</button>
+<button onclick="t02()">T02 Symbol registry + delete + re-register</button>
+<button onclick="t03()">T03 FinalizationRegistry: re-register em cleanup callback</button>
+<button onclick="t04()">T04 Proxy com Reflect + prototype chain dinâmico</button>
+<button onclick="t05()">T05 Symbol.iterator em Proxy: mutação durante for...of</button>
+<button onclick="t06()">T06 WeakMap + GC: chave coletada mid-access</button>
+<button onclick="t07()">T07 Proxy revogável: revoke durante trap execution</button>
+<button onclick="t08()">T08 Symbol.species override: instância errada</button>
+<button onclick="t09()">T09 FinalizationRegistry: múltiplos registros do mesmo alvo</button>
+<button onclick="t10()">T10 Proxy sobre TypedArray: get trap com conversão BigInt</button>
+<button onclick="t11()">T11 WeakRef + generator: deref em cada yield</button>
+<button onclick="t12()">T12 Proxy deleteProperty + Reflect.ownKeys mid-iteration</button>
+<button onclick="t13()">T13 Symbol como chave: enumerable + spread + structuredClone</button>
+<button onclick="t14()">T14 GC storm: 50 registros + pressão + acesso após cleanup</button>
+<button onclick="t15()">T15 Proxy apply-trap: função com receiver modificado</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html" style="color:#5bf">← Index</a>
+
+<script>
+'use strict';
+var _L=document.getElementById('log');
+function log(m){_L.textContent+=m+'\n';_L.scrollTop=_L.scrollHeight;}
+function gc(){
+  try{var a=[];for(var i=0;i<40;i++)a.push(new ArrayBuffer(2*1024*1024));a=null;}catch(e){}
+}
+// Shared punning primitives
+var _ab=new ArrayBuffer(8);
+var _f64=new Float64Array(_ab);
+var _u64=new BigUint64Array(_ab);
+function f2i(v){_f64[0]=v;return _u64[0];}
+function i2f(v){_u64[0]=BigInt(v);return _f64[0];}
+
+// ─── T01 ─────────────────────────────────────────────────────────────────────
+function t01(){
+  log('[T01] Proxy handler: swapa o próprio handler durante trap');
+  var trapLog=[];
+  var handlerA={
+    get:function(t,k,r){
+      trapLog.push('A:get:'+String(k).slice(0,10));
+      // Na 5ª interceptação: troca o handler interno
+      if(trapLog.length===5){
+        // Não podemos trocar o handler de um Proxy existente,
+        // mas podemos fazer o target se tornar um novo Proxy
+        t.__swapped__=true;
+        t.__innerProxy__=new Proxy({swapped:true},handlerB);
+      }
+      return Reflect.get(t,k,r);
+    },
+    set:function(t,k,v,r){
+      trapLog.push('A:set:'+String(k).slice(0,10)+'='+String(v).slice(0,8));
+      return Reflect.set(t,k,v,r);
+    },
+    has:function(t,k){
+      trapLog.push('A:has:'+String(k).slice(0,10));
+      return k in t;
+    }
+  };
+  var handlerB={
+    get:function(t,k,r){
+      trapLog.push('B:get:'+String(k).slice(0,10));
+      return Reflect.get(t,k,r);
+    }
+  };
+  var target={x:1,y:2,z:3};
+  var proxy=new Proxy(target,handlerA);
+  try{
+    // Série de acessos que disparam traps
+    var seq=[proxy.x, proxy.y, proxy.z, ('x' in proxy), proxy.x, proxy.x];
+    proxy.w=99;
+    // Após swap: acessa o innerProxy
+    if(target.__innerProxy__){
+      var innerVal=target.__innerProxy__.swapped;
+      log('  innerProxy.swapped: '+innerVal);
+    }
+    log('  trapLog (primeiros 10): '+trapLog.slice(0,10).join(' | '));
+    log('  target.__swapped__: '+target.__swapped__);
+    log('  seq: '+seq.join(','));
+  }catch(e){log('  exc: '+e.name+' '+e.message);}
+  log('[T01] done\n');
+}
+
+// ─── T02 ─────────────────────────────────────────────────────────────────────
+function t02(){
+  log('[T02] Symbol.for registry: delete + re-register + globalThis');
+  var key='ps4.test.symbol.'+Date.now();
+  var s1=Symbol.for(key);
+  var s2=Symbol.for(key);
+  log('  s1===s2: '+(s1===s2)+' (deve ser true)');
+  log('  Symbol.keyFor(s1): '+Symbol.keyFor(s1));
+  // Symbol único (não registrado)
+  var unique=Symbol('unique');
+  log('  Symbol.keyFor(unique): '+Symbol.keyFor(unique)+' (deve ser undefined)');
+  // Usa Symbol como chave de objeto
+  var obj={};
+  obj[s1]='value-via-s1';
+  obj[unique]='value-via-unique';
+  log('  obj[s1]: '+obj[s1]);
+  log('  obj[unique]: '+obj[unique]);
+  // Propriedades Symbol não aparecem em for..in nem Object.keys
+  var forinKeys=[];
+  for(var k in obj) forinKeys.push(k);
+  log('  for..in keys: '+forinKeys.length+' (deve ser 0)');
+  log('  Object.keys: '+Object.keys(obj).length+' (deve ser 0)');
+  log('  getOwnPropertySymbols: '+Object.getOwnPropertySymbols(obj).length+' (deve ser 2)');
+  // structuredClone perde Symbol keys
+  try{
+    var cloned=structuredClone(obj);
+    log('  clone symbols: '+Object.getOwnPropertySymbols(cloned).length+' (deve ser 0)');
+  }catch(e){log('  clone exc: '+e.name);}
+  // Symbol em Map vs objeto
+  var map=new Map();
+  map.set(s1,'map-s1');
+  map.set(unique,'map-unique');
+  log('  Map.get(s1): '+map.get(s1));
+  log('  Map.size: '+map.size);
+  // WeakMap com Symbol key (deve falhar em ES2021, ok em ES2023+)
+  try{
+    var wm=new WeakMap();
+    wm.set(s1,'wm-s1');
+    log('  WeakMap Symbol key: '+wm.get(s1)+' (ES2023 feature)');
+  }catch(e){log('  WeakMap Symbol exc (ES2021): '+e.name);}
+  log('[T02] done\n');
+}
+
+// ─── T03 ─────────────────────────────────────────────────────────────────────
+function t03(){
+  log('[T03] FinalizationRegistry: re-register no cleanup + cadeia de cleanups');
+  var events=[];
+  var registry=new FinalizationRegistry(function(token){
+    events.push('cleanup:'+token);
+    // Dentro do cleanup: tenta criar novo objeto e registrá-lo
+    try{
+      var newObj={reregistered:true,token:token};
+      registry.register(newObj,'re-'+token);
+      // newObj sai de escopo aqui — pode ser coletado imediatamente
+    }catch(e){events.push('re-reg-exc:'+e.name);}
+  });
+  // Cria e registra múltiplos objetos em função imediatamente descartada
+  (function createBatch(n){
+    for(var i=0;i<n;i++){
+      var obj={data:new Float64Array(256),idx:i};
+      registry.register(obj,'batch-'+i);
+      // obj sai de escopo ao final do loop
+    }
+  })(20);
+  // Pressão GC para disparar cleanups
+  gc(); gc();
+  // FinalizationRegistry callbacks são async — aguarda via microtask
+  return Promise.resolve().then(function(){
+    gc();
+    return new Promise(function(resolve){
+      setTimeout(function(){
+        gc();
+        log('  events: '+events.slice(0,8).join(' | '));
+        log('  total cleanups: '+events.filter(function(e){return e.startsWith('cleanup');}).length);
+        log('[T03] done\n');
+        resolve();
+      },200);
+    });
+  });
+}
+
+// ─── T04 ─────────────────────────────────────────────────────────────────────
+function t04(){
+  log('[T04] Proxy + Reflect: prototype chain dinamicamente alterado mid-trap');
+  var protoA={level:'A',x:10};
+  var protoB={level:'B',x:20,y:30};
+  var protoC={level:'C',x:30,y:40,z:50};
+  var obj=Object.create(protoA);
+  obj.own=99;
+  var getLog=[];
+  var proxy=new Proxy(obj,{
+    get:function(t,k,recv){
+      getLog.push(String(k).slice(0,8));
+      // Na 3ª chamada: troca o prototype de obj
+      if(getLog.length===3){
+        Object.setPrototypeOf(t,protoB);
+        log('  [trap 3] proto→B');
+      }
+      if(getLog.length===6){
+        Object.setPrototypeOf(t,protoC);
+        log('  [trap 6] proto→C');
+      }
+      // Usa Reflect para encaminhar corretamente
+      return Reflect.get(t,k,recv);
+    },
+    getPrototypeOf:function(t){
+      return Object.getPrototypeOf(t);
+    }
+  });
+  try{
+    // Acessos sequenciais — o prototype muda entre eles
+    var r1=proxy.own;    // trap 1
+    var r2=proxy.x;     // trap 2 (protoA.x=10)
+    var r3=proxy.level; // trap 3 → troca para B, acessa level via B
+    var r4=proxy.x;     // trap 4 (protoB.x=20 agora)
+    var r5=proxy.y;     // trap 5 (protoB.y=30)
+    var r6=proxy.x;     // trap 6 → troca para C
+    var r7=proxy.z;     // trap 7 (protoC.z=50)
+    log('  r1='+r1+' r2='+r2+' r3='+r3+' r4='+r4+' r5='+r5+' r6='+r6+' r7='+r7);
+    log('  getLog: '+getLog.join(','));
+    // Instanceof com prototype trocado
+    log('  proxy instanceof... (proto é C agora)');
+    log('  Object.getPrototypeOf(obj)===protoC: '+(Object.getPrototypeOf(obj)===protoC));
+  }catch(e){log('  exc: '+e.name+' '+e.message);}
+  // Restaura
+  Object.setPrototypeOf(obj,protoA);
+  log('[T04] done\n');
+}
+
+// ─── T05 ─────────────────────────────────────────────────────────────────────
+function t05(){
+  log('[T05] Symbol.iterator em Proxy: mutação do target durante for...of');
+  var items=[1,2,3,4,5,6,7,8,9,10];
+  var iterLog=[];
+  var mutated=false;
+  var proxy=new Proxy(items,{
+    get:function(t,k,r){
+      iterLog.push(String(k).slice(0,15));
+      // Quando o iterador acessa os índices: muta o array
+      var idx=parseInt(k);
+      if(!isNaN(idx) && idx===4 && !mutated){
+        mutated=true;
+        // Remove elementos do meio durante iteração
+        t.splice(3,2,'INJECTED');
+        log('  [iter idx=4] splice executado, length agora: '+t.length);
+      }
+      return Reflect.get(t,k,r);
+    }
+  });
+  var collected=[];
+  try{
+    for(var v of proxy){
+      collected.push(v);
+      if(collected.length>15) break;
+    }
+    log('  collected: '+collected.join(','));
+    log('  items agora: '+items.join(','));
+    log('  iterLog (primeiros 12): '+iterLog.slice(0,12).join(' | '));
+  }catch(e){log('  exc: '+e.name+' '+e.message);}
+  log('[T05] done\n');
+}
+
+// ─── T06 ─────────────────────────────────────────────────────────────────────
+function t06(){
+  log('[T06] WeakMap + GC: operações com chaves potencialmente coletadas');
+  var wm=new WeakMap();
+  var ws=new WeakSet();
+  var strongRefs=[];
+  var weakRefs=[];
+  // Cria 20 objetos, guarda alguns como strong, outros não
+  (function(){
+    for(var i=0;i<20;i++){
+      var obj={id:i,data:new Float64Array(128)};
+      wm.set(obj,'value-'+i);
+      ws.add(obj);
+      weakRefs.push(new WeakRef(obj));
+      if(i%3===0) strongRefs.push(obj); // 7 strong refs
+    }
+  })();
+  gc(); // Objetos sem strong ref podem ser coletados
+  // Verifica quais ainda estão no WeakMap
+  var liveCount=0;
+  var deadCount=0;
+  weakRefs.forEach(function(wr,i){
+    var obj=wr.deref();
+    if(obj){
+      var hasWM=wm.has(obj);
+      var hasWS=ws.has(obj);
+      if(hasWM&&hasWS) liveCount++;
+      else log('  ['+i+'] alive mas wm='+hasWM+' ws='+hasWS+' (inconsistência!)');
+    } else {
+      deadCount++;
+    }
+  });
+  log('  liveCount: '+liveCount+' deadCount: '+deadCount);
+  log('  strongRefs.length: '+strongRefs.length);
+  // Todos os strongRefs devem ainda estar no WeakMap
+  var allStrongPresent=strongRefs.every(function(o){ return wm.has(o)&&ws.has(o); });
+  log('  todos strongRefs no WeakMap/Set: '+allStrongPresent);
+  // Testa WeakMap com chaves não-object (deve falhar)
+  var primCases=[42,'string',true,null,undefined,Symbol('s')];
+  primCases.forEach(function(v){
+    try{ wm.set(v,'x'); log('  set('+String(v)+'): ok (inesperado!)'); }
+    catch(e){ log('  set('+String(v)+'): exc '+e.name+' (esperado)'); }
+  });
+  strongRefs=[];
+  gc();
+  log('[T06] done\n');
+}
+
+// ─── T07 ─────────────────────────────────────────────────────────────────────
+function t07(){
+  log('[T07] Proxy revogável: revoke() chamado DENTRO de um trap');
+  var revokeLog=[];
+  var revokeCount=0;
+  var revoke;
+  var proxy;
+  var result=Proxy.revocable({x:1,y:2,arr:[10,20,30]},{
+    get:function(t,k,r){
+      revokeLog.push('get:'+String(k).slice(0,10));
+      var val=Reflect.get(t,k,r);
+      // Na 4ª interceptação: revoga o próprio proxy!
+      if(revokeLog.length===4 && revoke){
+        revokeCount++;
+        log('  [trap 4] revogando o proxy!');
+        revoke();
+      }
+      return val;
+    }
+  });
+  proxy=result.proxy;
+  revoke=result.revoke;
+  try{
+    var a=proxy.x;       // trap 1
+    var b=proxy.y;       // trap 2
+    var c=proxy.arr;     // trap 3
+    var d=proxy.x;       // trap 4 → revoga!
+    log('  a='+a+' b='+b+' c='+c+' d='+d);
+  }catch(e){log('  exc durante revoke: '+e.name);}
+  // Após revoke: qualquer acesso deve lançar TypeError
+  try{ var e=proxy.x; log('  pós-revoke acesso: '+e+' (inesperado!)'); }
+  catch(e){log('  pós-revoke exc (esperado): '+e.name);}
+  try{ proxy.x=99; }catch(e){log('  pós-revoke set exc: '+e.name);}
+  try{ 'x' in proxy; }catch(e){log('  pós-revoke has exc: '+e.name);}
+  log('  revokeLog: '+revokeLog.join(' | '));
+  log('[T07] done\n');
+}
+
+// ─── T08 ─────────────────────────────────────────────────────────────────────
+function t08(){
+  log('[T08] Symbol.species: override para retornar tipo errado');
+  // Array com Symbol.species customizado
+  class CustomArray extends Array {
+    static get [Symbol.species](){ return Object; } // retorna Object, não Array
+  }
+  var ca=new CustomArray(1,2,3);
+  log('  ca instanceof Array: '+(ca instanceof Array));
+  log('  ca instanceof CustomArray: '+(ca instanceof CustomArray));
+  // map/filter devem usar Symbol.species → retornam Object
+  try{
+    var mapped=ca.map(function(x){return x*2;});
+    log('  mapped instanceof Array: '+(mapped instanceof Array));
+    log('  mapped instanceof CustomArray: '+(mapped instanceof CustomArray));
+    log('  mapped instanceof Object: '+(mapped instanceof Object));
+    log('  mapped: '+JSON.stringify(Array.from(mapped)));
+  }catch(e){log('  map exc: '+e.name+' '+e.message);}
+  // Promise.resolve com Symbol.species
+  class SpeciesPromise extends Promise {
+    static get [Symbol.species](){ return Promise; }
+  }
+  var sp=new SpeciesPromise(function(res){res(42);});
+  try{
+    var chained=sp.then(function(v){return v*2;});
+    log('  chained instanceof Promise: '+(chained instanceof Promise));
+    log('  chained instanceof SpeciesPromise: '+(chained instanceof SpeciesPromise));
+  }catch(e){log('  promise species exc: '+e.name);}
+  // RegExp com Symbol.species
+  class MyRegExp extends RegExp {
+    static get [Symbol.species](){ return RegExp; }
+  }
+  try{
+    var mr=new MyRegExp('(a+)','g');
+    var split='aaabbaaa'.split(mr);
+    log('  split com MyRegExp: '+split.join('|'));
+  }catch(e){log('  regexp species exc: '+e.name);}
+  log('[T08] done\n');
+}
+
+// ─── T09 ─────────────────────────────────────────────────────────────────────
+function t09(){
+  log('[T09] FinalizationRegistry: múltiplos registros do mesmo objeto');
+  var log09=[];
+  var regA=new FinalizationRegistry(function(t){ log09.push('A:'+t); });
+  var regB=new FinalizationRegistry(function(t){ log09.push('B:'+t); });
+  var regC=new FinalizationRegistry(function(t){ log09.push('C:'+t); });
+  // Mesmo objeto registrado em 3 registros diferentes
+  (function(){
+    var target={data:new Float64Array(1024),id:'multi'};
+    regA.register(target,'token-A');
+    regA.register(target,'token-A2'); // segundo registro no mesmo
+    regB.register(target,'token-B');
+    regC.register(target,'token-C');
+    // Cria unregisterToken
+    var ut={};
+    regA.register(target,'token-A-with-ut',ut);
+    // Cancela o registro A-with-ut antes do GC
+    var unregOk=regA.unregister(ut);
+    log('  unregister ok: '+unregOk);
+    // target sai de escopo aqui
+  })();
+  gc(); gc();
+  return new Promise(function(resolve){
+    setTimeout(function(){
+      gc();
+      setTimeout(function(){
+        log('  cleanup log: '+log09.slice(0,10).join(' | '));
+        log('  A cleanups: '+log09.filter(function(e){return e.startsWith('A');}).length);
+        log('  B cleanups: '+log09.filter(function(e){return e.startsWith('B');}).length);
+        log('  C cleanups: '+log09.filter(function(e){return e.startsWith('C');}).length);
+        log('[T09] done\n');
+        resolve();
+      },200);
+    },200);
+  });
+}
+
+// ─── T10 ─────────────────────────────────────────────────────────────────────
+function t10(){
+  log('[T10] Proxy sobre Float64Array: get trap com conversão BigInt inline');
+  var buf=new ArrayBuffer(64);
+  var f64=new Float64Array(buf);
+  var u64=new BigUint64Array(buf);
+  // Preenche o buffer com valores interessantes
+  for(var i=0;i<8;i++) f64[i]=Math.PI*Math.pow(2,i*7);
+  var trapLog=[];
+  var proxy=new Proxy(f64,{
+    get:function(t,k,r){
+      var idx=parseInt(k);
+      if(!isNaN(idx) && idx>=0 && idx<8){
+        // Retorna o valor como BigInt representação do float
+        var floatVal=Reflect.get(t,k,r);
+        _f64[0]=floatVal;
+        var bigVal=_u64[0];
+        trapLog.push(idx+':'+bigVal.toString(16).slice(-8));
+        // Modifica o buffer via u64 durante o trap
+        if(idx===3){ u64[7]=bigVal^0xDEADBEEFn; }
+        return floatVal; // retorna o float original
+      }
+      return Reflect.get(t,k,r);
+    },
+    set:function(t,k,v,r){
+      var idx=parseInt(k);
+      if(!isNaN(idx)){
+        // Converte BigInt para float antes de armazenar
+        if(typeof v==='bigint'){
+          _u64[0]=v;
+          v=_f64[0];
+        }
+        trapLog.push('set:'+idx+'='+String(v).slice(0,12));
+      }
+      return Reflect.set(t,k,v,r);
+    }
+  });
+  try{
+    var sum=0;
+    for(var i=0;i<8;i++) sum+=proxy[i];
+    log('  sum: '+sum.toFixed(3));
+    // Set via BigInt (passa pelo trap set)
+    proxy[0]=0xDEADBEEFCAFEBABEn;
+    log('  proxy[0] após set BigInt: '+proxy[0].toFixed(6));
+    // Leitura e verificação do u64[7] modificado pelo trap
+    log('  u64[7] após trap 3: 0x'+u64[7].toString(16));
+    log('  trapLog: '+trapLog.slice(0,8).join(' | '));
+  }catch(e){log('  exc: '+e.name+' '+e.message);}
+  log('[T10] done\n');
+}
+
+// ─── T11 ─────────────────────────────────────────────────────────────────────
+function t11(){
+  log('[T11] WeakRef + generator: deref em cada yield + GC entre steps');
+  var liveObjects=[];
+  var allRefs=[];
+  // Cria objetos que vamos manter vivos seletivamente
+  for(var i=0;i<10;i++){
+    var obj={id:i,buf:new Float64Array(256)};
+    var wr=new WeakRef(obj);
+    allRefs.push(wr);
+    if(i%2===0) liveObjects.push(obj); // mantém pares vivos
+  }
+  function* refScanner(){
+    var step=0;
+    while(true){
+      var snapshot=allRefs.map(function(r,i){
+        var derefed=r.deref();
+        return {i:i,alive:derefed!==undefined,id:derefed?derefed.id:'dead'};
+      });
+      var alive=snapshot.filter(function(s){return s.alive;}).length;
+      yield {step:step,alive:alive,snapshot:snapshot};
+      step++;
+      if(step>=8) return {final:true,liveCount:liveObjects.length};
+    }
+  }
+  var gen=refScanner();
+  try{
+    for(var s=0;s<10;s++){
+      if(s===2){
+        // Libera metade dos strong refs
+        liveObjects=liveObjects.filter(function(o){return o.id<4;});
+        gc();
+        log('  [step 2] liberou objects id>=4, gc()');
+      }
+      if(s===5){
+        liveObjects=[];
+        gc(); gc();
+        log('  [step 5] liberou todos, gc()×2');
+      }
+      var r=gen.next();
+      if(r.done){ log('  gen done: '+JSON.stringify(r.value)); break; }
+      var d=r.value;
+      if(s===0||s===3||s===6){
+        var aliveIds=d.snapshot.filter(function(x){return x.alive;}).map(function(x){return x.i;});
+        log('  [step '+d.step+'] alive: '+d.alive+' ids: '+aliveIds.join(','));
+      }
+    }
+  }catch(e){log('  exc: '+e.name+' '+e.message);}
+  log('[T11] done\n');
+}
+
+// ─── T12 ─────────────────────────────────────────────────────────────────────
+function t12(){
+  log('[T12] Proxy deleteProperty + ownKeys: mutação durante Object.keys()');
+  var obj={a:1,b:2,c:3,d:4,e:5,f:6};
+  var deleteLog=[];
+  var ownKeysLog=[];
+  var proxy=new Proxy(obj,{
+    deleteProperty:function(t,k){
+      deleteLog.push('del:'+k);
+      return Reflect.deleteProperty(t,k);
+    },
+    ownKeys:function(t){
+      var keys=Reflect.ownKeys(t);
+      ownKeysLog.push('ownKeys:'+keys.length);
+      // Muta o objeto durante ownKeys (enquanto Object.keys processa)
+      if(ownKeysLog.length===1){
+        delete t.b;
+        delete t.d;
+        t.injected='injected-value';
+      }
+      return keys; // retorna snapshot anterior à mutação
+    },
+    getOwnPropertyDescriptor:function(t,k){
+      // Retorna descriptor mesmo para chaves deletadas (simula stale)
+      if(!Object.prototype.hasOwnProperty.call(t,k)){
+        // Chave foi deletada mas ownKeys ainda a reportou
+        return undefined; // força remoção da lista
+      }
+      return Object.getOwnPropertyDescriptor(t,k);
+    }
+  });
+  try{
+    var keys=Object.keys(proxy);
+    log('  Object.keys: '+keys.join(','));
+    log('  deleteLog: '+deleteLog.join(','));
+    log('  ownKeysLog: '+ownKeysLog.join(','));
+    log('  obj após: '+JSON.stringify(obj));
+    // Segunda chamada: estado mudou
+    var keys2=Object.keys(proxy);
+    log('  Object.keys 2ª: '+keys2.join(','));
+    // Spread usa ownKeys também
+    var spread={...proxy};
+    log('  spread: '+JSON.stringify(spread));
+  }catch(e){log('  exc: '+e.name+' '+e.message);}
+  log('[T12] done\n');
+}
+
+// ─── T13 ─────────────────────────────────────────────────────────────────────
+function t13(){
+  log('[T13] Symbol como chave: visibilidade em spread, clone, JSON, Reflect');
+  var s1=Symbol('key1'), s2=Symbol.for('key2'), s3=Symbol('key3');
+  var obj={
+    normal:'normal-val',
+    [s1]:'sym1-val',
+    [s2]:'sym2-val',
+  };
+  Object.defineProperty(obj,s3,{
+    value:'sym3-non-enum', enumerable:false, configurable:true
+  });
+  // O que cada operação "vê"
+  log('  Object.keys: '+Object.keys(obj).join(','));
+  log('  Object.getOwnPropertyNames: '+Object.getOwnPropertyNames(obj).join(','));
+  var syms=Object.getOwnPropertySymbols(obj);
+  log('  getOwnPropertySymbols: '+syms.length+' symbols');
+  log('  Reflect.ownKeys: '+Reflect.ownKeys(obj).length+' total');
+  // Spread
+  var spread={...obj};
+  log('  spread symbols: '+Object.getOwnPropertySymbols(spread).length);
+  // JSON.stringify ignora symbols
+  log('  JSON.stringify: '+JSON.stringify(obj));
+  // structuredClone ignora symbols
+  try{
+    var cloned=structuredClone(obj);
+    log('  clone symbols: '+Object.getOwnPropertySymbols(cloned).length);
+  }catch(e){log('  clone exc: '+e.name);}
+  // Object.assign copia symbols enumeráveis
+  var target={};
+  Object.assign(target,obj);
+  log('  assign symbols: '+Object.getOwnPropertySymbols(target).length);
+  log('  assign[s1]: '+target[s1]+' assign[s2]: '+target[s2]);
+  // s3 não é enumerável — não deve ser copiado
+  log('  assign[s3]: '+target[s3]+' (deve ser undefined)');
+  log('[T13] done\n');
+}
+
+// ─── T14 ─────────────────────────────────────────────────────────────────────
+function t14(){
+  log('[T14] GC Storm: 50 registros simultâneos + buffers grandes + deref check');
+  var registry=new FinalizationRegistry(function(t){});
+  var weakRefs=[];
+  var strongPool=[];
+  // Aloca em batches
+  var BATCH=50, STRONG_KEEP=10;
+  (function allocate(){
+    for(var i=0;i<BATCH;i++){
+      var obj={
+        id:i,
+        // Buffers de tamanhos variados para stressar o heap
+        buf1:new Float64Array(512),
+        buf2:new Uint8Array(256),
+        bigBuf:i<5 ? new ArrayBuffer(4*1024*1024) : null
+      };
+      registry.register(obj,'t14-'+i);
+      weakRefs.push(new WeakRef(obj));
+      if(i<STRONG_KEEP) strongPool.push(obj);
+    }
+  })();
+  // Múltiplos GC
+  for(var g=0;g<5;g++) gc();
+  // Conta vivos
+  var alive=weakRefs.filter(function(r){return r.deref()!==undefined;}).length;
+  log('  alive após 5× gc: '+alive+'/'+BATCH);
+  log('  strongPool alive: '+strongPool.filter(function(o){return weakRefs.some(function(r){return r.deref()===o;});}).length);
+  // Libera strong refs e faz mais GC
+  strongPool=[];
+  for(var g=0;g<5;g++) gc();
+  var aliveAfter=weakRefs.filter(function(r){return r.deref()!==undefined;}).length;
+  log('  alive após liberar strong+5× gc: '+aliveAfter);
+  // Testa que WeakRef.deref retorna undefined (não objeto zumbi)
+  weakRefs.forEach(function(r,i){
+    var obj=r.deref();
+    if(obj && i>=STRONG_KEEP){
+      log('  ALERTA: obj '+i+' vivo mas não deveria estar!');
+    }
+  });
+  gc();
+  log('[T14] done\n');
+}
+
+// ─── T15 ─────────────────────────────────────────────────────────────────────
+function t15(){
+  log('[T15] Proxy apply-trap: intercepta chamada de função + receiver mutado');
+  var callLog=[];
+  function originalFn(a,b,opts){
+    return {result:a+b, thisX:this&&this.x, opts:opts};
+  }
+  var proxy=new Proxy(originalFn,{
+    apply:function(target,thisArg,args){
+      callLog.push({thisX:thisArg&&thisArg.x, args:args.slice(0,2)});
+      // Muta os argumentos antes de passar
+      if(args[0]===10){ args[0]=100; }
+      // Troca o thisArg
+      var newThis={x:(thisArg&&thisArg.x||0)*2+1};
+      // Adiciona argumento extra
+      args.push({injected:true,callNum:callLog.length});
+      return Reflect.apply(target,newThis,args);
+    },
+    construct:function(target,args){
+      callLog.push({construct:true,args:args});
+      return new target(...args,{fromConstruct:true});
+    }
+  });
+  try{
+    var ctx1={x:5};
+    var r1=proxy.call(ctx1,10,20,{original:true});
+    log('  call: result='+r1.result+' thisX='+r1.thisX+' injected='+r1.opts.injected);
+    var r2=proxy.call({x:3},1,2);
+    log('  call2: result='+r2.result+' thisX='+r2.thisX);
+    // bind + proxy
+    var bound=proxy.bind({x:99},5);
+    var r3=bound(6);
+    log('  bound: result='+r3.result+' thisX='+r3.thisX);
+    log('  callLog: '+JSON.stringify(callLog.slice(0,3)));
+  }catch(e){log('  exc: '+e.name+' '+e.message);}
+  log('[T15] done\n');
+}
+
+// ─── RUN ALL ──────────────────────────────────────────────────────────────────
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 01 — Proxy + Symbol + FinalizationRegistry + GC ===\n');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){
+    if(i>=tests.length){log('\n=== FIM ===');return;}
+    var result;
+    try{result=tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);}
+    i++;
+    if(result&&typeof result.then==='function'){
+      result.then(function(){setTimeout(next,400);}).catch(function(e){log('async exc: '+e.message);setTimeout(next,400);});
+    } else { setTimeout(next,350); }
+  }
+  next();
+}
+</script></body></html>

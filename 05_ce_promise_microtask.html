@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>05 — Custom Elements + Promise + Async Generator</title>
+<style>
+body{background:#08080f;color:#ccc;font:12px monospace;padding:12px}
+h3{color:#5bf;margin-bottom:8px}
+#log{height:420px;overflow:auto;background:#0a0a12;color:#0f0;padding:8px;white-space:pre;border:1px solid #1a2a3a;margin-bottom:8px}
+button{background:#0f1a2a;color:#5bf;border:1px solid #1a3a5a;padding:5px 10px;margin:2px;font:11px monospace;cursor:pointer}
+#sandbox{position:absolute;left:-9999px;top:0;width:300px}
+</style></head>
+<body>
+<h3>05 — Custom Elements + Promise Microtask + Async Generator + WeakRef</h3>
+<div id="log"></div>
+<div id="sandbox"></div>
+<button onclick="t01()">T01 Custom Element: remove durante connectedCallback</button>
+<button onclick="t02()">T02 Async generator com yield em lifecycle callback</button>
+<button onclick="t03()">T03 Promise microtask chain + GC entre .then() calls</button>
+<button onclick="t04()">T04 Custom Element: attributeChangedCallback reentrante</button>
+<button onclick="t05()">T05 CE upgrade: define() após elemento já no DOM</button>
+<button onclick="t06()">T06 Promise.any com rejeições + WeakRef ao resolver</button>
+<button onclick="t07()">T07 CE adoptedCallback: mover entre documentos + observer</button>
+<button onclick="t08()">T08 Async generator: throw() durante await</button>
+<button onclick="t09()">T09 CE constructor exception: elemento inválido no DOM</button>
+<button onclick="t10()">T10 Microtask flood: 1000 queueMicrotask encadeados</button>
+<button onclick="t11()">T11 CE + Shadow DOM: lifecycle em shadow tree</button>
+<button onclick="t12()">T12 Promise chain + GC + WeakRef: deref entre .then()</button>
+<button onclick="t13()">T13 CE observedAttributes vazio vs undefined vs array</button>
+<button onclick="t14()">T14 Async generator: return() + finally + WeakRef cleanup</button>
+<button onclick="t15()">T15 CE template upgrade: cloneNode + upgrade manual</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html" style="color:#5bf">← Index</a>
+
+<script>
+'use strict';
+var _L=document.getElementById('log');
+var _sb=document.getElementById('sandbox');
+function log(m){_L.textContent+=m+'\n';_L.scrollTop=_L.scrollHeight;}
+function cleanup(){_sb.innerHTML='';}
+function wait(ms){return new Promise(function(r){setTimeout(r,ms);});}
+function gc(){try{var a=[];for(var i=0;i<30;i++)a.push(new ArrayBuffer(4*1024*1024));a=null;}catch(e){}}
+
+var _ceIdx=0; // contador para nomes únicos de CE
+
+function t01(){
+  log('[T01] Custom Element: remove durante connectedCallback + re-insert');
+  cleanup();
+  var log01=[];
+  var name='ce-t01-'+(_ceIdx++);
+  try{
+    customElements.define(name, class extends HTMLElement {
+      connectedCallback(){
+        log01.push('connected:'+this.isConnected);
+        // Remove a si mesmo durante o connectedCallback
+        if(this._autoRemove && this.parentNode){
+          this.parentNode.removeChild(this);
+          log01.push('self-removed:'+this.isConnected);
+          // Re-insere durante o mesmo callback
+          _sb.appendChild(this);
+          log01.push('re-inserted:'+this.isConnected);
+        }
+      }
+      disconnectedCallback(){
+        log01.push('disconnected:'+this.isConnected);
+      }
+    });
+    var el=document.createElement(name);
+    el._autoRemove=false;
+    _sb.appendChild(el); // conecta sem auto-remove
+    log01.push('---');
+    el._autoRemove=true;
+    _sb.removeChild(el);
+    _sb.appendChild(el); // conecta com auto-remove
+  }catch(e){log('  exc: '+e.name+' '+e.message);}
+  return wait(50).then(function(){
+    log('  log01: '+log01.join(' → '));
+    cleanup();
+    log('[T01] done\n');
+  });
+}
+
+function t02(){
+  log('[T02] Async generator: yield pausado em meio a lifecycle callback');
+  cleanup();
+  var log02=[];
+  var name='ce-t02-'+(_ceIdx++);
+  var genRef={gen:null, advance:null};
+  // Cria um canal de comunicação via Promise
+  var resolveStep;
+  var stepPromise=new Promise(function(r){resolveStep=r;});
+  try{
+    customElements.define(name, class extends HTMLElement {
+      connectedCallback(){
+        log02.push('connected-start');
+        // Avança o generator de dentro do lifecycle
+        if(genRef.advance) genRef.advance('from-connected');
+        log02.push('connected-end');
+      }
+      disconnectedCallback(){
+        log02.push('disconnected');
+        if(genRef.advance) genRef.advance('from-disconnected');
+      }
+      attributeChangedCallback(name,old,nw){
+        log02.push('attr:'+name+'='+nw);
+        if(genRef.advance) genRef.advance('from-attr:'+name);
+      }
+      static get observedAttributes(){return['data-step'];}
+    });
+  }catch(e){log('  define exc: '+e.name);log('[T02] done\n');return;}
+  async function* ceGen(el){
+    log02.push('gen-start');
+    var r1=yield 'waiting-for-connect';
+    log02.push('gen-after-connect:'+r1);
+    // Adiciona o elemento ao DOM
+    _sb.appendChild(el);
+    var r2=yield 'waiting-for-attr';
+    log02.push('gen-after-attr:'+r2);
+    // Muda atributo
+    el.setAttribute('data-step','1');
+    var r3=yield 'waiting-for-disconnect';
+    log02.push('gen-after-disconnect:'+r3);
+    _sb.removeChild(el);
+    return 'gen-done';
+  }
+  var el=document.createElement(name);
+  var gen=ceGen(el);
+  genRef.gen=gen;
+  // Consome o generator manualmente
+  return gen.next().then(function(r1){
+    log('  r1: '+JSON.stringify(r1));
+    genRef.advance=function(v){ gen.next(v); };
+    // Avança com dados
+    return gen.next('advance-to-connect');
+  }).then(function(r2){
+    log('  r2: '+JSON.stringify(r2));
+    return gen.next('advance-to-attr');
+  }).then(function(r3){
+    log('  r3: '+JSON.stringify(r3));
+    return gen.next('advance-to-disconnect');
+  }).then(function(r4){
+    log('  r4: '+JSON.stringify(r4));
+    return gen.next();
+  }).then(function(final){
+    log('  final: '+JSON.stringify(final));
+    log('  log02: '+log02.join(' → '));
+    cleanup();
+    log('[T02] done\n');
+  }).catch(function(e){
+    log('  promise exc: '+e.name+' '+e.message);
+    cleanup();
+    log('[T02] done\n');
+  });
+}
+
+function t03(){
+  log('[T03] Promise microtask chain: GC coordenado entre .then() calls');
+  var chainLog=[];
+  var refs=[];
+  function makeStep(n,keepAlive){
+    var obj={step:n,data:new Float64Array(1024)};
+    var wr=new WeakRef(obj);
+    refs.push(wr);
+    return {obj:keepAlive?obj:null,wr:wr,step:n};
+  }
+  // Cria cadeia de 20 Promises, cada uma com um WeakRef
+  var steps=[];
+  for(var i=0;i<20;i++) steps.push(makeStep(i, i<5)); // 5 vivos
+  var chain=Promise.resolve();
+  steps.forEach(function(s,i){
+    chain=chain.then(function(){
+      var alive=refs.filter(function(r){return r.deref()!==undefined;}).length;
+      chainLog.push('step'+i+':alive='+alive);
+      if(i===3){ gc(); chainLog.push('gc@3'); }
+      if(i===10){ gc(); gc(); chainLog.push('gc×2@10'); }
+      if(i===15){ steps.forEach(function(s2){s2.obj=null;}); gc(); chainLog.push('gc-all@15'); }
+      return wait(0); // yield to event loop
+    });
+  });
+  return chain.then(function(){
+    log('  chainLog: '+chainLog.slice(0,12).join(' | '));
+    var finalAlive=refs.filter(function(r){return r.deref()!==undefined;}).length;
+    log('  finalAlive: '+finalAlive+'/'+refs.length);
+    log('[T03] done\n');
+  });
+}
+
+function t04(){
+  log('[T04] CE attributeChangedCallback reentrante');
+  cleanup();
+  var log04=[];
+  var name='ce-t04-'+(_ceIdx++);
+  var MAX_REENTRANT=5;
+  try{
+    customElements.define(name, class extends HTMLElement {
+      attributeChangedCallback(attrName,oldVal,newVal){
+        log04.push('attr:'+attrName+'='+newVal);
+        var count=parseInt(newVal)||0;
+        // Reentrant: modifica outro atributo durante o callback
+        if(attrName==='data-count' && count<MAX_REENTRANT){
+          this.setAttribute('data-count',count+1);
+          this.setAttribute('data-echo','echo-'+count);
+        }
+        if(attrName==='data-echo'){
+          // Segunda reentância: modifica um terceiro atributo
+          if(log04.length<30) this.setAttribute('data-flag','flag-'+newVal);
+        }
+      }
+      static get observedAttributes(){return['data-count','data-echo','data-flag'];}
+    });
+    var el=document.createElement(name);
+    _sb.appendChild(el);
+    el.setAttribute('data-count','0'); // dispara a cascata
+  }catch(e){log('  exc: '+e.name+' '+e.message);}
+  return wait(50).then(function(){
+    log('  log04 (primeiros 12): '+log04.slice(0,12).join(' | '));
+    log('  total callbacks: '+log04.length);
+    cleanup();
+    log('[T04] done\n');
+  });
+}
+
+function t05(){
+  log('[T05] CE upgrade: elementos no DOM antes do define()');
+  cleanup();
+  var name='ce-t05-'+(_ceIdx++);
+  var log05=[];
+  // Cria elementos ANTES do define
+  var el1=document.createElement(name);
+  var el2=document.createElement(name);
+  el1.setAttribute('data-pre','true');
+  _sb.appendChild(el1);
+  _sb.appendChild(el2);
+  log05.push('before-define:el1.constructor='+el1.constructor.name);
+  // Define o CE
+  try{
+    customElements.define(name, class extends HTMLElement {
+      constructor(){
+        super();
+        log05.push('constructor:connected='+this.isConnected);
+      }
+      connectedCallback(){
+        log05.push('connected:data-pre='+this.getAttribute('data-pre'));
+      }
+      static get observedAttributes(){return['data-pre','data-post'];}
+      attributeChangedCallback(n,o,v){
+        log05.push('attr:'+n+'='+v+':upgraded='+(this.constructor.name!=='HTMLElement'));
+      }
+    });
+  }catch(e){log('  define exc: '+e.name);log('[T05] done\n');return;}
+  return wait(50).then(function(){
+    log05.push('after-define:el1.constructor='+el1.constructor.name);
+    log05.push('upgraded:'+customElements.get(name).name);
+    // whenDefined resolve depois do define (já foi)
+    customElements.whenDefined(name).then(function(){
+      log05.push('whenDefined-resolved');
+    });
+    el1.setAttribute('data-post','upgraded-now');
+    return wait(50);
+  }).then(function(){
+    log('  log05: '+log05.slice(0,12).join(' → '));
+    cleanup();
+    log('[T05] done\n');
+  });
+}
+
+function t06(){
+  log('[T06] Promise.any com rejeições em cascata + WeakRef ao resolver');
+  var pLog=[];
+  var resolvedRef=null;
+  var promises=[];
+  // Cria 5 promises: 3 rejeitam, 1 resolve, 1 resolve tardio
+  var delayedResolve;
+  promises.push(Promise.reject(new Error('p0-rejected')));
+  promises.push(new Promise(function(res,rej){setTimeout(function(){rej(new Error('p1-timeout'));},10);}));
+  promises.push(new Promise(function(res,rej){setTimeout(function(){rej(new Error('p2-timeout'));},20);}));
+  promises.push(new Promise(function(res){
+    setTimeout(function(){
+      var resolved={data:new Float64Array(512),id:'p3'};
+      resolvedRef=new WeakRef(resolved);
+      res(resolved);
+    },15);
+  }));
+  promises.push(new Promise(function(res){delayedResolve=res;}));
+  try{
+    return Promise.any(promises).then(function(winner){
+      pLog.push('any-won:'+winner.id);
+      gc(); // GC após resolver
+      pLog.push('gc-done:deref='+(resolvedRef&&resolvedRef.deref()!==undefined));
+      // Deref pode ser null se GC coletou
+      delayedResolve({id:'late',data:null});
+      return wait(50);
+    }).then(function(){
+      log('  pLog: '+pLog.join(' | '));
+      gc();
+      log('  após segundo gc: deref='+(resolvedRef&&resolvedRef.deref()!==undefined));
+      log('[T06] done\n');
+    });
+  }catch(e){
+    log('  Promise.any exc: '+e.name);
+    log('[T06] done\n');
+  }
+}
+
+function t07(){
+  log('[T07] CE adoptedCallback: mover entre documentos');
+  cleanup();
+  var name='ce-t07-'+(_ceIdx++);
+  var log07=[];
+  var iframe=document.createElement('iframe');
+  iframe.style.display='none';
+  _sb.appendChild(iframe);
+  try{
+    customElements.define(name, class extends HTMLElement {
+      connectedCallback(){ log07.push('conn:doc='+(this.ownerDocument===document?'main':'other')); }
+      disconnectedCallback(){ log07.push('disconn'); }
+      adoptedCallback(oldDoc,newDoc){
+        log07.push('adopted:main='+(newDoc===document));
+      }
+    });
+    var el=document.createElement(name);
+    _sb.appendChild(el);
+  }catch(e){log('  define exc: '+e.name);log('[T07] done\n');return;}
+  return wait(50).then(function(){
+    var iDoc=iframe.contentDocument;
+    if(!iDoc){log('  no iDoc');log('[T07] done\n');return;}
+    try{
+      // Adota o CE para o iframe
+      var adopted=iDoc.adoptNode(_sb.querySelector(name));
+      log07.push('after-adopt:ownerDoc='+(adopted.ownerDocument===iDoc));
+      iDoc.body&&iDoc.body.appendChild(adopted);
+      // Adota de volta para o documento principal
+      var readopted=document.adoptNode(adopted);
+      _sb.appendChild(readopted);
+      log07.push('readopted:ownerDoc='+(readopted.ownerDocument===document));
+    }catch(e){log07.push('adopt-exc:'+e.name);}
+    return wait(50);
+  }).then(function(){
+    log('  log07: '+log07.join(' → '));
+    cleanup();
+    log('[T07] done\n');
+  });
+}
+
+function t08(){
+  log('[T08] Async generator: throw() durante await + finally cleanup');
+  var log08=[];
+  async function* asyncGen(){
+    log08.push('start');
+    try{
+      var r1=yield await Promise.resolve('step1');
+      log08.push('after-step1:'+r1);
+      var r2=yield await wait(10).then(function(){return 'step2-async';});
+      log08.push('after-step2:'+r2);
+      yield await Promise.reject(new Error('inner-reject'));
+      log08.push('never-reached');
+    }catch(e){
+      log08.push('inner-catch:'+e.message);
+      yield 'caught-step';
+      log08.push('after-caught-yield');
+    }finally{
+      log08.push('finally');
+      // Cleanup no finally
+      gc();
+    }
+    return 'gen-complete';
+  }
+  var gen=asyncGen();
+  return gen.next().then(function(r1){
+    log('  r1: '+JSON.stringify(r1));
+    return gen.next('response-to-1');
+  }).then(function(r2){
+    log('  r2: '+JSON.stringify(r2));
+    // throw externo durante await
+    return gen.throw(new Error('external-throw'));
+  }).then(function(r3){
+    log('  r3 (após throw): '+JSON.stringify(r3));
+    return gen.next('response-to-caught');
+  }).then(function(r4){
+    log('  r4: '+JSON.stringify(r4));
+    return gen.next();
+  }).then(function(final){
+    log('  final: '+JSON.stringify(final));
+    log('  log08: '+log08.join(' → '));
+    log('[T08] done\n');
+  }).catch(function(e){
+    log('  promise chain exc: '+e.name+' '+e.message);
+    log('  log08: '+log08.join(' → '));
+    log('[T08] done\n');
+  });
+}
+
+function t09(){
+  log('[T09] CE constructor exception: element inválido + upgrade recovery');
+  cleanup();
+  var name='ce-t09-'+(_ceIdx++);
+  var log09=[];
+  var throwOnConstruct=true;
+  try{
+    customElements.define(name, class extends HTMLElement {
+      constructor(){
+        super();
+        log09.push('constructor:throw='+throwOnConstruct);
+        if(throwOnConstruct){
+          throw new Error('constructor-exception');
+        }
+        this._constructed=true;
+      }
+      connectedCallback(){ log09.push('connected:_c='+this._constructed); }
+    });
+  }catch(e){log('  define exc: '+e.name);log('[T09] done\n');return;}
+  // Tenta criar o CE com exceção no constructor
+  try{
+    var el=document.createElement(name);
+    log09.push('created:'+el.constructor.name);
+    _sb.appendChild(el);
+  }catch(e){
+    log09.push('create-exc:'+e.message);
+    // Após exceção: o elemento pode ser HTMLElement genérico
+    try{
+      var el2=document.createElement(name);
+      log09.push('el2:'+el2.constructor.name);
+    }catch(e2){log09.push('el2-exc:'+e2.name);}
+  }
+  // Agora sem exceção
+  throwOnConstruct=false;
+  try{
+    var el3=document.createElement(name);
+    _sb.appendChild(el3);
+    log09.push('el3:_c='+el3._constructed);
+  }catch(e){log09.push('el3-exc:'+e.name);}
+  return wait(50).then(function(){
+    log('  log09: '+log09.join(' → '));
+    cleanup();
+    log('[T09] done\n');
+  });
+}
+
+function t10(){
+  log('[T10] Microtask flood: queueMicrotask encadeado com GC pressure');
+  var count=0;
+  var MAX=500;
+  var refs=[];
+  return new Promise(function(resolve){
+    function micro(){
+      count++;
+      // Aloca e registra WeakRef a cada 50 microtasks
+      if(count%50===0){
+        var obj={data:new Float64Array(256),step:count};
+        refs.push(new WeakRef(obj));
+        // obj sai de escopo imediatamente
+        if(count%150===0) gc();
+      }
+      if(count<MAX){
+        queueMicrotask(micro);
+      } else {
+        var alive=refs.filter(function(r){return r.deref()!==undefined;}).length;
+        log('  microtasks: '+count+' refs: '+refs.length+' alive: '+alive);
+        // Testa que o DOM ainda está responsivo
+        var el=document.createElement('div');
+        _sb.appendChild(el);
+        log('  DOM responsivo após flood: '+el.isConnected);
+        _sb.removeChild(el);
+        log('[T10] done\n');
+        resolve();
+      }
+    }
+    queueMicrotask(micro);
+  });
+}
+
+function t11(){
+  log('[T11] CE + Shadow DOM interno: lifecycle em shadow tree');
+  cleanup();
+  var log11=[];
+  var name='ce-t11-'+(_ceIdx++);
+  var innerName='ce-t11-inner-'+(_ceIdx++);
+  try{
+    // CE interno
+    customElements.define(innerName, class extends HTMLElement {
+      connectedCallback(){ log11.push('inner-conn:shadow='+(this.getRootNode() instanceof ShadowRoot)); }
+      disconnectedCallback(){ log11.push('inner-disconn'); }
+    });
+    // CE externo com shadow DOM
+    customElements.define(name, class extends HTMLElement {
+      constructor(){
+        super();
+        var shadow=this.attachShadow({mode:'open'});
+        shadow.innerHTML='<slot></slot><'+innerName+' id="si"></'+innerName+'>';
+      }
+      connectedCallback(){ log11.push('outer-conn'); }
+      disconnectedCallback(){ log11.push('outer-disconn'); }
+    });
+  }catch(e){log('  define exc: '+e.name);log('[T11] done\n');return;}
+  try{
+    var outer=document.createElement(name);
+    _sb.appendChild(outer);
+  }catch(e){log('  create exc: '+e.name);log('[T11] done\n');return;}
+  return wait(100).then(function(){
+    var outer=_sb.querySelector(name);
+    if(outer){
+      var shadow=outer.shadowRoot;
+      log11.push('shadowRoot:'+!!shadow);
+      if(shadow){
+        var inner=shadow.getElementById('si');
+        log11.push('inner:'+!!inner);
+        if(inner) log11.push('inner-conn:'+inner.isConnected+' root='+(inner.getRootNode()===shadow));
+      }
+      // Remove o outer
+      _sb.removeChild(outer);
+    }
+    return wait(50);
+  }).then(function(){
+    log('  log11: '+log11.join(' → '));
+    cleanup();
+    log('[T11] done\n');
+  });
+}
+
+function t12(){
+  log('[T12] Promise chain longa + WeakRef + GC entre .then()');
+  var refs=[];
+  var liveCount=0;
+  var CHAIN_LEN=30;
+  var KEEP_ALIVE_EVERY=5;
+  var alivePool=[];
+  function makeChainStep(i){
+    return function(){
+      var obj={step:i,buf:new Float64Array(512)};
+      var wr=new WeakRef(obj);
+      refs.push(wr);
+      if(i%KEEP_ALIVE_EVERY===0){ alivePool.push(obj); liveCount++; }
+      if(i===10){ gc(); }
+      if(i===20){ alivePool=[]; gc(); gc(); }
+      return wait(0).then(function(){ return {step:i,alive:refs.filter(function(r){return r.deref()!==undefined;}).length}; });
+    };
+  }
+  var chain=Promise.resolve();
+  var snapshots=[];
+  for(var i=0;i<CHAIN_LEN;i++){
+    var step=makeChainStep(i);
+    chain=chain.then(step).then(function(snap){
+      if(snap.step===0||snap.step===10||snap.step===20||snap.step===29){
+        snapshots.push('step'+snap.step+':alive='+snap.alive);
+      }
+      return snap;
+    });
+  }
+  return chain.then(function(){
+    log('  snapshots: '+snapshots.join(' | '));
+    gc();
+    var finalAlive=refs.filter(function(r){return r.deref()!==undefined;}).length;
+    log('  finalAlive: '+finalAlive+'/'+refs.length);
+    log('[T12] done\n');
+  });
+}
+
+function t13(){
+  log('[T13] CE observedAttributes: variantes de retorno');
+  cleanup();
+  var log13=[];
+  var names={
+    empty: 'ce-t13-empty-'+(_ceIdx++),
+    full:  'ce-t13-full-'+(_ceIdx++),
+    undef: 'ce-t13-undef-'+(_ceIdx++),
+  };
+  try{
+    customElements.define(names.empty, class extends HTMLElement {
+      attributeChangedCallback(n,o,v){ log13.push('empty-attr:'+n); }
+      static get observedAttributes(){ return []; } // vazio
+    });
+    customElements.define(names.full, class extends HTMLElement {
+      attributeChangedCallback(n,o,v){ log13.push('full-attr:'+n+'='+v); }
+      static get observedAttributes(){ return ['data-a','data-b','data-c']; }
+    });
+    customElements.define(names.undef, class extends HTMLElement {
+      attributeChangedCallback(n,o,v){ log13.push('undef-attr:'+n); }
+      // Sem observedAttributes definido
+    });
+  }catch(e){log('  define exc: '+e.name);log('[T13] done\n');return;}
+  try{
+    var el_empty=document.createElement(names.empty);
+    var el_full=document.createElement(names.full);
+    var el_undef=document.createElement(names.undef);
+    [el_empty,el_full,el_undef].forEach(function(el){ _sb.appendChild(el); });
+    ['data-a','data-b','data-c','data-x'].forEach(function(attr){
+      [el_empty,el_full,el_undef].forEach(function(el){ el.setAttribute(attr,'test'); });
+    });
+  }catch(e){log('  create exc: '+e.name);}
+  return wait(50).then(function(){
+    log('  log13: '+log13.join(' | '));
+    log('  empty callbacks: '+log13.filter(function(l){return l.startsWith('empty');}).length);
+    log('  full callbacks: '+log13.filter(function(l){return l.startsWith('full');}).length);
+    log('  undef callbacks: '+log13.filter(function(l){return l.startsWith('undef');}).length);
+    cleanup();
+    log('[T13] done\n');
+  });
+}
+
+function t14(){
+  log('[T14] Async generator: return() + finally + WeakRef cleanup');
+  var log14=[];
+  var reg=new FinalizationRegistry(function(t){ log14.push('finalized:'+t); });
+  async function* resourceGen(){
+    var resources=[];
+    try{
+      for(var i=0;i<10;i++){
+        var res={id:i,data:new Float64Array(256)};
+        reg.register(res,'res-'+i);
+        resources.push(res);
+        log14.push('yield-'+i);
+        yield {id:i,total:resources.length};
+        // Depois do yield: libera o resource anterior
+        if(i>0){ resources[i-1]=null; }
+      }
+    }finally{
+      log14.push('finally:resources='+resources.filter(Boolean).length);
+      resources=null;
+      gc();
+    }
+    return 'complete';
+  }
+  var gen=resourceGen();
+  return gen.next().then(function(r0){
+    log('  r0: '+JSON.stringify(r0));
+    return gen.next();
+  }).then(function(r1){
+    log('  r1: '+JSON.stringify(r1));
+    return gen.next();
+  }).then(function(r2){
+    log('  r2: '+JSON.stringify(r2));
+    // Força o encerramento via return()
+    return gen.return('forced');
+  }).then(function(ret){
+    log('  return(): '+JSON.stringify(ret));
+    gc(); gc();
+    return wait(200);
+  }).then(function(){
+    log('  log14: '+log14.join(' → '));
+    log('[T14] done\n');
+  }).catch(function(e){
+    log('  exc: '+e.name+' '+e.message);
+    log('[T14] done\n');
+  });
+}
+
+function t15(){
+  log('[T15] CE template: cloneNode + upgrade manual via customElements.upgrade()');
+  cleanup();
+  var name='ce-t15-'+(_ceIdx++);
+  var log15=[];
+  // Cria template com CE antes do define
+  var tmpl=document.createElement('template');
+  tmpl.innerHTML='<div class="wrapper"><'+name+' data-from="template"></'+name+'></div>';
+  // Clona o template (não upgradado ainda)
+  var clone1=tmpl.content.cloneNode(true);
+  var ceInClone=clone1.querySelector(name);
+  log15.push('before-define:ce.constructor='+ceInClone.constructor.name);
+  // Define o CE
+  try{
+    customElements.define(name, class extends HTMLElement {
+      constructor(){super(); log15.push('constructor:isConnected='+this.isConnected);}
+      connectedCallback(){ log15.push('connected:from='+this.getAttribute('data-from')); }
+    });
+  }catch(e){log('  define exc: '+e.name);log('[T15] done\n');return;}
+  // Upgrade manual do clone (antes de inserir no DOM)
+  try{
+    customElements.upgrade(clone1);
+    log15.push('upgrade:ce.constructor='+ceInClone.constructor.name);
+  }catch(e){ log15.push('upgrade-exc:'+e.name); }
+  // Insere no DOM (deve disparar connectedCallback)
+  _sb.appendChild(clone1);
+  // Clona e insere outro
+  var clone2=tmpl.content.cloneNode(true);
+  _sb.appendChild(clone2); // Upgrade implícito ao inserir
+  return wait(50).then(function(){
+    log('  log15: '+log15.join(' → '));
+    // Verifica que o CE no DOM está upgradado
+    var ceInDom=_sb.querySelector(name);
+    log('  ceInDom.constructor: '+(ceInDom?ceInDom.constructor.name:'null'));
+    cleanup();
+    log('[T15] done\n');
+  });
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 05 — CE + Promise + Async Generator + WeakRef ===\n');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){
+    if(i>=tests.length){log('\n=== FIM ===');return;}
+    var r; try{r=tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);}
+    i++;
+    if(r&&typeof r.then==='function'){r.then(function(){setTimeout(next,400);}).catch(function(){setTimeout(next,400);});}
+    else setTimeout(next,300);
+  }
+  next();
+}
+</script></body></html>
