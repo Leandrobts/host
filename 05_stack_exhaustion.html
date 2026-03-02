@@ -426,7 +426,7 @@ function t12(){
 function t13(){
   log('[T13] Stack durante Promise chain: .then() usa call stack?');
   // Cada .then() é uma microtask separada — NÃO deve empilhar
-  var maxChain=10;
+  var maxChain=100;
   var p=Promise.resolve(0);
   for(var i=0;i<maxChain;i++){
     p=p.then(function(n){return n+1;});
