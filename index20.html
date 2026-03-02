@@ -61,28 +61,33 @@ function testA(){
 /////////////////////////////
 // TEST B – Infinite async recursion
 /////////////////////////////
-function testB(){
-    log("=== TEST B START ===");
-    let depth = 0;
-    let lastLog = performance.now();
 
-    Promise.resolve().then(function recurse(){
+function testB(){
+    log("=== TEST B SAFE START ===");
+    let depth = 0;
+    let running = true;
+
+    function recurse(){
         depth++;
 
-        // Log periódico para monitorar progresso
         if(depth % 1000 === 0){
-            let now = performance.now();
-            log(`Depth=${depth} (+${(now-lastLog).toFixed(2)} ms)`);
-            lastLog = now;
+            log("Depth=" + depth);
         }
 
-        return Promise.resolve().then(recurse);
-    }).catch(e=>{
-        log("Caught: " + e);
-        log("Final depth=" + depth);
-    });
+        if(depth % 5000 === 0){
+            // yield para macrotask
+            setTimeout(()=> {
+                if(running) recurse();
+            },0);
+        } else {
+            Promise.resolve().then(()=>{
+                if(running) recurse();
+            });
+        }
+    }
 
-    log("Infinite async recursion started.");
+    recurse();
+    log("Async recursion started.");
 }
 
 /////////////////////////////
