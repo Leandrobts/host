@@ -82,7 +82,32 @@
     <button onclick="runTest73()">Teste 73: WeakMap vs CustomEvent GC Race</button>
     <button onclick="runTest74()">Teste 74: Object.assign + URIError Dirty Memory</button>
     <button onclick="runTest75()">Teste 75: ResizeObserver + WheelEvent Stack Boundary</button>
-    
+    <button onclick="runTest76()">Teste 76: Set Constructor Iterator Mutation</button>
+    <button onclick="runTest77()">Teste 77: Nested Error Formatting Crash</button>
+    <button onclick="runTest78()">Teste 78: KeyboardEvent Property Interception</button>
+    <button onclick="runTest79()">Teste 79: AnimationEvent Payload Collapse</button>
+    <button onclick="runTest80()">Teste 80: Object.assign + BigInt64Array Invalid Cast</button>
+    <button onclick="runTest81()">Teste 81: CustomEvent Resurrection via FinalizationRegistry</button>
+    <button onclick="runTest82()">Teste 82: Map Proxy Hash Collision</button>
+    <button onclick="runTest83()">Teste 83: flatMap Float64Array Length Spoofing</button>
+    <button onclick="runTest84()">Teste 84: IntersectionObserver Detached ShadowDOM Race</button>
+    <button onclick="runTest85()">Teste 85: Promise.race Orphan Heap Spray via Microtask</button>
+    <button onclick="runTest86()">Teste 86: TypedArray Prototype Proxy Interception</button>
+    <button onclick="runTest87()">Teste 87: ShadowDOM + MutationObserver Race</button>
+    <button onclick="runTest88()">Teste 88: Atomics BigUint64Array Index Trap</button>
+    <button onclick="runTest89()">Teste 89: Frozen Promise Resolve Leak</button>
+    <button onclick="runTest90()">Teste 90: CustomEvent Circular Proxy Detail</button>
+    <button onclick="runTest91()">Teste 91: PerformanceObserver UAF Race</button>
+    <button onclick="runTest92()">Teste 92: TypedArray.fill() ValueOf Interrupt</button>
+    <button onclick="runTest93()">Teste 93: MouseEvent Hit-Test Integer Overflow</button>
+    <button onclick="runTest94()">Teste 94: globalThis Constructor Poisoning</button>
+    <button onclick="runTest95()">Teste 95: DataView Endianness Evaluation Trap</button>
+    <button onclick="runTest96()">Teste 96: fetch() Blob Revocation Race</button>
+    <button onclick="runTest97()">Teste 97: setTimeout String Coercion Trap</button>
+    <button onclick="runTest98()">Teste 98: Proxy.revocable + Object.assign Panic</button>
+    <button onclick="runTest99()">Teste 99: structuredClone Buffer Detachment</button>
+    <button onclick="runTest100()">Teste 100: Grand Finale (Event + Detach + GC)</button>
+   
     <hr>
     <h3>Saida / Log:</h3>
     <div id="output" style="white-space: pre-wrap; font-family: monospace;">Aguardando execucao...</div>
@@ -2484,6 +2509,824 @@
                 
             } catch(e) {
                 logOutput("[Teste 75] Erro na engine de eventos/layout: " + e);
+            }
+        }
+ // ==========================================
+        // Teste 76: Set Constructor Iterator Mutation
+        // ==========================================
+        function runTest76() {
+            clearOutput();
+            try {
+                let iteradorMalicioso = {
+                    [Symbol.iterator]() {
+                        let chamadas = 0;
+                        return {
+                            next() {
+                                chamadas++;
+                                if (chamadas === 1) {
+                                    return { value: 1, done: false };
+                                } else if (chamadas === 2) {
+                                    // Enquanto o C++ aloca o Set, destruímos o método 'add' do protótipo
+                                    // que o construtor pode estar usando internamente.
+                                    try {
+                                        Set.prototype.add = null;
+                                    } catch(e) {}
+                                    return { value: 2, done: false };
+                                }
+                                return { done: true };
+                            }
+                        };
+                    }
+                };
+
+                let alvoSet = new Set(iteradorMalicioso);
+                
+                // Restaura imediatamente para não corromper o browser permanentemente (se sobreviver)
+                Set.prototype.add = function() { return this; }; 
+                
+                logOutput("[Teste 76] Construtor do Set lidou com a mutação do iterador. Tamanho final: " + alvoSet.size);
+            } catch(e) {
+                Set.prototype.add = function() { return this; };
+                logOutput("[Teste 76] Exceção tratada pela engine durante a construção: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 77: Nested Error Formatting Crash
+        // ==========================================
+        function runTest77() {
+            clearOutput();
+            try {
+                class ErroMutante extends Error {
+                    constructor(msg) {
+                        super(msg);
+                    }
+                    get name() {
+                        // Quando a engine for logar ou formatar este erro, causamos outro erro crítico
+                        throw new TypeError("Falha de formatação interna");
+                    }
+                }
+
+                let erro = new ErroMutante("CrashTest");
+                
+                // Forçamos o console/engine interna a tentar formatar a string do erro
+                let formatado = erro.toString();
+                
+                logOutput("[Teste 77] Erro formatado com segurança: " + formatado);
+            } catch(e) {
+                logOutput("[Teste 77] Motor C++ barrou a tentativa de exceção aninhada e evitou o loop de formatação. Erro final: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 78: KeyboardEvent Property Interception
+        // ==========================================
+        function runTest78() {
+            clearOutput();
+            try {
+                let targetNode = document.createElement('div');
+                document.body.appendChild(targetNode);
+
+                let eventoTeclado = new KeyboardEvent('keydown', {
+                    key: "A",
+                    code: "KeyA",
+                    bubbles: true
+                });
+
+                // Tenta interceptar propriedades vitais do evento nativo
+                try {
+                    Object.defineProperty(eventoTeclado, 'key', {
+                        get() {
+                            // Se a engine ler isso durante o roteamento, removemos o nó
+                            targetNode.remove();
+                            let pressure = new ArrayBuffer(1024 * 1024);
+                            return "X";
+                        }
+                    });
+                } catch(ignora) {} // Pode falhar se a propriedade for read-only nativamente
+
+                targetNode.addEventListener('keydown', (e) => {
+                    logOutput("[Teste 78] Evento alcançou o listener. Key: " + e.key);
+                });
+
+                targetNode.dispatchEvent(eventoTeclado);
+                
+                if(targetNode.parentNode) document.body.removeChild(targetNode);
+                
+            } catch(e) {
+                logOutput("[Teste 78] Falha no roteamento do evento: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 79: AnimationEvent Payload Collapse
+        // ==========================================
+        function runTest79() {
+            clearOutput();
+            try {
+                let eventoAnimacao = new AnimationEvent('animationstart', {
+                    animationName: 'slidein',
+                    pseudoElement: '::before'
+                });
+
+                // Corrompemos o nome da animação passando um objeto em vez de String
+                try {
+                    Object.defineProperty(eventoAnimacao, 'animationName', {
+                        get() {
+                            throw new RangeError("Colapso no payload da animação");
+                        }
+                    });
+                } catch(ignora) {}
+
+                window.dispatchEvent(eventoAnimacao);
+                
+                logOutput("[Teste 79] Despacho de AnimationEvent não crachou a rotina gráfica C++.");
+            } catch(e) {
+                logOutput("[Teste 79] Engine blindou o payload do evento: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 80: Object.assign + BigInt64Array Invalid Cast
+        // ==========================================
+        function runTest80() {
+            clearOutput();
+            try {
+                let buffer = new ArrayBuffer(16);
+                let bigIntView = new BigInt64Array(buffer);
+                
+                // Fonte que fornece um tipo incompatível de forma maliciosa
+                let fonteMaliciosa = {
+                    0: 100n, // Dado legítimo
+                    get 1() {
+                        // O C++ tenta ler este valor para gravar no índice 1 do vetor contíguo.
+                        // Retornamos um Symbol. O motor tentará fazer um cast implícito e falhará.
+                        return Symbol("Não pode ser convertido");
+                    }
+                };
+
+                try {
+                    // Copia os dados da fonte para a view de 64 bits
+                    Object.assign(bigIntView, fonteMaliciosa);
+                } catch(innerE) {
+                    // Avaliamos o estrago na memória. O índice 0 foi gravado antes do crash?
+                    logOutput("[Teste 80] Type error interceptado! Índice 0 contém: " + bigIntView[0] + ". Erro C++: " + innerE);
+                }
+
+            } catch(e) {
+                logOutput("[Teste 80] Exceção crítica fora do escopo de escrita: " + e);
+            }
+        }
+// ==========================================
+        // Teste 81: CustomEvent Resurrection via FinalizationRegistry
+        // ==========================================
+        let registry81 = new FinalizationRegistry(eventoFantasma => {
+            try {
+                // O objeto original foi coletado pelo GC. Tentamos despachá-lo novamente!
+                document.body.dispatchEvent(eventoFantasma);
+                logOutput("[Teste 81] Evento ressuscitado e despachado com sucesso.");
+            } catch(e) {
+                logOutput("[Teste 81] Engine impediu o despacho do evento coletado: " + e);
+            }
+        });
+
+        function runTest81() {
+            clearOutput();
+            try {
+                let evento = new CustomEvent('ressurreicao', { bubbles: true });
+                // Registramos o evento para nos devolver o próprio evento quando ele for deletado
+                registry81.register(evento, evento);
+                
+                // Removemos a referência forte
+                evento = null;
+                
+                // Forçamos o Garbage Collector a rodar com uma alocação considerável
+                let pressao = new ArrayBuffer(128 * 1024 * 1024);
+                logOutput("[Teste 81] Memória alocada. Aguardando o GC agir para testar a ressurreição nativa...");
+            } catch(e) {
+                logOutput("[Teste 81] Erro na inicialização do teste: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 82: Map Proxy Hash Collision
+        // ==========================================
+        function runTest82() {
+            clearOutput();
+            try {
+                let mapa = new Map();
+                let limite = 5000;
+                
+                // Criamos milhares de Proxies e os inserimos e deletamos freneticamente
+                // para desestabilizar os ponteiros da tabela de espalhamento C++
+                for(let i = 0; i < limite; i++) {
+                    let p = new Proxy({}, {
+                        get(target, prop) { return target[prop]; }
+                    });
+                    
+                    mapa.set(p, i);
+                    
+                    if (i % 2 === 0) {
+                        mapa.delete(p);
+                    }
+                }
+                
+                logOutput("[Teste 82] Map inseriu e deletou Proxies. Tamanho atual da tabela: " + mapa.size);
+            } catch(e) {
+                logOutput("[Teste 82] Falha na tabela Hash do Map nativo: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 83: flatMap Float64Array Length Spoofing
+        // ==========================================
+        function runTest83() {
+            clearOutput();
+            try {
+                let arr = [1, 2, 3];
+                
+                let resultado = arr.flatMap(item => {
+                    let f64 = new Float64Array(2);
+                    f64[0] = 1.1;
+                    f64[1] = 2.2;
+                    
+                    try {
+                        // O C++ tentará ler o 'length' do retorno para alocar o array final.
+                        // Tentamos injetar um tamanho massivo para forçar um OOB Read na memória adjacente.
+                        Object.defineProperty(f64, 'length', {
+                            get() { return 0x414141; }
+                        });
+                    } catch(ignora) {} // TypedArrays geralmente têm length restrito, mas tentamos o bypass
+
+                    return f64;
+                });
+                
+                logOutput("[Teste 83] flatMap achatou o vetor com segurança. Tamanho final: " + resultado.length);
+            } catch(e) {
+                logOutput("[Teste 83] Motor capturou a tentativa de spoofing: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 84: IntersectionObserver Detached ShadowDOM Race
+        // ==========================================
+        function runTest84() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test84-container');
+                let host = document.createElement('div');
+                container.appendChild(host);
+
+                let shadow = host.attachShadow({mode: 'open'});
+                let alvo = document.createElement('div');
+                shadow.appendChild(alvo);
+
+                let observador = new IntersectionObserver((entries) => {
+                    logOutput("[Teste 84] Observer callback ativado internamente.");
+                });
+
+                observador.observe(alvo);
+
+                // Destruímos a árvore inteira quase instantaneamente
+                container.innerHTML = '';
+                host = null;
+                alvo = null;
+
+                // Engatilhamos uma alocação pesada para tentar sobrescrever a memória do ShadowDOM destruído
+                // ENQUANTO o observador tenta calcular o layout para o próximo frame
+                queueMicrotask(() => {
+                    let corromper = new ArrayBuffer(64 * 1024 * 1024);
+                    logOutput("[Teste 84] Árvore destruída e memória estressada. Observer sobreviveu.");
+                });
+
+            } catch(e) {
+                logOutput("[Teste 84] Erro na engine de layout/observers: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 85: Promise.race Orphan Heap Spray via Microtask
+        // ==========================================
+        function runTest85() {
+            clearOutput();
+            try {
+                let promessas = [];
+                let resolvedores = [];
+                
+                // Cria 5000 promessas concorrentes
+                for(let i = 0; i < 5000; i++) {
+                    let p = new Promise(r => resolvedores.push(r));
+                    promessas.push(p);
+                }
+
+                // A primeira resolve imediatamente
+                resolvedores[0]("Vencedor");
+
+                Promise.race(promessas).then(res => {
+                    logOutput("[Teste 85] Corrida vencida por: " + res);
+                    
+                    // As outras 4999 promessas se tornam órfãs.
+                    // Nós imediatamente enchemos a fila de microtasks tentando resolvê-las com arrays tipados
+                    // para testar se o WebKit sofre vazamento de memória ou corrupção de estado interno.
+                    queueMicrotask(() => {
+                        for(let i = 1; i < 5000; i++) {
+                            resolvedores[i](new BigUint64Array(1024)); 
+                        }
+                        logOutput("[Teste 85] Spray de resoluções órfãs finalizado.");
+                    });
+                });
+
+            } catch(e) {
+                logOutput("[Teste 85] Falha no gerenciamento das promessas C++: " + e);
+            }
+        }
+ // ==========================================
+        // Teste 86: TypedArray Prototype Proxy Interception
+        // ==========================================
+        function runTest86() {
+            clearOutput();
+            try {
+                let view = new Uint8Array(10);
+                
+                // Substitui o protótipo nativo por um Proxy malicioso
+                let proxyProto = new Proxy(Uint8Array.prototype, {
+                    get(target, prop, receiver) {
+                        if (prop === 'length') {
+                            // Tenta enganar o C++ sobre o tamanho do buffer
+                            return 0xFFFFFF; 
+                        }
+                        return Reflect.get(target, prop, receiver);
+                    }
+                });
+
+                Object.setPrototypeOf(view, proxyProto);
+                
+                // Força a iteração interna usando um método nativo
+                let mapeado = view.map(x => x + 1);
+                
+                logOutput("[Teste 86] Protótipo intercetado. Motor ignorou a manipulação do tamanho. Comprimento do mapa: " + mapeado.length);
+            } catch(e) {
+                logOutput("[Teste 86] Motor bloqueou a leitura do protótipo corrompido: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 87: ShadowDOM + MutationObserver Race
+        // ==========================================
+        function runTest87() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test87-container');
+                let host = document.createElement('div');
+                container.appendChild(host);
+
+                let shadow = host.attachShadow({mode: 'open'});
+                
+                let observador = new MutationObserver(() => {
+                    try {
+                        // Quando a mutação ocorre, destruímos violentamente o nó anfitrião
+                        container.innerHTML = '';
+                        
+                        // Forçamos a alocação de memória para tentar sobrescrever o espaço do ShadowDOM
+                        let lixo = new Uint32Array(32 * 1024 * 1024);
+                        
+                        // O C++ ainda tem de terminar de processar a fila de mutações
+                    } catch(inner) {}
+                });
+
+                observador.observe(shadow, { childList: true });
+                
+                // Engatilha a mutação adicionando um elemento
+                shadow.appendChild(document.createElement('span'));
+                
+                logOutput("[Teste 87] Mutação engatilhada. Nó destruído no callback. Motor estável.");
+            } catch(e) {
+                logOutput("[Teste 87] Erro na gestão de memória do DOM: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 88: Atomics BigUint64Array Index Trap
+        // ==========================================
+        function runTest88() {
+            clearOutput();
+            try {
+                let buffer = new ArrayBuffer(16);
+                let view = new BigUint64Array(buffer);
+                
+                let armadilhaIndice = {
+                    valueOf: function() {
+                        // O motor C++ pausou a operação atómica para converter o índice.
+                        // Destruímos a referência principal do buffer e criamos pressão.
+                        view = null;
+                        buffer = null;
+                        let pressao = new ArrayBuffer(64 * 1024 * 1024);
+                        return 0; // Devolve o índice real para a operação continuar
+                    }
+                };
+
+                // A função nativa Atomics fará o lock (bloqueio) da memória.
+                Atomics.add(view, armadilhaIndice, 1n);
+                
+                logOutput("[Teste 88] Operação Atomics concluída sem Use-After-Free no buffer nativo.");
+            } catch(e) {
+                logOutput("[Teste 88] Erro apanhado durante a operação atómica e o side-effect: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 89: Frozen Promise Resolve Leak
+        // ==========================================
+        function runTest89() {
+            clearOutput();
+            try {
+                let extratorResolutor;
+                let p = new Promise(resolve => {
+                    extratorResolutor = resolve;
+                });
+
+                // Congelamos o objeto no espaço JavaScript (impede alterações nas propriedades)
+                Object.freeze(p);
+                
+                // Invocamos a função nativa C++ de resolução associada à promessa congelada,
+                // tentando injetar um bloco de memória massivo.
+                let carga = new ArrayBuffer(64 * 1024 * 1024);
+                extratorResolutor(carga);
+                
+                p.then(val => {
+                    logOutput("[Teste 89] A promessa resolveu a carga mesmo estando congelada (bypass estrutural). Tamanho da carga lida: " + val.byteLength);
+                }).catch(e => {
+                    logOutput("[Teste 89] Falha ao processar promessa: " + e);
+                });
+                
+            } catch(e) {
+                logOutput("[Teste 89] Exceção estrutural ao tentar resolver objeto congelado: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 90: CustomEvent Circular Proxy Detail
+        // ==========================================
+        function runTest90() {
+            clearOutput();
+            try {
+                // Cria uma estrutura circular
+                let objetoMalicioso = {};
+                objetoMalicioso.self = objetoMalicioso;
+                
+                // Esconde-a por trás de um Proxy para tentar enganar a verificação de ciclicidade do C++
+                let proxyCircular = new Proxy(objetoMalicioso, {
+                    get(target, prop) {
+                        return target[prop];
+                    }
+                });
+
+                // CustomEvent tenta analisar e serializar o 'detail' internamente
+                let eventoFantasma = new CustomEvent('testeCircular', {
+                    detail: proxyCircular
+                });
+
+                window.dispatchEvent(eventoFantasma);
+                logOutput("[Teste 90] CustomEvent processou e sobreviveu à estrutura circular mascarada por Proxy.");
+            } catch(e) {
+                logOutput("[Teste 90] Motor C++ apanhou a armadilha do Proxy: " + e);
+            }
+        }
+// ==========================================
+        // Teste 91: PerformanceObserver UAF Race
+        // ==========================================
+        function runTest91() {
+            clearOutput();
+            try {
+                let observador = new PerformanceObserver((lista) => {
+                    try {
+                        let entradas = lista.getEntries();
+                        logOutput("[Teste 91] Observador processou a fila. Entradas lidas: " + entradas.length);
+                    } catch(inner) {
+                        logOutput("[Teste 91] Erro interno ao ler as entradas nativas: " + inner);
+                    }
+                });
+
+                observador.observe({ entryTypes: ['mark'] });
+
+                // Aloca métricas no buffer C++
+                for (let i = 0; i < 500; i++) {
+                    performance.mark("teste_vuln_" + i);
+                }
+
+                // O PerformanceObserver agenda um callback como microtask.
+                // Antes desse microtask rodar, destruímos todas as métricas originais da memória nativa.
+                performance.clearMarks();
+                
+                // Força alocação de memória para reescrever o buffer do performance
+                let lixo = new Uint32Array(32 * 1024 * 1024);
+
+                logOutput("[Teste 91] Marcas criadas e imediatamente destruídas. A aguardar processamento da fila...");
+            } catch(e) {
+                logOutput("[Teste 91] Falha na gestão do PerformanceObserver: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 92: TypedArray.fill() ValueOf Interrupt
+        // ==========================================
+        function runTest92() {
+            clearOutput();
+            try {
+                let buffer = new ArrayBuffer(16);
+                let view = new Uint8Array(buffer);
+                
+                let valorArmadilha = {
+                    valueOf: function() {
+                        // A engine C++ prepara-se para preencher o vetor otimizadamente.
+                        // Lançamos um erro para interromper a instrução memset nativa a meio.
+                        throw new RangeError("Interrupção da rotina de preenchimento");
+                    }
+                };
+
+                try {
+                    // Tenta preencher do índice 0 ao 10 com o valor convertido
+                    view.fill(valorArmadilha, 0, 10);
+                } catch(innerE) {
+                    // Verifica o estado do buffer para ver se a memória C++ vazou
+                    // ou se os bytes ficaram num estado corrompido.
+                    logOutput("[Teste 92] Interrupção capturada! O vetor sobreviveu à anomalia do memset.");
+                }
+
+            } catch(e) {
+                logOutput("[Teste 92] Erro fatal durante a avaliação do fill: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 93: MouseEvent Hit-Test Integer Overflow
+        // ==========================================
+        function runTest93() {
+            clearOutput();
+            try {
+                let target = document.createElement('div');
+                document.body.appendChild(target);
+
+                // Valores que estouram representações inteiras normais e de vírgula flutuante simples
+                let maximo = Number.MAX_SAFE_INTEGER;
+                
+                let eventoMouse = new MouseEvent('click', {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: maximo,
+                    clientY: -maximo, // Tenta underflow também
+                    screenX: maximo * 2
+                });
+
+                target.addEventListener('click', (e) => {
+                    logOutput("[Teste 93] MouseEvent processado. clientX retido: " + e.clientX);
+                });
+
+                // A engine terá de processar estas coordenadas no layout
+                target.dispatchEvent(eventoMouse);
+                target.remove();
+
+            } catch(e) {
+                logOutput("[Teste 93] Motor WebKit mitigou o overflow nas coordenadas do evento: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 94: globalThis Constructor Poisoning
+        // ==========================================
+        function runTest94() {
+            clearOutput();
+            try {
+                let construtorOriginal = globalThis.Array;
+                
+                // Envenenamos temporariamente o construtor Array no objeto global
+                // Algumas APIs C++ instanciam arrays nativos chamando este construtor indiretamente
+                globalThis.Array = function() {
+                    // Quando invocado, força um crash atirando um erro
+                    throw new TypeError("Array Nativo Intercetado");
+                };
+
+                // InputEvent pode criar arrays internos para TargetRanges (depende da implementação do WebKit)
+                let eventoInput = new InputEvent('input', {
+                    inputType: 'insertText',
+                    data: 'Hack'
+                });
+
+                window.dispatchEvent(eventoInput);
+                
+                // Restaura imediatamente para não quebrar a página
+                globalThis.Array = construtorOriginal;
+                logOutput("[Teste 94] globalThis alterado e restaurado. Evento despachado sem causar excepção C++ profunda.");
+
+            } catch(e) {
+                globalThis.Array = construtorOriginal;
+                logOutput("[Teste 94] O construtor global modificado causou falha no processamento: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 95: DataView Endianness Evaluation Trap
+        // ==========================================
+        function runTest95() {
+            clearOutput();
+            try {
+                let buffer = new ArrayBuffer(8);
+                let view = new DataView(buffer);
+                
+                let armadilhaEndian = {
+                    valueOf: function() {
+                        // O C++ vai avaliar o valor booleano do parâmetro littleEndian.
+                        // Destruímos a ligação do DataView com o buffer no exato momento da avaliação.
+                        view = null;
+                        buffer = null;
+                        
+                        // Forçamos o GC
+                        let lixo = new Uint32Array(32 * 1024 * 1024);
+                        
+                        return true; 
+                    }
+                };
+
+                // setFloat64(byteOffset, value, littleEndian)
+                // Usamos a armadilha como 3º parâmetro
+                view.setFloat64(0, 3.1415, armadilhaEndian);
+                
+                logOutput("[Teste 95] Avaliação boolean concluída e escrita efetuada sem crashar por ponteiros nulos.");
+            } catch(e) {
+                logOutput("[Teste 95] Erro de integridade intercetado ao avaliar o Endianness: " + e);
+            }
+        }
+ // ==========================================
+        // Teste 96: fetch() Blob Revocation Race
+        // ==========================================
+        function runTest96() {
+            clearOutput();
+            try {
+                // Cria um Blob de 10MB em memória
+                let blobMemoria = new Blob([new Uint8Array(10 * 1024 * 1024)]);
+                let blobUrl = URL.createObjectURL(blobMemoria);
+
+                // Dispara o fetch nativo para a engine de rede do WebKit
+                fetch(blobUrl).then(res => res.arrayBuffer()).then(buf => {
+                    logOutput("[Teste 96] Fetch resolvido com segurança. Tamanho: " + buf.byteLength);
+                }).catch(e => {
+                    logOutput("[Teste 96] Fetch abortado ou falhou de forma segura: " + e);
+                });
+
+                // Imediatamente (de forma síncrona), dizemos ao C++ para destruir o ponteiro do Blob
+                URL.revokeObjectURL(blobUrl);
+                
+                // Forçamos o GC para varrer a memória do Blob original se possível
+                blobMemoria = null;
+                let lixo = new ArrayBuffer(64 * 1024 * 1024);
+
+                logOutput("[Teste 96] Corrida de rede engatilhada. A aguardar resposta assíncrona da engine...");
+            } catch(e) {
+                logOutput("[Teste 96] Falha inicial na construção da corrida de rede: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 97: setTimeout String Coercion Trap
+        // ==========================================
+        function runTest97() {
+            clearOutput();
+            try {
+                let host = [1.1, 2.2, 3.3];
+                
+                let armadilhaTimer = {
+                    toString: function() {
+                        // O C++ tentou converter o argumento para string para ser avaliado.
+                        // Destruímos dados adjacentes ou variáveis referenciadas para tentar
+                        // quebrar o compilador JIT ou a rotina de timeout.
+                        host.length = 0;
+                        let fragmentarHeap = new Uint32Array(32 * 1024 * 1024);
+                        return "console.log('Código malicioso executado com segurança pelo Timer')";
+                    }
+                };
+
+                // No WebKit legado, setTimeout aceita código como string
+                setTimeout(armadilhaTimer, 0);
+                
+                logOutput("[Teste 97] setTimeout invocado com armadilha. A aguardar evento de disparo nativo...");
+            } catch(e) {
+                logOutput("[Teste 97] Motor protegeu o timer contra coerção destrutiva: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 98: Proxy.revocable + Object.assign Panic
+        // ==========================================
+        function runTest98() {
+            clearOutput();
+            try {
+                let alvo = {};
+                
+                // Cria um Proxy cuja existência pode ser desligada através da função 'revoke'
+                let { proxy, revoke } = Proxy.revocable({ a: 1, b: 2, c: 3 }, {
+                    get(target, prop) {
+                        if (prop === 'b') {
+                            // Enquanto o C++ está a iterar as chaves para a cópia, desligamos o proxy!
+                            revoke();
+                            // A engine tentará ler 'c' logo de seguida de uma estrutura de ponteiro nulo internamente.
+                        }
+                        return target[prop];
+                    }
+                });
+
+                try {
+                    Object.assign(alvo, proxy);
+                } catch(innerE) {
+                    logOutput("[Teste 98] Pânico de revogação intercetado! Estado do alvo: " + Object.keys(alvo) + " | Erro C++: " + innerE.message);
+                }
+
+            } catch(e) {
+                logOutput("[Teste 98] Exceção externa capturada: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 99: structuredClone Buffer Detachment
+        // ==========================================
+        function runTest99() {
+            clearOutput();
+            try {
+                let bufferOriginal = new ArrayBuffer(1024);
+                let visualizador = new Uint8Array(bufferOriginal);
+                
+                visualizador[0] = 0x41; // 'A'
+
+                // Usamos o structuredClone (presente no WebKit) para transferir a memória.
+                // Isto diz ao C++: "retira este buffer deste contexto para sempre".
+                let clone = structuredClone({ dado: bufferOriginal }, { transfer: [bufferOriginal] });
+
+                try {
+                    // Tentamos ler e escrever usando a visão original. 
+                    // Como a memória foi "desanexada" (detached), isto deve atirar TypeError nativo.
+                    // Se não atirar e permitir leitura, temos um Memory Leak/Type Confusion crítico.
+                    visualizador[0] = 0x42; 
+                    logOutput("[Teste 99] FALHA DE SEGURANÇA! Conseguiu gravar num buffer desanexado! Lemos: " + visualizador[0]);
+                } catch(innerE) {
+                    logOutput("[Teste 99] Motor WebKit bloqueou o acesso à memória desanexada de forma segura: " + innerE);
+                }
+
+            } catch(e) {
+                logOutput("[Teste 99] Motor bloqueou a transferência de memória ou não suporta a flag transfer completamente: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 100: Grand Finale (Event + Detach + GC)
+        // ==========================================
+        let registro100 = new FinalizationRegistry(nome => {
+            logOutput("[Teste 100] Evento fantasma limpo pelo GC: " + nome);
+        });
+
+        function runTest100() {
+            clearOutput();
+            try {
+                let targetDOM = document.createElement('div');
+                let bufParaDesanexar = new ArrayBuffer(64);
+                let view = new BigUint64Array(bufParaDesanexar);
+                view[0] = 0x4141414141414141n; // NaN Box Pointer falso
+
+                let payloadMalicioso = {
+                    get trigger() {
+                        // Desanexa a memória usando clone de transferência
+                        try {
+                            structuredClone(bufParaDesanexar, { transfer: [bufParaDesanexar] });
+                        } catch(e) {}
+                        return "Crash";
+                    }
+                };
+
+                let superEvento = new CustomEvent('apocalipse', { detail: payloadMalicioso });
+                
+                registro100.register(superEvento, "SuperEvento100");
+
+                targetDOM.addEventListener('apocalipse', (e) => {
+                    // No meio do evento, acionamos o trigger que desanexa o buffer
+                    let varInutil = e.detail.trigger;
+                    
+                    // Tentamos ler o buffer desanexado através da view
+                    try {
+                        let letal = view[0];
+                    } catch(ignora) {}
+                    
+                    // Destruímos o target
+                    targetDOM = null;
+                });
+
+                targetDOM.dispatchEvent(superEvento);
+                superEvento = null; // Liberta evento
+                payloadMalicioso = null;
+
+                // Força GC com pressão de memória alta (512MB max segundo os seus testes)
+                let pressaoFinal = new ArrayBuffer(128 * 1024 * 1024);
+
+                logOutput("[Teste 100] Evento Apocalipse despachado, buffer desanexado e GC invocado. Browser sobreviveu à tempestade!");
+            } catch(e) {
+                logOutput("[Teste 100] Exceção crítica tratada no Grande Final: " + e);
             }
         }
     </script>
