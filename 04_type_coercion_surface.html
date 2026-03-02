@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>04 — Type Coercion Surface</title>
+<style>
+body{background:#08080f;color:#ccc;font:12px monospace;padding:12px}
+h3{color:#5bf;margin-bottom:6px}
+#log{height:440px;overflow:auto;background:#0a0a12;color:#0f0;padding:8px;white-space:pre;border:1px solid #1a2a3a;margin-bottom:8px}
+button{background:#0f1a2a;color:#5bf;border:1px solid #1a3a5a;padding:5px 10px;margin:2px;font:11px monospace;cursor:pointer}
+button:hover{background:#1a2a3a}
+.guide{background:#0a0f1a;border:1px solid #1a2a3a;padding:8px;margin-bottom:8px;font-size:11px;color:#888}
+</style></head>
+<body>
+<h3>04 — Type Coercion Surface — Conversões que Deveriam Falhar (mas não falham)</h3>
+<div class="guide">
+🔍 O QUE OBSERVAR:<br>
+• <span style="color:#4f4">✓ VALOR:</span> linha verde = operação "inválida" retornou um valor em vez de exceção → bug potencial<br>
+• <span style="color:#fa4">tipo do valor retornado</span> → Number? String? Object? indica qual path de coerção foi ativado<br>
+• <span style="color:#4f4">NaN em vez de exceção</span> → engine tentou a conversão e falhou silenciosamente<br>
+• <span style="color:#4f4">0 ou "" em vez de exceção</span> → falsy coercion inesperada<br>
+• <span style="color:#f44">crash</span> = coerção causou acesso inválido de memória<br>
+• <span style="color:#aaf">valor hex inesperado</span> em resultado numérico → bits de memória não inicializada
+</div>
+<div id="log"></div>
+<button onclick="t01()">T01 Coerção numérica: objetos, null, undefined, Symbol</button>
+<button onclick="t02()">T02 Coerção de string: tipos não-primitivos em contexto string</button>
+<button onclick="t03()">T03 Operadores aritméticos com tipos mistos e objetos</button>
+<button onclick="t04()">T04 Comparações: == entre tipos incompatíveis</button>
+<button onclick="t05()">T05 TypedArray.set() com fontes de tipo errado</button>
+<button onclick="t06()">T06 Array.from() com iteráveis incomuns</button>
+<button onclick="t07()">T07 Promise resolve com valores não-thenable estranhos</button>
+<button onclick="t08()">T08 Coerção em índices de TypedArray: float, negativo, BigInt</button>
+<button onclick="t09()">T09 Object.keys/values/entries com tipos não-objeto</button>
+<button onclick="t10()">T10 parseInt/parseFloat com inputs extremos</button>
+<button onclick="t11()">T11 Spread de tipos primitivos e não-iteráveis</button>
+<button onclick="t12()">T12 Destructuring com fontes null/undefined/primitivos</button>
+<button onclick="t13()">T13 Function.prototype.call/apply com thisArg extremo</button>
+<button onclick="t14()">T14 Coerção em operadores bitwise: float, BigInt, string</button>
+<button onclick="t15()">T15 Date: construtor com inputs incomuns e métodos extremos</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html" style="color:#5bf">← Index</a>
+<script>
+'use strict';
+var _L=document.getElementById('log');
+function log(m){_L.textContent+=m+'\n';_L.scrollTop=_L.scrollHeight;}
+
+function probe(label,fn){
+  try{
+    var r=fn();
+    var t=typeof r;
+    var display=r===undefined?'undefined':
+                r===null?'null':
+                t==='bigint'?'BigInt(0x'+r.toString(16)+')':
+                t==='function'?'[Function]':
+                t==='object'&&r?'['+r.constructor.name+']':
+                String(r).slice(0,40);
+    // Marca valores interessantes: non-undefined, non-null, não-erro e não-NaN-string
+    var interesting=r!==undefined&&r!==null&&String(r)!=='NaN'&&r!==false;
+    log('  '+(interesting?'✓ ':'  ')+label.padEnd(42)+display);
+  }catch(e){
+    log('  '+'  '+label.padEnd(42)+'exc: '+e.name);
+  }
+}
+
+// ─── T01 ──────────────────────────────────────────────────────────────────
+function t01(){
+  log('[T01] Coerção numérica: Number(x) e +x para tipos não-numéricos');
+  var cases=[
+    ['Number(null)',         function(){return Number(null);}],
+    ['Number(undefined)',    function(){return Number(undefined);}],
+    ['Number(true)',         function(){return Number(true);}],
+    ['Number(false)',        function(){return Number(false);}],
+    ['Number("")',           function(){return Number('');}],
+    ['Number("  ")',         function(){return Number('  ');}],
+    ['Number("0x1A")',       function(){return Number('0x1A');}],
+    ['Number("0b1010")',     function(){return Number('0b1010');}],
+    ['Number("0o17")',       function(){return Number('0o17');}],
+    ['Number("Infinity")',   function(){return Number('Infinity');}],
+    ['Number("-Infinity")',  function(){return Number('-Infinity');}],
+    ['Number("1e308")',      function(){return Number('1e308');}],
+    ['Number("1e309")',      function(){return Number('1e309');}],
+    ['Number(Symbol("x"))', function(){return Number(Symbol('x'));}],
+    ['Number(42n)',          function(){return Number(42n);}],
+    ['Number([])',           function(){return Number([]);}],
+    ['Number([1])',          function(){return Number([1]);}],
+    ['Number([1,2])',        function(){return Number([1,2]);}],
+    ['Number({})',           function(){return Number({});}],
+    ['Number({valueOf:()=>42})',function(){return Number({valueOf:function(){return 42;}});}],
+    ['+Symbol("x")',         function(){return +Symbol('x');}],
+    ['+42n',                 function(){return +42n;}],
+    ['+[]',                  function(){return +[];}],
+    ['+{}',                  function(){return +{};}],
+  ];
+  cases.forEach(function(c){probe(c[0],c[1]);});
+  log('[T01] done\n');
+}
+
+// ─── T02 ──────────────────────────────────────────────────────────────────
+function t02(){
+  log('[T02] Coerção de string: String(x) e template literals');
+  var cases=[
+    ['String(null)',              function(){return String(null);}],
+    ['String(undefined)',         function(){return String(undefined);}],
+    ['String(Symbol("x"))',       function(){return String(Symbol('x'));}],
+    ['String(42n)',               function(){return String(42n);}],
+    ['String(-0)',                function(){return String(-0);}],
+    ['String(NaN)',               function(){return String(NaN);}],
+    ['String(Infinity)',          function(){return String(Infinity);}],
+    ['String(-Infinity)',         function(){return String(-Infinity);}],
+    ['String([])',                function(){return String([]);}],
+    ['String([1,2,3])',           function(){return String([1,2,3]);}],
+    ['String([[1],[2]])',         function(){return String([[1],[2]]);}],
+    ['String({})',                function(){return String({});}],
+    ['String({toString:()=>42})', function(){return String({toString:function(){return 42;}});}],
+    ['`${null}`',                 function(){return `${null}`;}],
+    ['`${undefined}`',            function(){return `${undefined}`;}],
+    ['`${Symbol("x")}`',          function(){return `${Symbol('x')}`;}],
+    ['`${42n}`',                  function(){return `${42n}`;}],
+    ['[null,undefined].join(",")',function(){return [null,undefined].join(',');}],
+    ['[Symbol()].join(",")',      function(){return [Symbol()].join(',');}],
+    ['("").concat(Symbol())',     function(){return ''.concat(Symbol());}],
+    ['"x"+Symbol()',              function(){return 'x'+Symbol();}],
+  ];
+  cases.forEach(function(c){probe(c[0],c[1]);});
+  log('[T02] done\n');
+}
+
+// ─── T03 ──────────────────────────────────────────────────────────────────
+function t03(){
+  log('[T03] Operadores aritméticos com tipos mistos');
+  var obj={valueOf:function(){return 10;}};
+  var arr=[5];
+  var cases=[
+    ['"5" + 3',              function(){return '5'+3;}],
+    ['"5" - 3',              function(){return '5'-3;}],
+    ['"5" * "3"',            function(){return '5'*'3';}],
+    ['"5" / "2"',            function(){return '5'/'2';}],
+    ['null + 1',             function(){return null+1;}],
+    ['null + "str"',         function(){return null+'str';}],
+    ['undefined + 1',        function(){return undefined+1;}],
+    ['undefined + "str"',    function(){return undefined+'str';}],
+    ['[] + []',              function(){return []+[];}],
+    ['[] + {}',              function(){return []+ {};}],
+    ['{} + []',              function(){return {}+[];}],  // ASI: {} é bloco, não objeto
+    ['obj + 1',              function(){return obj+1;}],
+    ['arr + 1',              function(){return arr+1;}],
+    ['arr * 3',              function(){return arr*3;}],
+    ['true + true',          function(){return true+true;}],
+    ['false * 5',            function(){return false*5;}],
+    ['null * null',          function(){return null*null;}],
+    ['1 / 0',                function(){return 1/0;}],
+    ['-1 / 0',               function(){return -1/0;}],
+    ['0 / 0',                function(){return 0/0;}],
+    ['-0 === 0',             function(){return -0===0;}],
+    ['1 / -0',               function(){return 1/-0;}],
+    ['Infinity - Infinity',  function(){return Infinity-Infinity;}],
+    ['Infinity * 0',         function(){return Infinity*0;}],
+  ];
+  cases.forEach(function(c){probe(c[0],c[1]);});
+  log('[T03] done\n');
+}
+
+// ─── T04 ──────────────────────────────────────────────────────────────────
+function t04(){
+  log('[T04] Comparações == entre tipos incompatíveis (Abstract Equality)');
+  var cases=[
+    ['null == undefined',    function(){return null==undefined;}],
+    ['null == false',        function(){return null==false;}],
+    ['null == 0',            function(){return null==0;}],
+    ['null == ""',           function(){return null=='';}],
+    ['undefined == false',   function(){return undefined==false;}],
+    ['0 == ""',              function(){return 0=='';}],
+    ['0 == "0"',             function(){return 0=='0';}],
+    ['0 == false',           function(){return 0==false;}],
+    ['"" == false',          function(){return ''==false;}],
+    ['"1" == true',          function(){return '1'==true;}],
+    ['"2" == true',          function(){return '2'==true;}],
+    ['[] == false',          function(){return []==false;}],
+    ['[] == 0',              function(){return []==0;}],
+    ['[""] == false',        function(){return ['']==false;}],
+    ['["0"] == false',       function(){return ['0']==false;}],
+    ['[[]] == false',        function(){return [[]]==false;}],
+    ['NaN == NaN',           function(){return NaN==NaN;}],
+    ['NaN === NaN',          function(){return NaN===NaN;}],
+    ['null == null',         function(){return null==null;}],
+    ['{} == {}',             function(){return {}=={};}],
+    ['Symbol() == Symbol()', function(){var s=Symbol();return s==s;}],
+    ['42n == 42',            function(){return 42n==42;}],
+    ['42n === 42',           function(){return 42n===42;}],
+    ['42n == "42"',          function(){return 42n=='42';}],
+  ];
+  cases.forEach(function(c){probe(c[0],c[1]);});
+  log('[T04] done\n');
+}
+
+// ─── T05 ──────────────────────────────────────────────────────────────────
+function t05(){
+  log('[T05] TypedArray.set() com fontes de tipo inesperado');
+  var dest=new Float64Array(8);
+  var cases=[
+    ['set(Array normal)',       function(){dest.set([1,2,3]); return dest[0]+'..'+dest[2];}],
+    ['set(string "123")',       function(){dest.set('123'); return dest[0]+','+dest[1]+','+dest[2];}],
+    ['set(null)',               function(){dest.set(null); return 'ok';}],
+    ['set(undefined)',          function(){dest.set(undefined); return 'ok';}],
+    ['set(number 42)',          function(){dest.set(42); return 'ok';}],
+    ['set(objeto com length)',  function(){
+      dest.set({length:3,0:10,1:20,2:30}); return dest[0]+','+dest[1]+','+dest[2];
+    }],
+    ['set(Float64Array offset>bounds)',function(){
+      var src=new Float64Array([9,8,7]);
+      dest.set(src,7); return dest[7];
+    }],
+    ['set(Float64Array offset negativo)',function(){
+      dest.set(new Float64Array([1]),- 1); return 'ok';
+    }],
+    ['set(array maior que dest)',function(){
+      dest.set([1,2,3,4,5,6,7,8,9,10]); return 'ok';
+    }],
+    ['set(iterável gerador)',   function(){
+      function* gen(){yield 1;yield 2;yield 3;}
+      dest.set(gen()); return dest[0]+','+dest[1];
+    }],
+    ['set(BigInt64Array em Float64)',function(){
+      var src=new BigInt64Array([1n,2n,3n]);
+      dest.set(src); return dest[0]+','+dest[1];
+    }],
+  ];
+  cases.forEach(function(c){probe(c[0],c[1]);});
+  log('[T05] done\n');
+}
+
+// ─── T06 ──────────────────────────────────────────────────────────────────
+function t06(){
+  log('[T06] Array.from() com iteráveis e array-likes incomuns');
+  var cases=[
+    ['Array.from(null)',         function(){return Array.from(null);}],
+    ['Array.from(undefined)',    function(){return Array.from(undefined);}],
+    ['Array.from(42)',           function(){return Array.from(42);}],
+    ['Array.from("hello")',      function(){return Array.from('hello').join(',');}],
+    ['Array.from(new Set([1,2,3]))',function(){return Array.from(new Set([1,2,3])).join(',');}],
+    ['Array.from(Map)',          function(){return Array.from(new Map([[1,"a"],[2,"b"]])).join(';');}],
+    ['Array.from({length:3})',   function(){return Array.from({length:3}).join(',');}], // sparse
+    ['Array.from({length:-1})',  function(){return Array.from({length:-1}).length;}],
+    ['Array.from({length:NaN})', function(){return Array.from({length:NaN}).length;}],
+    ['Array.from({length:Inf})', function(){return Array.from({length:Infinity}).length;}],
+    ['Array.from(gen)',          function(){
+      function* g(){yield 1;yield 2;yield 3;}
+      return Array.from(g()).join(',');
+    }],
+    ['Array.from com mapFn',     function(){
+      return Array.from({length:4},function(v,i){return i*i;}).join(',');
+    }],
+    ['Array.from,mapFn lança',   function(){
+      return Array.from({length:4},function(v,i){if(i===2)throw new Error('map-throw'); return i;});
+    }],
+    ['Array.from(Symbol)',       function(){return Array.from(Symbol('x'));}],
+    ['Array.from(Float64Array)', function(){
+      return Array.from(new Float64Array([1.1,2.2,3.3])).join(',');
+    }],
+  ];
+  cases.forEach(function(c){probe(c[0],c[1]);});
+  log('[T06] done\n');
+}
+
+// ─── T07 ──────────────────────────────────────────────────────────────────
+function t07(){
+  log('[T07] Promise.resolve com valores thenable incomuns');
+  var thenLogs=[];
+  var cases=[
+    ['Promise.resolve(42)',          function(){return Promise.resolve(42);}],
+    ['Promise.resolve(null)',        function(){return Promise.resolve(null);}],
+    ['Promise.resolve(undefined)',   function(){return Promise.resolve(undefined);}],
+    ['Promise.resolve(Symbol)',      function(){return Promise.resolve(Symbol('x'));}],
+    ['Promise.resolve(42n)',         function(){return Promise.resolve(42n);}],
+    ['Promise.resolve(thenable)',    function(){
+      // Um thenable que imediatamente resolve
+      return Promise.resolve({then:function(r){thenLogs.push('then-called');r(99);}});
+    }],
+    ['Promise.resolve(thenable-reject)',function(){
+      return Promise.resolve({then:function(r,j){thenLogs.push('rej-called');j(new Error('rej'));}});
+    }],
+    ['Promise.resolve(bad-thenable)',function(){
+      // thenable.then não é função
+      return Promise.resolve({then:42});
+    }],
+    ['Promise.resolve(self-resolving)',function(){
+      var p=Promise.resolve(42);
+      return Promise.resolve(p); // deve retornar o mesmo p
+    }],
+    ['Promise.reject(undefined)',    function(){
+      var p=Promise.reject(undefined); p.catch(function(){});return p;
+    }],
+  ];
+  cases.forEach(function(c){probe(c[0],c[1]);});
+  return new Promise(function(resolve){
+    setTimeout(function(){
+      log('  thenLogs: '+thenLogs.join(' | '));
+      log('[T07] done\n');
+      resolve();
+    },200);
+  });
+}
+
+// ─── T08 ──────────────────────────────────────────────────────────────────
+function t08(){
+  log('[T08] Coerção em índices de TypedArray: float, negativo, BigInt como índice');
+  var f64=new Float64Array(8);
+  for(var i=0;i<8;i++) f64[i]=i*10;
+  // Quando se usa índice que não é inteiro, o JS converte para string e acessa como propriedade
+  // TypedArrays têm comportamento especial: apenas índices inteiros válidos [0,length) são elementos
+  var cases=[
+    ['f64[0.5]',    function(){return f64[0.5];}],      // undefined (não é índice válido)
+    ['f64[0.9]',    function(){return f64[0.9];}],      // undefined
+    ['f64[-0]',     function(){return f64[-0];}],       // f64[0] (−0 → "0")
+    ['f64[1e1]',    function(){return f64[1e1];}],      // f64[10] = undefined (out of bounds)
+    ['f64[1e0]',    function(){return f64[1e0];}],      // f64[1] = 10
+    ['f64["0"]',    function(){return f64['0'];}],      // f64[0] = 0
+    ['f64["1.0"]',  function(){return f64['1.0'];}],    // undefined (não converte "1.0"→1)
+    ['f64[true]',   function(){return f64[true];}],     // f64[1] = 10
+    ['f64[null]',   function(){return f64[null];}],     // f64[0] = 0 (null→"null"→NaN? ou 0?)
+    ['f64[false]',  function(){return f64[false];}],    // f64[0] = 0
+    // Set com esses índices
+    ['f64[0.5]=99', function(){f64[0.5]=99; return f64[0.5]+'/f64[0]='+f64[0];}],
+    ['f64[-1]=99',  function(){f64[-1]=99; return f64[-1];}],
+    // BigInt como índice
+    ['f64[0n]',     function(){return f64[0n];}],
+    ['f64[1n]',     function(){return f64[1n];}],
+    ['f64[0n]=99',  function(){f64[0n]=99; return f64[0n]+'/f64[0]='+f64[0];}],
+  ];
+  cases.forEach(function(c){probe(c[0],c[1]);});
+  log('[T08] done\n');
+}
+
+// ─── T09 ──────────────────────────────────────────────────────────────────
+function t09(){
+  log('[T09] Object.keys/values/entries com tipos não-objeto');
+  var cases=[
+    ['Object.keys(null)',       function(){return Object.keys(null);}],
+    ['Object.keys(undefined)',  function(){return Object.keys(undefined);}],
+    ['Object.keys(42)',         function(){return Object.keys(42).join(',');}],
+    ['Object.keys("hello")',    function(){return Object.keys('hello').join(',');}],
+    ['Object.keys(true)',       function(){return Object.keys(true).join(',');}],
+    ['Object.keys(Symbol())',   function(){return Object.keys(Symbol());}],
+    ['Object.keys(42n)',        function(){return Object.keys(42n);}],
+    ['Object.keys([])',         function(){return Object.keys([]).join(',');}],
+    ['Object.keys([1,2,3])',    function(){return Object.keys([1,2,3]).join(',');}],
+    ['Object.values(null)',     function(){return Object.values(null);}],
+    ['Object.values("hello")',  function(){return Object.values('hello').join(',');}],
+    ['Object.entries(null)',    function(){return Object.entries(null);}],
+    ['Object.entries("ab")',    function(){return Object.entries('ab').join(';');}],
+    ['Object.assign(null,{})',  function(){return Object.assign(null,{});}],
+    ['Object.assign(42,{x:1})',function(){return Object.assign(42,{x:1});}],
+    ['Object.freeze(null)',     function(){return Object.freeze(null);}],
+    ['Object.freeze(42)',       function(){return Object.freeze(42);}],
+    ['Object.getPrototypeOf(null)',function(){return Object.getPrototypeOf(null);}],
+    ['Object.getPrototypeOf(42)',  function(){return Object.getPrototypeOf(42);}],
+    ['Object.create(42)',          function(){return Object.create(42);}],
+  ];
+  cases.forEach(function(c){probe(c[0],c[1]);});
+  log('[T09] done\n');
+}
+
+// ─── T10 ──────────────────────────────────────────────────────────────────
+function t10(){
+  log('[T10] parseInt/parseFloat com inputs extremos e bases');
+  var cases=[
+    ['parseInt("",10)',          function(){return parseInt('',10);}],
+    ['parseInt(null)',           function(){return parseInt(null);}],
+    ['parseInt(undefined)',      function(){return parseInt(undefined);}],
+    ['parseInt(Infinity)',       function(){return parseInt(Infinity);}],
+    ['parseInt("0xZZ")',         function(){return parseInt('0xZZ');}],
+    ['parseInt("08",10)',        function(){return parseInt('08',10);}],
+    ['parseInt("08",8)',         function(){return parseInt('08',8);}],  // 8 inválido em octal
+    ['parseInt("1e10")',         function(){return parseInt('1e10');}],   // 1, não 10^10
+    ['parseInt("1e10",10)',      function(){return parseInt('1e10',10);}],
+    ['parseInt(1e20)',           function(){return parseInt(1e20);}],     // float→string→parse
+    ['parseInt(1e308)',          function(){return parseInt(1e308);}],    // "Infinity" ou número?
+    ['parseInt(0.0000001)',      function(){return parseInt(0.0000001);}],// "1e-7" → 1
+    ['parseInt({},10)',          function(){return parseInt({},10);}],
+    ['parseInt([1.5],10)',       function(){return parseInt([1.5],10);}],
+    ['parseInt(-0)',             function(){return parseInt(-0);}],
+    ['parseFloat(".")',          function(){return parseFloat('.');}],
+    ['parseFloat(".5")',         function(){return parseFloat('.5');}],
+    ['parseFloat("1.")',         function(){return parseFloat('1.');}],
+    ['parseFloat("1.2.3")',      function(){return parseFloat('1.2.3');}],
+    ['parseFloat(1e308*2)',      function(){return parseFloat(1e308*2);}],
+    ['Number.parseInt vs parseInt', function(){return Number.parseInt===parseInt;}],
+  ];
+  cases.forEach(function(c){probe(c[0],c[1]);});
+  log('[T10] done\n');
+}
+
+// ─── T11 ──────────────────────────────────────────────────────────────────
+function t11(){
+  log('[T11] Spread de primitivos e não-iteráveis em contextos variados');
+  var cases=[
+    ['[...null]',               function(){return [...null];}],
+    ['[...undefined]',          function(){return [...undefined];}],
+    ['[...42]',                 function(){return [...42];}],
+    ['[...true]',               function(){return [...true];}],
+    ['[..."hello"]',            function(){return [...'hello'].join(',');}],
+    ['[...Symbol()]',           function(){return [...Symbol()];}],
+    ['[...42n]',                function(){return [...42n];}],
+    ['[...[1,2,3]]',            function(){return [...[1,2,3]].join(',');}],
+    ['[...new Set([1,2,3])]',   function(){return [...new Set([1,2,3])].join(',');}],
+    ['[...new Map([[1,2]])]',   function(){return [...new Map([[1,2]])].join(';');}],
+    // Spread em chamada de função
+    ['Math.max(...[1,2,3])',    function(){return Math.max(...[1,2,3]);}],
+    ['Math.max(...null)',        function(){return Math.max(...null);}],
+    ['Math.max(..."123")',       function(){return Math.max(...'123');}],
+    // Spread em objeto
+    ['{...null}',               function(){return JSON.stringify({...null});}],
+    ['{...undefined}',          function(){return JSON.stringify({...undefined});}],
+    ['{...42}',                 function(){return JSON.stringify({...42});}],
+    ['{..."hello"}',            function(){return JSON.stringify({...'hello'});}],
+    ['{...true}',               function(){return JSON.stringify({...true});}],
+    ['{...Symbol()}',           function(){return JSON.stringify({...Symbol()});}],
+  ];
+  cases.forEach(function(c){probe(c[0],c[1]);});
+  log('[T11] done\n');
+}
+
+// ─── T12 ──────────────────────────────────────────────────────────────────
+function t12(){
+  log('[T12] Destructuring de null, undefined e primitivos');
+  var cases=[
+    ['const {x}=null',          function(){var {x}=null; return x;}],
+    ['const {x}=undefined',     function(){var {x}=undefined; return x;}],
+    ['const {x}=42',            function(){var {x}=42; return x;}],
+    ['const {x}="hello"',       function(){var {x}='hello'; return x;}],
+    ['const {length}="hello"',  function(){var {length}='hello'; return length;}], // string tem length!
+    ['const [x]=null',          function(){var [x]=null; return x;}],
+    ['const [x]=undefined',     function(){var [x]=undefined; return x;}],
+    ['const [x]=42',            function(){var [x]=42; return x;}],
+    ['const [x]="hello"',       function(){var [x]='hello'; return x;}],
+    ['const [x]=new Set([1,2])',function(){var [x]=new Set([1,2]); return x;}],
+    ['const [a,b,c,d]=[1,2]',   function(){var [a,b,c,d]=[1,2]; return [a,b,c,d].join(',');}],
+    // Default values
+    ['const {x=10}={}',         function(){var {x=10}={}; return x;}],
+    ['const {x=10}={x:undefined}',function(){var {x=10}={x:undefined}; return x;}],
+    ['const {x=10}={x:null}',   function(){var {x=10}={x:null}; return x;}], // null não ativa default!
+    ['const {x=10}={x:false}',  function(){var {x=10}={x:false}; return x;}],
+    // Rest
+    ['const [a,...r]=[]',       function(){var [a,...r]=[]; return r.length;}],
+    ['const {a,...r}={}',       function(){var {a,...r}={}; return Object.keys(r).join(',');}],
+  ];
+  cases.forEach(function(c){probe(c[0],c[1]);});
+  log('[T12] done\n');
+}
+
+// ─── T13 ──────────────────────────────────────────────────────────────────
+function t13(){
+  log('[T13] Function.call/apply com thisArg extremos em strict mode');
+  function getThis(){return this;}
+  function getThisStrict(){'use strict';return this;}
+  var cases=[
+    ['getThis.call(null)',        function(){return typeof getThis.call(null);}],
+    ['getThis.call(undefined)',   function(){return typeof getThis.call(undefined);}],
+    ['getThis.call(42)',          function(){return typeof getThis.call(42);}], // boxed number
+    ['getThis.call("str")',       function(){return typeof getThis.call('str');}],
+    ['getThis.call(true)',        function(){return typeof getThis.call(true);}],
+    ['getThis.call(Symbol())',    function(){return typeof getThis.call(Symbol());}],
+    ['getThis.call(42n)',         function(){return typeof getThis.call(42n);}],
+    // Strict: thisArg não é wrappado
+    ['getThisStrict.call(null)',  function(){return getThisStrict.call(null);}],
+    ['getThisStrict.call(42)',    function(){return typeof getThisStrict.call(42);}],
+    ['getThisStrict.call("str")',function(){return typeof getThisStrict.call('str');}],
+    // apply com args inválidos
+    ['fn.apply({},null)',         function(){return getThis.apply({},null);}],
+    ['fn.apply({},undefined)',    function(){return getThis.apply({},undefined);}],
+    ['fn.apply({},42)',           function(){return getThis.apply({},42);}],
+    ['fn.apply({},"abc")',        function(){return getThis.apply({},'abc');}],
+    // bind
+    ['fn.bind(null)()',           function(){return typeof getThis.bind(null)();}],
+    ['fn.bind(42)()',             function(){return typeof getThis.bind(42)();}],
+    ['fn.bind(Symbol())()',       function(){return typeof getThis.bind(Symbol())();}],
+  ];
+  cases.forEach(function(c){probe(c[0],c[1]);});
+  log('[T13] done\n');
+}
+
+// ─── T14 ──────────────────────────────────────────────────────────────────
+function t14(){
+  log('[T14] Operadores bitwise com tipos não-inteiros');
+  var cases=[
+    ['1.9 | 0',             function(){return 1.9|0;}],   // trunca para int
+    ['-1.9 | 0',            function(){return -1.9|0;}],
+    ['NaN | 0',             function(){return NaN|0;}],
+    ['Infinity | 0',        function(){return Infinity|0;}],
+    ['-Infinity | 0',       function(){return -Infinity|0;}],
+    ['1e308 | 0',           function(){return 1e308|0;}],
+    ['1e20 | 0',            function(){return 1e20|0;}],
+    ['"3" | 0',             function(){return '3'|0;}],
+    ['"3.9" | 0',           function(){return '3.9'|0;}],
+    ['"abc" | 0',           function(){return 'abc'|0;}],
+    ['true | 0',            function(){return true|0;}],
+    ['null | 0',            function(){return null|0;}],
+    ['undefined | 0',       function(){return undefined|0;}],
+    ['[] | 0',              function(){return []|0;}],
+    ['[1] | 0',             function(){return [1]|0;}],
+    ['2147483647 + 1 | 0',  function(){return (2147483647+1)|0;}],  // overflow int32
+    ['4294967296 | 0',      function(){return 4294967296|0;}],       // 2^32 → 0
+    ['4294967297 | 0',      function(){return 4294967297|0;}],       // 2^32+1 → 1
+    ['~null',               function(){return ~null;}],
+    ['~undefined',          function(){return ~undefined;}],
+    ['~NaN',                function(){return ~NaN;}],
+    ['~Infinity',           function(){return ~Infinity;}],
+    ['-2147483648 >> 1',    function(){return -2147483648>>1;}],
+    ['0 >>> -1',            function(){return 0>>>-1;}],             // unsigned shift negativo
+  ];
+  cases.forEach(function(c){probe(c[0],c[1]);});
+  log('[T14] done\n');
+}
+
+// ─── T15 ──────────────────────────────────────────────────────────────────
+function t15(){
+  log('[T15] Date: constructor com inputs incomuns e métodos extremos');
+  var cases=[
+    ['new Date()',              function(){return new Date().getFullYear();}],
+    ['new Date(0)',             function(){return new Date(0).toISOString();}],
+    ['new Date(-0)',            function(){return new Date(-0).toISOString();}],
+    ['new Date(Infinity)',      function(){return new Date(Infinity).toString().slice(0,8);}],
+    ['new Date(-Infinity)',     function(){return new Date(-Infinity).toString().slice(0,8);}],
+    ['new Date(NaN)',           function(){return new Date(NaN).toString().slice(0,8);}],
+    ['new Date(1e20)',          function(){return new Date(1e20).toString().slice(0,8);}],
+    ['new Date(null)',          function(){return new Date(null).toISOString();}],
+    ['new Date(undefined)',     function(){return new Date(undefined).toString().slice(0,8);}],
+    ['new Date("")',            function(){return new Date('').toString().slice(0,8);}],
+    ['new Date("invalid")',     function(){return isNaN(new Date('invalid'));}],
+    ['new Date(2024,13,1)',     function(){return new Date(2024,13,1).toISOString().slice(0,10);}], // mês 13 = fev do próximo ano
+    ['new Date(2024,0,-1)',     function(){return new Date(2024,0,-1).toISOString().slice(0,10);}], // dia -1 = dez anterior
+    ['Date.now()',              function(){return Date.now()>0;}],
+    ['Date.parse("")',          function(){return Date.parse('');}],
+    ['Date.parse(null)',        function(){return Date.parse(null);}],
+    ['Date.UTC(NaN)',           function(){return Date.UTC(NaN);}],
+    ['Date.UTC(Infinity)',      function(){return Date.UTC(Infinity);}],
+    // Métodos em data inválida
+    ['new Date(NaN).getTime()',function(){return new Date(NaN).getTime();}],
+    ['new Date(NaN).getFullYear()',function(){return new Date(NaN).getFullYear();}],
+    ['new Date(NaN).toISOString()',function(){return new Date(NaN).toISOString();}],
+  ];
+  cases.forEach(function(c){probe(c[0],c[1]);});
+  log('[T15] done\n');
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 04 — TYPE COERCION SURFACE ===\n');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){
+    if(i>=tests.length){log('\n=== FIM ===');return;}
+    var r; try{r=tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);}
+    i++;
+    if(r&&typeof r.then==='function') r.then(function(){setTimeout(next,300);}).catch(function(){setTimeout(next,300);});
+    else setTimeout(next,250);
+  }
+  next();
+}
+</script></body></html>

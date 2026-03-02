@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>03 — Exception Boundary</title>
+<style>
+body{background:#08080f;color:#ccc;font:12px monospace;padding:12px}
+h3{color:#5bf;margin-bottom:6px}
+#log{height:440px;overflow:auto;background:#0a0a12;color:#0f0;padding:8px;white-space:pre;border:1px solid #1a2a3a;margin-bottom:8px}
+button{background:#0f1a2a;color:#5bf;border:1px solid #1a3a5a;padding:5px 10px;margin:2px;font:11px monospace;cursor:pointer}
+.guide{background:#1a0f0f;border:1px solid #3a1a1a;padding:8px;margin-bottom:8px;font-size:11px;color:#888}
+</style></head>
+<body>
+<h3>03 — Exception Boundary — Onde o Engine Verifica (e Onde Não Verifica)</h3>
+<div class="guide">
+🔍 O QUE OBSERVAR:<br>
+• <span style="color:#4f4">PASSOU SEM EXCEÇÃO</span> onde esperava → engine não verifica esse caso = superfície de bug<br>
+• <span style="color:#4f4">valor retornado</span> em vez de exceção → o que está naquele endereço de memória?<br>
+• <span style="color:#fa4">tipo de exceção</span> → TypeError vs RangeError diz qual path de código foi atingido<br>
+• <span style="color:#f44">crash</span> em vez de exceção → o engine nem chegou a verificar<br>
+• <span style="color:#aaf">undefined em vez de exceção</span> → leitura de memória não inicializada
+</div>
+<div id="log"></div>
+<button onclick="t01()">T01 Array: índices negativos, NaN, Infinity, fracionários</button>
+<button onclick="t02()">T02 TypedArray: acesso além do length com todos os tipos</button>
+<button onclick="t03()">T03 String: charCodeAt/charAt em posições extremas</button>
+<button onclick="t04()">T04 DataView: offsets além do buffer com todas as operações</button>
+<button onclick="t05()">T05 Proxy defineProperty: viola invariantes do objeto target</button>
+<button onclick="t06()">T06 Reflect.construct: target inválido vs newTarget inválido</button>
+<button onclick="t07()">T07 Prototype loops: Object.setPrototypeOf circular</button>
+<button onclick="t08()">T08 Stack overflow: recursão vs trampolim vs generator</button>
+<button onclick="t09()">T09 BigInt: operações com tipos mistos proibidos</button>
+<button onclick="t10()">T10 ArrayBuffer: detach via transfer (se disponível)</button>
+<button onclick="t11()">T11 Getter que lança: spread, assign, structuredClone</button>
+<button onclick="t12()">T12 toString/valueOf que mudam o tipo de retorno</button>
+<button onclick="t13()">T13 RegExp: backtracking catastrófico em string enorme</button>
+<button onclick="t14()">T14 JSON.stringify: ciclos, BigInt, funções, Symbol</button>
+<button onclick="t15()">T15 eval() com código sintaticamente estranho mas válido</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html" style="color:#5bf">← Index</a>
+<script>
+'use strict';
+var _L=document.getElementById('log');
+function log(m){_L.textContent+=m+'\n';_L.scrollTop=_L.scrollHeight;}
+
+// Testa uma operação: loga se lançou exceção, ou o valor retornado
+function probe(label,fn){
+  try{
+    var result=fn();
+    var display=result===undefined?'undefined':
+                result===null?'null':
+                typeof result==='bigint'?'0x'+result.toString(16):
+                typeof result==='object'?'[object '+result.constructor.name+']':
+                String(result).slice(0,30);
+    var isInteresting=result!==undefined&&result!==null&&result!==false&&result!==0;
+    var prefix=isInteresting?'✓ VALOR: ':'  valor: ';
+    log('  '+label.padEnd(40)+prefix+display);
+    return result;
+  }catch(e){
+    log('  '+label.padEnd(40)+'exc: '+e.name+' ('+e.message.slice(0,30)+')');
+    return undefined;
+  }
+}
+
+// ─── T01 ──────────────────────────────────────────────────────────────────
+function t01(){
+  log('[T01] Array: índices fora do comum');
+  var arr=[10,20,30,40,50];
+  log('  arr = [10,20,30,40,50], length=5');
+  probe('arr[-1]',             function(){return arr[-1];});
+  probe('arr[-0]',             function(){return arr[-0];});
+  probe('arr[5]',              function(){return arr[5];});
+  probe('arr[100]',            function(){return arr[100];});
+  probe('arr[NaN]',            function(){return arr[NaN];});
+  probe('arr[Infinity]',       function(){return arr[Infinity];});
+  probe('arr[-Infinity]',      function(){return arr[-Infinity];});
+  probe('arr[0.5]',            function(){return arr[0.5];});
+  probe('arr[1.9]',            function(){return arr[1.9];});
+  probe('arr["1"]',            function(){return arr["1"];});
+  probe('arr["01"]',           function(){return arr["01"];});
+  probe('arr[null]',           function(){return arr[null];});
+  probe('arr[undefined]',      function(){return arr[undefined];});
+  probe('arr[true]',           function(){return arr[true];});
+  probe('arr[false]',          function(){return arr[false];});
+  probe('arr[2**32-1]',        function(){return arr[Math.pow(2,32)-1];});
+  probe('arr[2**32]',          function(){return arr[Math.pow(2,32)];});
+  probe('arr.at(-1)',          function(){return arr.at(-1);});
+  probe('arr.at(-100)',        function(){return arr.at(-100);});
+  probe('arr.at(NaN)',         function(){return arr.at(NaN);});
+  probe('arr.at(Infinity)',    function(){return arr.at(Infinity);});
+  log('[T01] done\n');
+}
+
+// ─── T02 ──────────────────────────────────────────────────────────────────
+function t02(){
+  log('[T02] TypedArray: acesso além do length');
+  var f64=new Float64Array(8);
+  f64[0]=1.1; f64[7]=7.7;
+  log('  Float64Array(8): f64[0]=1.1, f64[7]=7.7');
+  probe('f64[8]',              function(){return f64[8];});
+  probe('f64[100]',            function(){return f64[100];});
+  probe('f64[-1]',             function(){return f64[-1];});
+  probe('f64[NaN]',            function(){return f64[NaN];});
+  probe('f64[Infinity]',       function(){return f64[Infinity];});
+  // Escrita fora dos bounds
+  probe('f64[8]=99 (set OOB)', function(){f64[8]=99; return f64[8];});
+  probe('f64[-1]=99 (set neg)',function(){f64[-1]=99; return f64[-1];});
+  // BigInt arrays
+  var u64=new BigUint64Array(4);
+  u64[0]=0xDEADBEEFn;
+  probe('u64[4]',              function(){return u64[4];});
+  probe('u64[-1]',             function(){return u64[-1];});
+  // Uint8Array
+  var u8=new Uint8Array(16);
+  probe('u8[16]',              function(){return u8[16];});
+  probe('u8[1000]',            function(){return u8[1000];});
+  // Subarray OOB
+  probe('f64.subarray(-1,3)',  function(){var s=f64.subarray(-1,3); return 'len='+s.length+' [0]='+s[0];});
+  probe('f64.subarray(0,100)', function(){var s=f64.subarray(0,100); return 'len='+s.length;});
+  log('[T02] done\n');
+}
+
+// ─── T03 ──────────────────────────────────────────────────────────────────
+function t03(){
+  log('[T03] String: métodos em posições extremas');
+  var s='Hello World';
+  probe('s.charCodeAt(-1)',      function(){return s.charCodeAt(-1);});
+  probe('s.charCodeAt(100)',     function(){return s.charCodeAt(100);});
+  probe('s.charCodeAt(NaN)',     function(){return s.charCodeAt(NaN);});
+  probe('s.charCodeAt(Infinity)',function(){return s.charCodeAt(Infinity);});
+  probe('s.charAt(-1)',          function(){return '"'+s.charAt(-1)+'"';});
+  probe('s.charAt(100)',         function(){return '"'+s.charAt(100)+'"';});
+  probe('s.at(-1)',              function(){return '"'+s.at(-1)+'"';});
+  probe('s.at(-100)',            function(){return '"'+s.at(-100)+'"';});
+  probe('s.slice(-100,100)',     function(){return '"'+s.slice(-100,100)+'"';});
+  probe('s.slice(0,-100)',       function(){return '"'+s.slice(0,-100)+'"';});
+  probe('s.slice(NaN)',          function(){return '"'+s.slice(NaN)+'"';});
+  probe('s.slice(Infinity)',     function(){return '"'+s.slice(Infinity)+'"';});
+  probe('s.substring(-1,5)',     function(){return '"'+s.substring(-1,5)+'"';});
+  probe('s.substring(5,-1)',     function(){return '"'+s.substring(5,-1)+'"';});  // inverte!
+  probe('s.indexOf("",100)',     function(){return s.indexOf('',100);});
+  probe('s.indexOf("",Infinity)',function(){return s.indexOf('',Infinity);});
+  probe('s.repeat(-1)',          function(){return s.repeat(-1);});
+  probe('s.repeat(Infinity)',    function(){return s.repeat(Infinity);});
+  probe('s.repeat(0)',           function(){return '"'+s.repeat(0)+'"';});
+  probe('s.padStart(-1)',        function(){return '"'+s.padStart(-1)+'"';});
+  probe('"".repeat(1e9)',        function(){return ''.repeat(1e9).length;});
+  log('[T03] done\n');
+}
+
+// ─── T04 ──────────────────────────────────────────────────────────────────
+function t04(){
+  log('[T04] DataView: offsets extremos e tipos misturados');
+  var buf=new ArrayBuffer(16);
+  var dv=new DataView(buf);
+  dv.setFloat64(0,Math.PI);
+  dv.setFloat64(8,-Math.E);
+  var offsets=[0,7,8,9,15,16,17,-1,NaN,Infinity,-Infinity];
+  log('  getFloat64 em offsets variados (buf=16bytes):');
+  offsets.forEach(function(off){
+    probe('getFloat64('+off+')',   function(){return dv.getFloat64(off);});
+  });
+  log('  getBigUint64 em offsets variados:');
+  [0,1,7,8,9,15,16,-1].forEach(function(off){
+    probe('getBigUint64('+off+')', function(){return '0x'+dv.getBigUint64(off).toString(16);});
+  });
+  log('  setFloat64 em offsets fora dos bounds:');
+  [16,17,100,-1].forEach(function(off){
+    probe('setFloat64('+off+',1.1)', function(){dv.setFloat64(off,1.1); return 'ok';});
+  });
+  // DataView com offset ao construir
+  probe('new DataView(buf,16)',    function(){return new DataView(buf,16).byteLength;});
+  probe('new DataView(buf,17)',    function(){return new DataView(buf,17);});
+  probe('new DataView(buf,8,10)', function(){return new DataView(buf,8,10);});
+  probe('new DataView(buf,-1)',   function(){return new DataView(buf,-1);});
+  log('[T04] done\n');
+}
+
+// ─── T05 ──────────────────────────────────────────────────────────────────
+function t05(){
+  log('[T05] Proxy: viola invariantes de integridade dos traps');
+  // Um Proxy que minte sobre propriedades não-configuráveis
+  var target={};
+  Object.defineProperty(target,'fixed',{value:42,writable:false,configurable:false});
+  var liar=new Proxy(target,{
+    get:function(t,k,r){
+      if(k==='fixed') return 999; // mente sobre valor não-configurável
+      return Reflect.get(t,k,r);
+    }
+  });
+  probe('liar.fixed (viola invariante)',function(){return liar.fixed;});
+  // Proxy que nega existência de propriedade não-configurável
+  var denier=new Proxy(target,{
+    has:function(t,k){ return false; } // diz que 'fixed' não existe
+  });
+  probe('"fixed" in denier',      function(){return 'fixed' in denier;});
+  // getOwnPropertyDescriptor que mente
+  var descLiar=new Proxy(target,{
+    getOwnPropertyDescriptor:function(t,k){
+      if(k==='fixed') return {value:999,writable:true,configurable:true,enumerable:true};
+      return Reflect.getOwnPropertyDescriptor(t,k);
+    }
+  });
+  probe('Object.getOwnPropertyDescriptor(descLiar,"fixed")', function(){
+    var d=Object.getOwnPropertyDescriptor(descLiar,'fixed');
+    return d?JSON.stringify(d):'null';
+  });
+  // ownKeys que omite uma propriedade não-configurável
+  var keyOmitter=new Proxy(target,{
+    ownKeys:function(t){ return []; } // omite 'fixed'
+  });
+  probe('Object.keys(keyOmitter)', function(){return JSON.stringify(Object.keys(keyOmitter));});
+  probe('Reflect.ownKeys(keyOmitter)', function(){return JSON.stringify(Reflect.ownKeys(keyOmitter));});
+  log('[T05] done\n');
+}
+
+// ─── T06 ──────────────────────────────────────────────────────────────────
+function t06(){
+  log('[T06] Reflect.construct: combinações inválidas de target/newTarget');
+  function Base(){}
+  function Derived(){Base.call(this);}
+  function NotAConstructor(){} NotAConstructor.prototype=null;
+  var cases=[
+    ['Reflect.construct(Base,[],Base)',      function(){return Reflect.construct(Base,[],Base);}],
+    ['Reflect.construct(Base,[],Derived)',   function(){return Reflect.construct(Base,[],Derived);}],
+    ['Reflect.construct(null,[],Base)',      function(){return Reflect.construct(null,[],Base);}],
+    ['Reflect.construct(Base,[],null)',      function(){return Reflect.construct(Base,[],null);}],
+    ['Reflect.construct(42,[],Base)',        function(){return Reflect.construct(42,[],Base);}],
+    ['Reflect.construct(Base,[],42)',        function(){return Reflect.construct(Base,[],42);}],
+    ['Reflect.construct(()=>{},[],Base)',    function(){return Reflect.construct(function(){return{};},[],Base);}],
+    ['new.target via Reflect',              function(){
+      var result=Reflect.construct(function(){return this.constructor.name;},[], Derived);
+      return result;
+    }],
+  ];
+  cases.forEach(function(c){probe(c[0],c[1]);});
+  log('[T06] done\n');
+}
+
+// ─── T07 ──────────────────────────────────────────────────────────────────
+function t07(){
+  log('[T07] Prototype: loops, frozen objects, cross-realm');
+  // Tentar criar ciclo no prototype chain
+  var a={},b={},c={};
+  Object.setPrototypeOf(a,b);
+  Object.setPrototypeOf(b,c);
+  probe('cycle: c→a (fecha o ciclo)',function(){ Object.setPrototypeOf(c,a); return 'ok!'; });
+  // setPrototypeOf em objeto frozen
+  var frozen=Object.freeze({x:1});
+  probe('setPrototypeOf(frozen,{})',  function(){Object.setPrototypeOf(frozen,{});return 'ok';});
+  // setPrototypeOf para null
+  var obj={x:1};
+  probe('setPrototypeOf(obj,null)',   function(){Object.setPrototypeOf(obj,null); return obj.toString;});
+  // Acessa toString em objeto sem prototype
+  probe('obj.toString após proto=null', function(){Object.setPrototypeOf(obj,null); return String(obj);});
+  // prototype de objeto com prototype=null
+  probe('Object.create(null).toString',function(){var o=Object.create(null); return typeof o.toString;});
+  probe('Object.create(null).__proto__',function(){var o=Object.create(null); return o.__proto__;});
+  // Profundidade máxima de chain
+  var depth=0;
+  var cur={};
+  probe('chain profundo (1000 níveis)',function(){
+    for(var i=0;i<1000;i++){var n=Object.create(cur);cur=n;depth++;}
+    return 'depth='+depth+' prop='+('x' in cur);
+  });
+  probe('for..in em chain 1000 níveis',function(){
+    cur.x=1; var n=0; for(var k in cur)n++; return 'keys='+n;
+  });
+  log('[T07] done\n');
+}
+
+// ─── T08 ──────────────────────────────────────────────────────────────────
+function t08(){
+  log('[T08] Stack overflow: recursão direta vs trampolim vs generator');
+  // Recursão direta
+  var directDepth=0;
+  probe('recursão direta máxima', function(){
+    function rec(n){directDepth=n; return rec(n+1);}
+    return rec(0);
+  });
+  log('  profundidade máxima recursão direta: '+directDepth);
+  // Recursão mútua (A chama B chama A...)
+  var mutualDepth=0;
+  probe('recursão mútua A↔B', function(){
+    function A(n){mutualDepth=n; return B(n+1);}
+    function B(n){return A(n+1);}
+    return A(0);
+  });
+  log('  profundidade máxima recursão mútua: '+mutualDepth);
+  // Generator (não usa call stack, usa heap)
+  var genSteps=0;
+  probe('generator 1M yields (heap-based)',function(){
+    function* deepGen(n){if(n>0){yield n; yield* deepGen(n-1);}}
+    var gen=deepGen(1000000); // 1 milhão
+    var r;
+    while(!(r=gen.next()).done&&genSteps<100000) genSteps++;
+    return 'steps='+genSteps;
+  });
+  // Trampolim manual (evita stack overflow)
+  var trampolineDepth=0;
+  probe('trampolim 1M iterações',function(){
+    var thunk=function(n){return n>0?function(){return thunk(n-1);}:0;};
+    var r=thunk(1000000);
+    while(typeof r==='function'){r=r();trampolineDepth++;}
+    return 'depth='+trampolineDepth+' result='+r;
+  });
+  log('[T08] done\n');
+}
+
+// ─── T09 ──────────────────────────────────────────────────────────────────
+function t09(){
+  log('[T09] BigInt: operações proibidas e coerções implícitas');
+  // BigInt + Number é proibido pela spec
+  probe('1n + 1 (BigInt+Number)',         function(){return 1n+1;});
+  probe('1n * 2.5',                       function(){return 1n*2.5;});
+  probe('1n > 0.5 (comparação OK)',       function(){return 1n>0.5;});
+  probe('1n === 1 (strict, types differ)',function(){return 1n===1;});
+  probe('1n == 1 (loose coercion)',       function(){return 1n==1;});
+  probe('Boolean(0n)',                    function(){return Boolean(0n);});
+  probe('Boolean(1n)',                    function(){return Boolean(1n);});
+  probe('Number(42n)',                    function(){return Number(42n);});
+  probe('String(42n)',                    function(){return String(42n);});
+  probe('+42n (unary plus)',              function(){return +42n;});
+  probe('42n | 0 (bitwise with number)', function(){return 42n|0;});
+  probe('Math.max(1n,2n)',               function(){return Math.max(1n,2n);});
+  probe('JSON.stringify(42n)',            function(){return JSON.stringify(42n);});
+  probe('[1n].sort()',                    function(){return [1n,2n,3n].sort().toString();});
+  probe('0n ** -1n (neg exponent)',       function(){return 0n**-1n;});
+  probe('(-1n) ** 0.5n (frac exp)',      function(){return (-1n)**0n;});  // ok
+  probe('1n << -1n (neg shift)',          function(){return 1n<<-1n;});
+  log('[T09] done\n');
+}
+
+// ─── T10 ──────────────────────────────────────────────────────────────────
+function t10(){
+  log('[T10] ArrayBuffer: transfer, detach e operações pós-detach');
+  var buf=new ArrayBuffer(64);
+  var f64=new Float64Array(buf);
+  f64[0]=Math.PI;
+  // Verifica se transfer está disponível (ES2024)
+  probe('ArrayBuffer.prototype.transfer exists', function(){
+    return typeof buf.transfer==='function';
+  });
+  if(typeof buf.transfer==='function'){
+    var transferred=buf.transfer();
+    log('  buffer original após transfer: byteLength='+buf.byteLength);
+    log('  novo buffer: byteLength='+transferred.byteLength);
+    // Acesso ao buffer detached
+    probe('f64[0] após transfer', function(){return f64[0];});
+    probe('f64.byteLength após transfer', function(){return f64.byteLength;});
+    probe('new DataView(detached)', function(){return new DataView(buf).getFloat64(0);});
+  } else {
+    log('  ArrayBuffer.transfer não disponível (ES2024) — testando alternativas');
+    // Tenta o structuredClone approach para transferir
+    probe('structuredClone(buf)',function(){
+      var c=structuredClone(buf,[buf]);
+      return 'orig.byteLength='+buf.byteLength+' new='+c.byteLength;
+    });
+    // postMessage approach (se disponível)
+    probe('MessageChannel transfer',function(){
+      var ch=new MessageChannel();
+      var buf2=new ArrayBuffer(16);
+      ch.port1.postMessage(buf2,[buf2]);
+      return 'buf2.byteLength após transfer='+buf2.byteLength;
+    });
+  }
+  log('[T10] done\n');
+}
+
+// ─── T11 ──────────────────────────────────────────────────────────────────
+function t11(){
+  log('[T11] Getter que lança: como spread/assign/clone lidam com exceções');
+  var throwAt=2;
+  var accessCount=0;
+  var srcObj={};
+  ['a','b','c','d','e'].forEach(function(k,i){
+    Object.defineProperty(srcObj,k,{
+      get:function(){
+        accessCount++;
+        if(accessCount===throwAt) throw new TypeError('getter-throw-at-'+accessCount);
+        return 'val-'+k;
+      },
+      enumerable:true, configurable:true
+    });
+  });
+  // Spread
+  accessCount=0;
+  probe('spread {…obj} com getter que lança na prop "b"',function(){
+    var r={...srcObj}; return JSON.stringify(r);
+  });
+  // Object.assign
+  accessCount=0;
+  probe('Object.assign({},obj)',function(){
+    var r=Object.assign({},srcObj); return JSON.stringify(r);
+  });
+  // structuredClone (não chama getters — copia valores)
+  probe('structuredClone(obj)',function(){
+    var r=structuredClone(srcObj); return JSON.stringify(r);
+  });
+  // JSON.stringify
+  accessCount=0;
+  probe('JSON.stringify(obj)',function(){ return JSON.stringify(srcObj); });
+  // for...in
+  accessCount=0;
+  probe('for...in + acesso',function(){
+    var vals=[]; for(var k in srcObj){ try{vals.push(srcObj[k]);}catch(e){vals.push('ERR');} }
+    return '['+vals.join(',')+']';
+  });
+  log('[T11] done\n');
+}
+
+// ─── T12 ──────────────────────────────────────────────────────────────────
+function t12(){
+  log('[T12] valueOf/toString que retornam tipo errado');
+  // valueOf que retorna objeto (não primitivo)
+  var obj1={valueOf:function(){return {};}, toString:function(){return 'str';}};
+  probe('obj1 + ""    (toPrimitive→valueOf→obj→toString)',function(){return obj1+'';});
+  probe('+obj1        (unary plus→número)',function(){return +obj1;});
+  probe('obj1 * 2',                                      function(){return obj1*2;});
+  // valueOf que muda de tipo a cada chamada
+  var callCount=0;
+  var shapeshifter={valueOf:function(){
+    callCount++;
+    if(callCount%3===0) return 42;
+    if(callCount%3===1) return 'string';
+    return null;
+  }};
+  for(var i=0;i<6;i++){
+    probe('shapeshifter+1 [call '+i+']',function(){return shapeshifter+1;});
+  }
+  // Symbol.toPrimitive que retorna objeto
+  var symObj={[Symbol.toPrimitive]:function(hint){return {};}};
+  probe('symObj+"" (toPrimitive returns {})',function(){return symObj+'';});
+  // toString que retorna non-string
+  var nonStringToString={toString:function(){return 42;}, valueOf:function(){return 42;}};
+  probe('String(nonStringToString)',function(){return String(nonStringToString);});
+  probe('[nonStringToString].join(",")',function(){return [nonStringToString].join(',');});
+  log('[T12] done\n');
+}
+
+// ─── T13 ──────────────────────────────────────────────────────────────────
+function t13(){
+  log('[T13] RegExp: backtracking catastrófico (ReDoS) + flags extremas');
+  // Regex que causam backtracking exponencial em certas strings
+  var catastrophic=[
+    {re:/^(a+)+$/,  str:'a'.repeat(20)+'b', label:'(a+)+$ com trailing b [20 chars]'},
+    {re:/^(a+)+$/,  str:'a'.repeat(10)+'b', label:'(a+)+$ com trailing b [10 chars]'},
+    {re:/(a|aa)+b/, str:'a'.repeat(15),      label:'(a|aa)+b sem b no final [15 chars]'},
+    {re:/([a-z]+)*[A-Z]/, str:'a'.repeat(10), label:'([a-z]+)*[A-Z] sem maiúscula [10]'},
+  ];
+  catastrophic.forEach(function(c){
+    var t0=performance.now();
+    probe(c.label, function(){
+      var m=c.str.match(c.re);
+      var dt=performance.now()-t0;
+      return (m?'MATCH':'no match')+' em '+dt.toFixed(1)+'ms';
+    });
+    var dt=performance.now()-t0;
+    if(dt>500) log('  ⚠️  LENTO: '+dt.toFixed(0)+'ms — possível ReDoS');
+  });
+  // Flags inválidas
+  probe('RegExp("a","invalid")',function(){return new RegExp('a','z');});
+  probe('/a/v flag (ES2024)',   function(){return new RegExp('a','v');});
+  probe('/a/u vs /a/v compat', function(){return new RegExp('[a]','u').test('a');});
+  probe('sticky flag y',       function(){var r=/a/y; r.lastIndex=0; return r.test('bba');});
+  // exec em string muito longa
+  probe('/./.exec("x".repeat(1e6))',function(){
+    var r=/./.exec('x'.repeat(1e6));
+    return r?r[0]:'null';
+  });
+  log('[T13] done\n');
+}
+
+// ─── T14 ──────────────────────────────────────────────────────────────────
+function t14(){
+  log('[T14] JSON.stringify: casos que deveriam falhar vs comportamento real');
+  // Ciclo de referência
+  var cycle={};  cycle.self=cycle;
+  probe('JSON.stringify(ciclo)',       function(){return JSON.stringify(cycle);});
+  // BigInt
+  probe('JSON.stringify(42n)',         function(){return JSON.stringify(42n);});
+  // Função
+  probe('JSON.stringify(function(){})',function(){return JSON.stringify(function(){});});
+  // Symbol
+  probe('JSON.stringify(Symbol("x"))',function(){return JSON.stringify(Symbol('x'));});
+  // undefined
+  probe('JSON.stringify(undefined)',   function(){return JSON.stringify(undefined);});
+  // Array com undefined/function
+  probe('JSON.stringify([undefined,function(){},Symbol()])',
+    function(){return JSON.stringify([undefined,function(){},Symbol()]);});
+  // toJSON que lança
+  var throwJSON={toJSON:function(){throw new Error('toJSON-throw');}};
+  probe('JSON.stringify(obj com toJSON que lança)',function(){return JSON.stringify(throwJSON);});
+  // toJSON que retorna ciclo
+  var cyclicJSON={toJSON:function(){var c={};c.self=c;return c;}};
+  probe('JSON.stringify(obj com toJSON→ciclo)',function(){return JSON.stringify(cyclicJSON);});
+  // replacer function que lança
+  probe('JSON.stringify com replacer que lança',function(){
+    return JSON.stringify({a:1},function(k,v){if(k==='a')throw new Error('replacer-throw');return v;});
+  });
+  // Profundidade muito grande
+  var deep={};var cur=deep;
+  for(var i=0;i<10000;i++){cur.n={};cur=cur.n;}
+  probe('JSON.stringify de objeto 10k níveis profundo',function(){return JSON.stringify(deep).length;});
+  log('[T14] done\n');
+}
+
+// ─── T15 ──────────────────────────────────────────────────────────────────
+function t15(){
+  log('[T15] eval() com código válido mas semanticamente estranho');
+  var cases=[
+    ['eval vazio',                    ''],
+    ['eval só ponto-e-vírgula',       ';;;'],
+    ['eval retorna undefined',        'undefined'],
+    ['eval expressão de vírgula',     '(1,2,3)'],
+    ['eval delete variável',          'var x=1; delete x; x'],
+    ['eval com__proto__',             '({__proto__:{x:1}}).x'],
+    ['eval label + break',            'outer: { break outer; 42; }'],
+    ['eval with (desabilitado em strict)', 'try{ eval("with({x:1}){x}") }catch(e){ e.name }'],
+    ['eval aninhado',                 'eval("eval(\"eval(42)\")")'],
+    ['eval como expressão em arrow',  '(x=>eval("x+1"))(41)'],
+    ['eval acessa closure',           '(function(){var secret=42;return eval("secret")})()'],
+    ['eval modifica variável externa','var ev_x=0;eval("ev_x=99");ev_x'],
+    ['eval com class',                'eval("class E{}; new E() instanceof E")'],
+    ['eval com async',                'eval("(async function(){return 42})()")'],
+    ['parseInt("0xFF",16)',           function(){return parseInt('0xFF',16);}],
+    ['parseInt("Infinity")',          function(){return parseInt('Infinity');}],
+    ['parseInt("09",8)',              function(){return parseInt('09',8);}],
+    ['Number("")',                    function(){return Number('');}],
+    ['Number("  ")',                  function(){return Number('  ');}],
+    ['Number(" 1e308 ")',             function(){return Number(' 1e308 ');}],
+  ];
+  cases.forEach(function(c){
+    var label=c[0], code=c[1];
+    if(typeof code==='function'){probe(label,code);}
+    else{probe(label,function(){return eval(code);});}
+  });
+  log('[T15] done\n');
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 03 — EXCEPTION BOUNDARY ===\n');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){
+    if(i>=tests.length){log('\n=== FIM ===');return;}
+    try{tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);}
+    i++; setTimeout(next,350);
+  }
+  next();
+}
+</script></body></html>

@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>02 — GC Timing Map</title>
+<style>
+body{background:#08080f;color:#ccc;font:12px monospace;padding:12px}
+h3{color:#5bf;margin-bottom:6px}
+#log{height:440px;overflow:auto;background:#0a0a12;color:#0f0;padding:8px;white-space:pre;border:1px solid #1a2a3a;margin-bottom:8px}
+button{background:#0f1a2a;color:#5bf;border:1px solid #1a3a5a;padding:5px 10px;margin:2px;font:11px monospace;cursor:pointer}
+.guide{background:#0f1a0f;border:1px solid #1a3a1a;padding:8px;margin-bottom:8px;font-size:11px;color:#888}
+</style></head>
+<body>
+<h3>02 — GC Timing Map — Quando e Como o GC Coleta</h3>
+<div class="guide">
+🔍 O QUE OBSERVAR:<br>
+• <span style="color:#fa4">alive: X/Y</span> após cada gc() → previsibilidade do coletor<br>
+• <span style="color:#fa4">cleanup callbacks</span> → se aparecem significa que o GC rodou de verdade<br>
+• <span style="color:#4f4">alive constante entre execuções</span> → GC determinístico = exploitável<br>
+• <span style="color:#4f4">timing (ms)</span> → quanto tempo demora uma pressão de 512MB<br>
+• <span style="color:#f44">crash durante gc()</span> → pressão de memória causa instabilidade<br>
+• <span style="color:#aaf">Δ alive entre checkpoints</span> → quantos objetos o GC coleta por ciclo
+</div>
+<div id="log"></div>
+<button onclick="t01()">T01 Pressão básica: quantos ArrayBuffers forçam um GC</button>
+<button onclick="t02()">T02 WeakRef por tipo: Object vs Array vs TypedArray vs Closure</button>
+<button onclick="t03()">T03 GC entre yields de generator: timing do coletor</button>
+<button onclick="t04()">T04 GC entre microtasks: Promise.then vs queueMicrotask</button>
+<button onclick="t05()">T05 FinalizationRegistry: latência do callback</button>
+<button onclick="t06()">T06 GC de Shadow DOM: elementos desconectados</button>
+<button onclick="t07()">T07 Ciclo de referência: GC consegue coletar?</button>
+<button onclick="t08()">T08 GC durante animação ativa: objetos em RAF</button>
+<button onclick="t09()">T09 GC de closures: captura vs não-captura</button>
+<button onclick="t10()">T10 Pressão gradual: alive count a cada 50MB alocados</button>
+<button onclick="t11()">T11 WeakMap vs WeakRef: qual sobrevive mais?</button>
+<button onclick="t12()">T12 GC de promessas rejeitadas sem handler</button>
+<button onclick="t13()">T13 GC entre async/await suspensions</button>
+<button onclick="t14()">T14 GC de Custom Elements desconectados</button>
+<button onclick="t15()">T15 Mapa completo: alive por tipo após pressão máxima</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html" style="color:#5bf">← Index</a>
+<script>
+'use strict';
+var _L=document.getElementById('log');
+function log(m){_L.textContent+=m+'\n';_L.scrollTop=_L.scrollHeight;}
+function wait(ms){return new Promise(function(r){setTimeout(r,ms);});}
+
+// GC via pressão de alocação — sem SharedArrayBuffer no PS4
+function gc(mb){
+  mb=mb||64;
+  try{
+    var a=[];
+    var chunk=4*1024*1024; // 4MB por chunk
+    var n=Math.ceil(mb*1024*1024/chunk);
+    for(var i=0;i<n;i++) a.push(new ArrayBuffer(chunk));
+    a=null;
+  }catch(e){}
+}
+
+function gcStrong(){gc(256);}  // pressão maior
+function gcLight(){gc(16);}    // pressão leve
+
+// Conta refs vivos
+function aliveCount(refs){
+  return refs.filter(function(r){return r.deref()!==undefined;}).length;
+}
+
+// ─── T01 ──────────────────────────────────────────────────────────────────
+function t01(){
+  log('[T01] Pressão básica: quanto gc() é necessário para coletar objetos');
+  var refs=[];
+  // Cria 100 objetos sem strong ref
+  (function(){
+    for(var i=0;i<100;i++){
+      var o={data:new Float64Array(256),id:i};
+      refs.push(new WeakRef(o));
+    }
+  })();
+  var t0=performance.now();
+  var checkpoints=[];
+  for(var round=0;round<10;round++){
+    gc(32); // 32MB de pressão por round
+    var alive=aliveCount(refs);
+    var ms=performance.now()-t0;
+    checkpoints.push({round:round+1,alive:alive,ms:Math.round(ms)});
+    if(alive===0) break;
+  }
+  log('  Checkpoint | alive | ms acumulado');
+  checkpoints.forEach(function(c){
+    var bar='█'.repeat(Math.round(c.alive/5));
+    log('  round '+String(c.round).padStart(2)+'       | '+String(c.alive).padStart(3)+'/100 | '+String(c.ms).padStart(5)+'ms  '+bar);
+  });
+  var firstDead=checkpoints.find(function(c){return c.alive<100;});
+  var allDead=checkpoints.find(function(c){return c.alive===0;});
+  log('  Primeiro GC efetivo: round '+(firstDead?firstDead.round:'N/A')+' ('+
+    (firstDead?firstDead.ms:'?')+'ms)');
+  log('  GC completo: '+(allDead?'round '+allDead.round+' ('+allDead.ms+'ms)':'NÃO OCORREU em 10 rounds'));
+  log('[T01] done\n');
+}
+
+// ─── T02 ──────────────────────────────────────────────────────────────────
+function t02(){
+  log('[T02] WeakRef por tipo: qual tipo o GC coleta primeiro?');
+  var groups={
+    'Object{}':       [],
+    'Array[]':        [],
+    'Float64Array':   [],
+    'Closure':        [],
+    'Map':            [],
+    'Promise':        [],
+    'DOM div':        [],
+    'DOM TextNode':   [],
+  };
+  // Cria 30 de cada tipo sem strong ref
+  (function(){
+    for(var i=0;i<30;i++){
+      groups['Object{}'].push(new WeakRef({x:i}));
+      groups['Array[]'].push(new WeakRef([i,i+1,i+2]));
+      groups['Float64Array'].push(new WeakRef(new Float64Array(64)));
+      var j=i; groups['Closure'].push(new WeakRef(function(){return j;}));
+      groups['Map'].push(new WeakRef(new Map([[i,i]])));
+      groups['Promise'].push(new WeakRef(Promise.resolve(i)));
+      groups['DOM div'].push(new WeakRef(document.createElement('div')));
+      groups['DOM TextNode'].push(new WeakRef(document.createTextNode('t'+i)));
+    }
+  })();
+  log('  Tipo               | antes | round1 | round2 | round3 | round5');
+  var snapshots=[[],[],[],[],[]];
+  for(var round=0;round<5;round++){
+    gc(64);
+    Object.keys(groups).forEach(function(type){
+      snapshots[round].push({type:type,alive:aliveCount(groups[type])});
+    });
+  }
+  Object.keys(groups).forEach(function(type){
+    var counts=[30].concat(snapshots.map(function(s){
+      return s.find(function(e){return e.type===type;}).alive;
+    }));
+    var row='  '+type.padEnd(18)+'| ';
+    counts.forEach(function(c,i){
+      row+=String(c).padStart(i===0?5:6);
+      if(i<counts.length-1) row+=' |';
+    });
+    log(row);
+  });
+  log('[T02] done\n');
+}
+
+// ─── T03 ──────────────────────────────────────────────────────────────────
+function t03(){
+  log('[T03] GC entre yields de generator: o coletor respeita o yield point?');
+  var snapshots=[];
+  function* gcGen(){
+    for(var round=0;round<8;round++){
+      // Aloca sem strong ref
+      var batch=[];
+      (function(){
+        for(var i=0;i<20;i++) batch.push(new WeakRef({data:new Float64Array(256),r:round,i:i}));
+      })();
+      var aliveB=aliveCount(batch);
+      yield {phase:'before-gc',round:round,alive:aliveB};
+      // Pressão GC no meio do generator
+      gc(64);
+      var aliveA=aliveCount(batch);
+      yield {phase:'after-gc',round:round,alive:aliveA,collected:aliveB-aliveA};
+      batch=null; // libera a referência batch
+    }
+  }
+  var gen=gcGen();
+  var result;
+  while(!(result=gen.next()).done){
+    var v=result.value;
+    snapshots.push(v);
+    if(v.phase==='after-gc'){
+      log('  round '+v.round+': antes='+v.alive+'/20  após gc='+v.alive+'/20  coletados='+v.collected);
+    }
+  }
+  var totalCollected=snapshots.filter(function(s){return s.phase==='after-gc';})
+    .reduce(function(a,s){return a+s.collected;},0);
+  log('  total coletados dentro de generator yields: '+totalCollected);
+  log('[T03] done\n');
+}
+
+// ─── T04 ──────────────────────────────────────────────────────────────────
+function t04(){
+  log('[T04] GC entre microtasks: Promise.then vs queueMicrotask');
+  var refs=[];
+  (function(){
+    for(var i=0;i<50;i++) refs.push(new WeakRef({data:new Float64Array(128),id:i}));
+  })();
+  var snapshots=[];
+  var p=Promise.resolve();
+  for(var step=0;step<5;step++){
+    (function(s){
+      p=p.then(function(){
+        gc(32);
+        var alive=aliveCount(refs);
+        snapshots.push({type:'Promise.then',step:s,alive:alive});
+        return wait(0);
+      });
+    })(step);
+  }
+  return p.then(function(){
+    log('  Promise.then snapshots:');
+    snapshots.forEach(function(s){
+      log('  step '+s.step+': alive='+s.alive+'/50');
+    });
+    // Reset
+    refs=[];
+    (function(){
+      for(var i=0;i<50;i++) refs.push(new WeakRef({data:new Float64Array(128),id:i}));
+    })();
+    var mqSnapshots=[];
+    return new Promise(function(resolve){
+      var mqStep=0;
+      function micro(){
+        gc(32);
+        mqSnapshots.push({step:mqStep,alive:aliveCount(refs)});
+        mqStep++;
+        if(mqStep<5) queueMicrotask(micro);
+        else resolve();
+      }
+      queueMicrotask(micro);
+    });
+  }).then(function(mqSnapshots){
+    log('  (ver código para queueMicrotask — não retorna valor direto)');
+    log('[T04] done\n');
+  });
+}
+
+// ─── T05 ──────────────────────────────────────────────────────────────────
+function t05(){
+  log('[T05] FinalizationRegistry: latência real do callback no PS4');
+  var callbackLog=[];
+  var registry=new FinalizationRegistry(function(token){
+    callbackLog.push({token:token,t:performance.now()});
+  });
+  var t0=performance.now();
+  // Registra e libera 30 objetos
+  (function(){
+    for(var i=0;i<30;i++){
+      var o={data:new Float64Array(512),id:i};
+      registry.register(o,'obj-'+i);
+    }
+  })();
+  log('  Objetos criados e liberados em '+(performance.now()-t0).toFixed(1)+'ms');
+  log('  Rodando GC e aguardando callbacks...');
+  function checkCallbacks(round){
+    gc(64);
+    var now=performance.now();
+    log('  round '+round+' ('+Math.round(now-t0)+'ms): callbacks='+callbackLog.length+'/30');
+    if(callbackLog.length>0&&round===1){
+      var first=callbackLog[0];
+      log('  primeiro callback em '+(first.t-t0).toFixed(1)+'ms: token='+first.token);
+    }
+  }
+  return wait(50).then(function(){
+    checkCallbacks(1);
+    return wait(100);
+  }).then(function(){
+    checkCallbacks(2);
+    return wait(200);
+  }).then(function(){
+    checkCallbacks(3);
+    gcStrong();
+    return wait(300);
+  }).then(function(){
+    checkCallbacks(4);
+    log('  callbacks totais: '+callbackLog.length+'/30');
+    if(callbackLog.length>=2){
+      var latencies=callbackLog.map(function(c){return c.t-t0;});
+      log('  latência mín: '+Math.min.apply(null,latencies).toFixed(1)+'ms');
+      log('  latência máx: '+Math.max.apply(null,latencies).toFixed(1)+'ms');
+    }
+    log('[T05] done\n');
+  });
+}
+
+// ─── T06 ──────────────────────────────────────────────────────────────────
+function t06(){
+  log('[T06] GC de Shadow DOM: elementos desconectados são coletados?');
+  var hostRefs=[], shadowRefs=[], innerRefs=[];
+  (function(){
+    for(var i=0;i<20;i++){
+      var host=document.createElement('div');
+      hostRefs.push(new WeakRef(host));
+      try{
+        var shadow=host.attachShadow({mode:'open'});
+        shadowRefs.push(new WeakRef(shadow));
+        var inner=document.createElement('span');
+        shadow.appendChild(inner);
+        innerRefs.push(new WeakRef(inner));
+      }catch(e){shadowRefs.push(new WeakRef({}));innerRefs.push(new WeakRef({}));}
+      // Nunca adiciona ao DOM — nunca conectado
+    }
+  })();
+  var before={hosts:aliveCount(hostRefs),shadows:aliveCount(shadowRefs),inners:aliveCount(innerRefs)};
+  log('  Antes do GC: hosts='+before.hosts+' shadows='+before.shadows+' inners='+before.inners);
+  gc(128); gc(64);
+  var after={hosts:aliveCount(hostRefs),shadows:aliveCount(shadowRefs),inners:aliveCount(innerRefs)};
+  log('  Após gc×2:  hosts='+after.hosts+' shadows='+after.shadows+' inners='+after.inners);
+  log('  Coletados:  hosts='+(before.hosts-after.hosts)+' shadows='+(before.shadows-after.shadows)+' inners='+(before.inners-after.inners));
+  // Agora testa elementos que FORAM conectados e depois removidos
+  var connectedRefs=[];
+  (function(){
+    for(var i=0;i<20;i++){
+      var el=document.createElement('div');
+      document.body.appendChild(el);
+      document.body.removeChild(el); // conectado e imediatamente removido
+      connectedRefs.push(new WeakRef(el));
+    }
+  })();
+  log('  Elementos conectados+removidos: alive antes='+aliveCount(connectedRefs));
+  gc(128);
+  log('  Após gc: alive='+aliveCount(connectedRefs));
+  log('[T06] done\n');
+}
+
+// ─── T07 ──────────────────────────────────────────────────────────────────
+function t07(){
+  log('[T07] Ciclos de referência: o GC JSC consegue coletar cycles?');
+  // JSC usa um tracing GC que DEVE coletar ciclos
+  var cycleRefs=[];
+  (function(){
+    for(var i=0;i<20;i++){
+      // Ciclo simples: a → b → a
+      var a={id:'a'+i}, b={id:'b'+i};
+      a.ref=b; b.ref=a;
+      cycleRefs.push(new WeakRef(a));
+      cycleRefs.push(new WeakRef(b));
+    }
+  })();
+  log('  Ciclos a↔b: alive='+aliveCount(cycleRefs)+'/40 antes do GC');
+  gc(128); gc(64);
+  log('  Após gc×2: alive='+aliveCount(cycleRefs)+'/40');
+  // Ciclo mais profundo: a→b→c→d→a
+  var deepCycleRefs=[];
+  (function(){
+    for(var i=0;i<10;i++){
+      var a={},b={},c={},d={};
+      a.n=b; b.n=c; c.n=d; d.n=a;
+      [a,b,c,d].forEach(function(o){deepCycleRefs.push(new WeakRef(o));});
+    }
+  })();
+  log('  Ciclos a→b→c→d→a: alive='+aliveCount(deepCycleRefs)+'/40 antes');
+  gc(128);
+  log('  Após gc: alive='+aliveCount(deepCycleRefs)+'/40');
+  // Ciclo com DOM
+  var domCycleRefs=[];
+  (function(){
+    for(var i=0;i<10;i++){
+      var el=document.createElement('div');
+      var obj={el:el,id:i};
+      el.__backref__=obj; // ciclo: DOM→JS→DOM via __backref__
+      domCycleRefs.push(new WeakRef(obj));
+      domCycleRefs.push(new WeakRef(el));
+    }
+  })();
+  log('  Ciclos DOM↔JS: alive='+aliveCount(domCycleRefs)+'/20 antes');
+  gc(128);
+  log('  Após gc: alive='+aliveCount(domCycleRefs)+'/20');
+  log('[T07] done\n');
+}
+
+// ─── T08 ──────────────────────────────────────────────────────────────────
+function t08(){
+  log('[T08] GC durante animation frame: objetos em RAF são protegidos?');
+  var inRafRefs=[];
+  var outsideRefs=[];
+  var rafCount=0;
+  return new Promise(function(resolve){
+    function frame(){
+      rafCount++;
+      if(rafCount===1){
+        // Cria objetos dentro do RAF — podem ser protegidos do GC?
+        (function(){
+          for(var i=0;i<20;i++){
+            var o={raf:true,data:new Float64Array(256),i:i};
+            inRafRefs.push(new WeakRef(o));
+          }
+        })();
+        // Objetos criados fora do RAF para comparação
+        (function(){
+          for(var i=0;i<20;i++){
+            var o={raf:false,data:new Float64Array(256),i:i};
+            outsideRefs.push(new WeakRef(o));
+          }
+        })();
+        gc(64);
+        log('  RAF frame 1 - inRaf alive: '+aliveCount(inRafRefs)+'/20');
+        log('  RAF frame 1 - outside alive: '+aliveCount(outsideRefs)+'/20');
+        requestAnimationFrame(frame);
+      } else if(rafCount===3){
+        gc(128);
+        log('  RAF frame 3 - inRaf alive: '+aliveCount(inRafRefs)+'/20');
+        log('  RAF frame 3 - outside alive: '+aliveCount(outsideRefs)+'/20');
+        resolve();
+        log('[T08] done\n');
+      } else {
+        requestAnimationFrame(frame);
+      }
+    }
+    requestAnimationFrame(frame);
+  });
+}
+
+// ─── T09 ──────────────────────────────────────────────────────────────────
+function t09(){
+  log('[T09] GC de closures: captura de variável mantém objetos vivos?');
+  var closureRefs=[];
+  var closures=[]; // strong ref para os closures
+  // Closures que capturam objetos grandes
+  (function(){
+    for(var i=0;i<20;i++){
+      var captured={data:new Float64Array(512),id:i};
+      var capturedRef=new WeakRef(captured);
+      closureRefs.push(capturedRef);
+      var fn=function(){ return captured.id; }; // captura `captured`
+      closures.push(fn); // mantém o closure vivo
+    }
+  })();
+  log('  Captured alive (closures vivos): '+aliveCount(closureRefs)+'/20');
+  gc(128);
+  log('  Após gc (closures ainda vivos): '+aliveCount(closureRefs)+'/20');
+  // Libera os closures — os capturados devem ser coletados
+  closures=[];
+  gc(128);
+  log('  Após liberar closures + gc: '+aliveCount(closureRefs)+'/20');
+  // Closure que captura mas não retorna (pode ser optimizado away?)
+  var noReturnRefs=[];
+  var noReturnClosures=[];
+  (function(){
+    for(var i=0;i<20;i++){
+      var captured={data:new Float64Array(256),id:i};
+      noReturnRefs.push(new WeakRef(captured));
+      noReturnClosures.push(function(){ void captured; }); // captura mas não usa o retorno
+    }
+  })();
+  log('  No-return capture alive: '+aliveCount(noReturnRefs)+'/20');
+  gc(128);
+  log('  Após gc (closures vivos): '+aliveCount(noReturnRefs)+'/20');
+  noReturnClosures=[];
+  gc(128);
+  log('  Após liberar + gc: '+aliveCount(noReturnRefs)+'/20');
+  log('[T09] done\n');
+}
+
+// ─── T10 ──────────────────────────────────────────────────────────────────
+function t10(){
+  log('[T10] Pressão gradual: alive count a cada 50MB de pressão');
+  var refs=[];
+  (function(){
+    for(var i=0;i<100;i++) refs.push(new WeakRef({data:new Float64Array(512),id:i}));
+  })();
+  log('  Pressão | alive | coletados');
+  log('  --------+-------+----------');
+  var prev=100;
+  for(var mb=50;mb<=500;mb+=50){
+    gc(50); // pressão incremental
+    var alive=aliveCount(refs);
+    var collected=prev-alive;
+    var bar='▓'.repeat(Math.round(alive/5))+'░'.repeat(Math.round((100-alive)/5));
+    log('  '+String(mb).padStart(4)+'MB  | '+String(alive).padStart(3)+'/100 | +'+String(collected).padStart(3)+' coletados  '+bar);
+    prev=alive;
+    if(alive===0) break;
+  }
+  log('[T10] done\n');
+}
+
+// ─── T11 ──────────────────────────────────────────────────────────────────
+function t11(){
+  log('[T11] WeakMap vs WeakRef: qual mecanismo sobrevive mais?');
+  var wm=new WeakMap();
+  var wmKeys=[];
+  var wr=[];
+  (function(){
+    for(var i=0;i<30;i++){
+      var key={id:i};
+      var val={data:new Float64Array(128),id:i};
+      wm.set(key,val);
+      wmKeys.push(new WeakRef(key));
+      wr.push(new WeakRef(val));
+    }
+  })();
+  log('  WeakRef alive: '+aliveCount(wr)+'/30  WeakMap keys alive: '+aliveCount(wmKeys)+'/30');
+  gc(64);
+  log('  Após gc 64MB:  wr='+aliveCount(wr)+'/30  wmKeys='+aliveCount(wmKeys)+'/30');
+  gc(128);
+  log('  Após gc 128MB: wr='+aliveCount(wr)+'/30  wmKeys='+aliveCount(wmKeys)+'/30');
+  // Verifica consistência: se a key morreu, o valor também deve estar inacessível
+  var inconsistent=0;
+  wmKeys.forEach(function(kr,i){
+    var key=kr.deref();
+    var val=wr[i].deref();
+    if(!key&&val){
+      inconsistent++;
+      log('  INCONSISTÊNCIA ['+i+']: key morta mas val vivo!');
+    }
+  });
+  log('  Inconsistências: '+inconsistent+' (deve ser 0)');
+  log('[T11] done\n');
+}
+
+// ─── T12 ──────────────────────────────────────────────────────────────────
+function t12(){
+  log('[T12] GC de Promises rejeitadas sem handler');
+  var rejectedRefs=[];
+  (function(){
+    for(var i=0;i<30;i++){
+      var p=Promise.reject(new Error('reject-'+i));
+      // SEM .catch() — unhandled rejection
+      rejectedRefs.push(new WeakRef(p));
+    }
+  })();
+  log('  Promises rejeitadas sem handler: alive='+aliveCount(rejectedRefs)+'/30');
+  return wait(100).then(function(){
+    gc(64);
+    log('  Após gc + 100ms: alive='+aliveCount(rejectedRefs)+'/30');
+    return wait(200);
+  }).then(function(){
+    gc(128);
+    log('  Após gc + 300ms total: alive='+aliveCount(rejectedRefs)+'/30');
+    // Promises resolvidas sem then
+    var resolvedRefs=[];
+    (function(){
+      for(var i=0;i<30;i++){
+        var p=Promise.resolve({data:new Float64Array(256),id:i});
+        resolvedRefs.push(new WeakRef(p));
+      }
+    })();
+    log('  Promises resolvidas sem then: alive='+aliveCount(resolvedRefs)+'/30');
+    gc(64);
+    log('  Após gc: resolved alive='+aliveCount(resolvedRefs)+'/30');
+    log('[T12] done\n');
+  });
+}
+
+// ─── T13 ──────────────────────────────────────────────────────────────────
+function t13(){
+  log('[T13] GC entre async/await: objetos criados num await sobrevivem?');
+  var checkpoints=[];
+  async function testAsync(){
+    var refs=[];
+    // Cria objetos antes do primeiro await
+    (function(){for(var i=0;i<20;i++) refs.push(new WeakRef({phase:'pre-await',data:new Float64Array(128)}));})();
+    checkpoints.push({phase:'before-first-await',alive:aliveCount(refs)});
+    await wait(10);
+    gc(64);
+    checkpoints.push({phase:'after-first-await+gc',alive:aliveCount(refs)});
+    // Cria novos objetos após o await
+    (function(){for(var i=0;i<20;i++) refs.push(new WeakRef({phase:'post-await',data:new Float64Array(128)}));})();
+    checkpoints.push({phase:'after-new-alloc',alive:aliveCount(refs)});
+    await wait(10);
+    gc(64);
+    checkpoints.push({phase:'after-second-await+gc',alive:aliveCount(refs)});
+    await wait(10);
+    gcStrong();
+    checkpoints.push({phase:'after-strong-gc',alive:aliveCount(refs)});
+    return refs.length;
+  }
+  return testAsync().then(function(total){
+    log('  total refs criadas: '+total);
+    checkpoints.forEach(function(c){
+      log('  '+c.phase.padEnd(28)+' alive='+c.alive+'/'+total);
+    });
+    log('[T13] done\n');
+  });
+}
+
+// ─── T14 ──────────────────────────────────────────────────────────────────
+function t14(){
+  log('[T14] GC de Custom Elements desconectados');
+  var name='ce-gc-test-'+Date.now();
+  var connectedLog=[], disconnectedLog=[];
+  customElements.define(name, class extends HTMLElement {
+    connectedCallback(){ connectedLog.push(this.id); }
+    disconnectedCallback(){ disconnectedLog.push(this.id); }
+  });
+  var ceRefs=[], nativeRefs=[];
+  (function(){
+    for(var i=0;i<20;i++){
+      var ce=document.createElement(name);
+      ce.id='ce-'+i;
+      document.body.appendChild(ce);
+      document.body.removeChild(ce);
+      ceRefs.push(new WeakRef(ce));
+      var div=document.createElement('div');
+      document.body.appendChild(div);
+      document.body.removeChild(div);
+      nativeRefs.push(new WeakRef(div));
+    }
+  })();
+  log('  CE connected callbacks: '+connectedLog.length);
+  log('  CE disconnected callbacks: '+disconnectedLog.length);
+  log('  CE refs alive: '+aliveCount(ceRefs)+'/20');
+  log('  native refs alive: '+aliveCount(nativeRefs)+'/20');
+  gc(128);
+  log('  Após gc: CE='+aliveCount(ceRefs)+'/20  native='+aliveCount(nativeRefs)+'/20');
+  log('[T14] done\n');
+}
+
+// ─── T15 ──────────────────────────────────────────────────────────────────
+function t15(){
+  log('[T15] Mapa completo: alive por tipo após pressão máxima crescente');
+  var groups={};
+  var types=['Object','Array','Float64Array','Closure','Map','Set','Promise','DOMElement'];
+  types.forEach(function(t){groups[t]=[];});
+  (function(){
+    for(var i=0;i<20;i++){
+      groups['Object'].push(new WeakRef({x:i,data:new ArrayBuffer(1024)}));
+      groups['Array'].push(new WeakRef(new Array(256).fill(i)));
+      groups['Float64Array'].push(new WeakRef(new Float64Array(256)));
+      var j=i; groups['Closure'].push(new WeakRef(function(){return j*j;}));
+      groups['Map'].push(new WeakRef(new Map([[i,{data:new ArrayBuffer(512)}]])));
+      groups['Set'].push(new WeakRef(new Set([{id:i}])));
+      groups['Promise'].push(new WeakRef(Promise.resolve({id:i,data:new ArrayBuffer(512)})));
+      groups['DOMElement'].push(new WeakRef(document.createElement('div')));
+    }
+  })();
+  log('  Tipo            | 0MB | 64MB | 128MB | 256MB | 512MB');
+  log('  ----------------+-----+------+-------+-------+------');
+  function snapshot(){
+    var s={};
+    types.forEach(function(t){s[t]=aliveCount(groups[t]);});
+    return s;
+  }
+  var s0=snapshot();
+  gc(64);   var s1=snapshot();
+  gc(64);   var s2=snapshot();
+  gc(128);  var s3=snapshot();
+  gc(256);  var s4=snapshot();
+  types.forEach(function(t){
+    var row='  '+t.padEnd(16)+'| ';
+    [s0,s1,s2,s3,s4].forEach(function(s,i){
+      row+=String(s[t]).padStart(i===0?3:5);
+      if(i<4) row+=' |';
+    });
+    log(row+'/20');
+  });
+  log('[T15] done\n');
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 02 — GC TIMING MAP ===\n');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){
+    if(i>=tests.length){log('\n=== FIM ===');return;}
+    var r; try{r=tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);}
+    i++;
+    if(r&&typeof r.then==='function') r.then(function(){setTimeout(next,500);}).catch(function(){setTimeout(next,500);});
+    else setTimeout(next,400);
+  }
+  next();
+}
+</script></body></html>

