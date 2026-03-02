@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Promise Stress Verification</title>
+<style>
+body { font-family: monospace; background:#111; color:#0f0; }
+button { margin:5px; padding:10px; }
+#log { white-space:pre-wrap; border:1px solid #0f0; padding:10px; height:400px; overflow:auto; }
+</style>
+</head>
+<body>
+
+<h2>Promise Stress Verification</h2>
+
+<button onclick="testA()">Test A – Finite Chain</button>
+<button onclick="testB()">Test B – Infinite Async Recursion</button>
+<button onclick="clearLog()">Clear Log</button>
+
+<div id="log"></div>
+
+<script>
+const logDiv = document.getElementById("log");
+
+function log(msg){
+    const t = performance.now().toFixed(2);
+    logDiv.textContent += `[${t} ms] ${msg}\n`;
+    logDiv.scrollTop = logDiv.scrollHeight;
+}
+
+function clearLog(){
+    logDiv.textContent = "";
+}
+
+/////////////////////////////
+// TEST A – Finite chain
+/////////////////////////////
+function testA(){
+    log("=== TEST A START ===");
+    const maxChain = 1000; // altere para testar
+    let start = performance.now();
+
+    let p = Promise.resolve(0);
+    for(let i=0;i<maxChain;i++){
+        p = p.then(n => n + 1);
+    }
+
+    p.then(result=>{
+        let end = performance.now();
+        log(`Chain resolved: result=${result}`);
+        log(`Duration: ${(end-start).toFixed(2)} ms`);
+        log("=== TEST A END ===\n");
+    }).catch(e=>{
+        log("ERROR: " + e);
+        log("=== TEST A END ===\n");
+    });
+
+    log("Chain scheduled.");
+}
+
+/////////////////////////////
+// TEST B – Infinite async recursion
+/////////////////////////////
+function testB(){
+    log("=== TEST B START ===");
+    let depth = 0;
+    let lastLog = performance.now();
+
+    Promise.resolve().then(function recurse(){
+        depth++;
+
+        // Log periódico para monitorar progresso
+        if(depth % 1000 === 0){
+            let now = performance.now();
+            log(`Depth=${depth} (+${(now-lastLog).toFixed(2)} ms)`);
+            lastLog = now;
+        }
+
+        return Promise.resolve().then(recurse);
+    }).catch(e=>{
+        log("Caught: " + e);
+        log("Final depth=" + depth);
+    });
+
+    log("Infinite async recursion started.");
+}
+
+/////////////////////////////
+// Watchdog indicator
+/////////////////////////////
+setInterval(()=>{
+    log("[Heartbeat] Event loop alive");
+}, 3000);
+
+</script>
+
+</body>
+</html>
