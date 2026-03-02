@@ -117,6 +117,46 @@
     <button onclick="runTest108()">Teste 108: getImageData + remove (Canvas Buffer Crash)</button>
     <button onclick="runTest109()">Teste 109: onwebkittransitionend + deleteRule (CSSOM Collapse)</button>
     <button onclick="runTest110()">Teste 110: onmessage + remove (Iframe Suicide Race)</button>
+    <button onclick="runTest111()">Teste 111: ondragend + replaceChild (Drag UAF)</button>
+    <button onclick="runTest112()">Teste 112: onpagehide + deleteCaption (Table Freeze Crash)</button>
+    <button onclick="runTest113()">Teste 113: fullscreenchange + textContent (Fullscreen Panic)</button>
+    <button onclick="runTest114()">Teste 114: Fragment + insertAdjacentHTML (Parser Crash)</button>
+    <button onclick="runTest115()">Teste 115: matchMedia + cssText (CSSOM Race)</button>
+    <button onclick="runTest116()">Teste 116: onloadedmetadata + replaceChild (Media UAF)</button>
+    <button onclick="runTest117()">Teste 117: onsearch + deleteTFoot (Table Footer Collapse)</button>
+    <button onclick="runTest118()">Teste 118: suspendRedraw + remove (SVG Render Panic)</button>
+    <button onclick="runTest119()">Teste 119: onwebkitanimationend + deleteCell (Grid Corruption)</button>
+    <button onclick="runTest120()">Teste 120: onunload + close (Context Suicide)</button>
+    <button onclick="runTest121()">Teste 121: onbeforeunload + cloneNode (Duplication Leak)</button>
+    <button onclick="runTest122()">Teste 122: onseeked + outerHTML (Media State Race)</button>
+    <button onclick="runTest123()">Teste 123: onerror + importNode (Cross-Document Panic)</button>
+    <button onclick="runTest124()">Teste 124: onscroll + insertRule (CSSOM Thrashing)</button>
+    <button onclick="runTest125()">Teste 125: onresize + createSVGMatrix (Math Overflow)</button>
+    <button onclick="runTest126()">Teste 126: oncanplay + adoptNode (Media Context Transfer)</button>
+    <button onclick="runTest127()">Teste 127: ondrag + insertAdjacentElement (Drag Layout Race)</button>
+    <button onclick="runTest128()">Teste 128: onsubmit + innerHTML (Form Submission UAF)</button>
+    <button onclick="runTest129()">Teste 129: createSVGPathSegClosePath + remove (Path Leak)</button>
+    <button onclick="runTest130()">Teste 130: onstalled + cloneNode (Network State Panic)</button>
+    <button onclick="runTest131()">Teste 131: onreset + deleteCell (Form Restore UAF)</button>
+    <button onclick="runTest132()">Teste 132: onvolumechange + remove (Audio Hardware Panic)</button>
+    <button onclick="runTest133()">Teste 133: onresize + deleteMedium (CSSOM Rule Collapse)</button>
+    <button onclick="runTest134()">Teste 134: animationiteration + createSVGTransform</button>
+    <button onclick="runTest135()">Teste 135: Worker terminate + IPC Buffer Transfer</button>
+    <button onclick="runTest136()">Teste 136: onfocus + insertBefore (Focus Tree Mutation)</button>
+    <button onclick="runTest137()">Teste 137: onpointerup + textContent (Pointer State Panic)</button>
+    <button onclick="runTest138()">Teste 138: oncanplaythrough + toDataURL (Buffer Extraction Race)</button>
+    <button onclick="runTest139()">Teste 139: ondurationchange + insertAdjacentText (Metadata Corruption)</button>
+    <button onclick="runTest140()">Teste 140: onwebkitfullscreenerror + releaseEvents (Dispatch Table Collapse)</button>
+    <button onclick="runTest141()">Teste 141: ontimeupdate + deleteTexture (Media/WebGL Race)</button>
+    <button onclick="runTest142()">Teste 142: ontouchstart + detach (NodeIterator Panic)</button>
+    <button onclick="runTest143()">Teste 143: ontransitionend + deleteRule (CSSOM Resolve Crash)</button>
+    <button onclick="runTest144()">Teste 144: onsuspend + deleteDatabase (I/O Pause Collision)</button>
+    <button onclick="runTest145()">Teste 145: onratechange + isPointInPath + outerHTML (Geometry UAF)</button>
+    <button onclick="runTest146()">Teste 146: onmessage + importNode + textContent</button>
+    <button onclick="runTest147()">Teste 147: onpopstate + adoptNode UAF</button>
+    <button onclick="runTest148()">Teste 148: onended + cloneNode + remove Panic</button>
+    <button onclick="runTest149()">Teste 149: onstorage + Fragment + replaceChild</button>
+    <button onclick="runTest150()">Teste 150: DOM Cyclone (pageshow + adopt + innerHTML)</button>
    
     <hr>
     <h3>Saida / Log:</h3>
@@ -3694,6 +3734,1453 @@
 
             } catch(e) {
                 logOutput("[Teste 110] Fila de mensagens ou contexto cruzado falhou: " + e);
+            }
+        }
+// ==========================================
+        // Teste 111: ondragend + replaceChild (Drag UAF)
+        // ==========================================
+        function runTest111() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let elementoArrastavel = document.createElement('div');
+                elementoArrastavel.draggable = true;
+                elementoArrastavel.innerText = "Arraste-me e Solte";
+                
+                let substituto = document.createElement('div');
+                substituto.innerText = "Substituto Falso";
+
+                container.appendChild(elementoArrastavel);
+
+                elementoArrastavel.ondragend = function(e) {
+                    try {
+                        // O C++ está a limpar a operação de arrastamento.
+                        // Destruímos o nó substituindo-o imediatamente.
+                        container.replaceChild(substituto, elementoArrastavel);
+                        
+                        // Força a libertação de memória do elemento arrastado
+                        elementoArrastavel = null;
+                        let lixo = new ArrayBuffer(32 * 1024 * 1024);
+                        logOutput("[Teste 111] replaceChild executado durante ondragend.");
+                    } catch(err) {}
+                };
+
+                // Despacha eventos sintéticos para simular o drag (nem sempre engatilha a rotina C++ completa, mas testa a fila)
+                elementoArrastavel.dispatchEvent(new Event('dragstart', { bubbles: true }));
+                elementoArrastavel.dispatchEvent(new Event('dragend', { bubbles: true }));
+                
+            } catch(e) {
+                logOutput("[Teste 111] Falha ao processar o evento de arrastamento: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 112: onpagehide + deleteCaption (Table Freeze Crash)
+        // ==========================================
+        function runTest112() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                
+                // Usamos um iframe para podermos disparar o evento onpagehide de forma isolada
+                let iframe = document.createElement('iframe');
+                container.appendChild(iframe);
+                
+                let doc = iframe.contentWindow.document;
+                let tabela = doc.createElement('table');
+                let caption = tabela.createCaption();
+                caption.innerText = "Legenda Crítica";
+                doc.body.appendChild(tabela);
+
+                iframe.contentWindow.onpagehide = function() {
+                    try {
+                        // O contexto do iframe está a ser congelado/destruído
+                        // Forçamos uma alteração de layout destrutiva na tabela
+                        tabela.deleteCaption();
+                        let pressao = new Uint32Array(16 * 1024 * 1024);
+                    } catch(err) {}
+                };
+
+                // Removemos o iframe para engatilhar o onpagehide
+                iframe.remove();
+                
+                logOutput("[Teste 112] deleteCaption invocado durante o onpagehide. Motor sobreviveu ao congelamento.");
+            } catch(e) {
+                logOutput("[Teste 112] Erro na destruição de contexto da janela: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 113: fullscreenchange + textContent (Fullscreen Panic)
+        // ==========================================
+        function runTest113() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let host = document.createElement('div');
+                let alvo = document.createElement('video'); // Vídeos lidam com extensões de hardware nativas no WebKit
+                
+                host.appendChild(alvo);
+                container.appendChild(host);
+
+                document.addEventListener('webkitfullscreenchange', function handler() {
+                    try {
+                        // Quando o C++ tenta colocar a superfície de vídeo em ecrã inteiro,
+                        // reescrevemos o DOM do host com texto simples usando o setter destrutivo
+                        host.textContent = "Fim do Ecrã Inteiro";
+                        document.removeEventListener('webkitfullscreenchange', handler);
+                        logOutput("[Teste 113] textContent mutado durante a mudança de estado do ecrã inteiro.");
+                    } catch(err) {}
+                });
+
+                // Tenta engatilhar o fullscreen (pode ser bloqueado sem interação direta do utilizador,
+                // mas a chamada à API já inicializa a verificação de estado no motor)
+                if (alvo.webkitRequestFullscreen) {
+                    alvo.webkitRequestFullscreen().catch(() => {
+                        // Se for barrado, despachamos o evento manualmente para forçar o listener
+                        document.dispatchEvent(new Event('webkitfullscreenchange'));
+                    });
+                } else {
+                    document.dispatchEvent(new Event('webkitfullscreenchange'));
+                }
+                
+            } catch(e) {
+                logOutput("[Teste 113] Falha na API de Ecrã Inteiro: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 114: Fragment + insertAdjacentHTML (Parser Crash)
+        // ==========================================
+        function runTest114() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let fragmento = document.createDocumentFragment();
+                let base = document.createElement('div');
+                fragmento.appendChild(base);
+
+                // Criamos uma estrutura DOM imensa em formato de texto
+                let htmlMalicioso = "<span>".repeat(2000) + "Profundidade" + "</span>".repeat(2000);
+
+                try {
+                    // Forçamos o motor a fazer o parsing de HTML bruto e a inseri-lo num fragmento offline
+                    base.insertAdjacentHTML('afterbegin', htmlMalicioso);
+                    
+                    // No exato milissegundo em que a árvore em memória é criada, forçamos o C++
+                    // a integrá-la no documento principal, sujeitando-a a recálculos de estilo
+                    container.appendChild(fragmento);
+                    
+                    logOutput("[Teste 114] insertAdjacentHTML processou a árvore profunda sem causar um Stack Overflow nativo no Parser.");
+                } catch(innerE) {
+                    logOutput("[Teste 114] O Parser C++ interrompeu a alocação da profundidade HTML: " + innerE);
+                }
+
+            } catch(e) {
+                logOutput("[Teste 114] Erro crítico na gestão de fragmentos do documento: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 115: matchMedia + cssText (CSSOM Race)
+        // ==========================================
+        function runTest115() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let divEstilizada = document.createElement('div');
+                // Atribuição inicial de estilo em massa usando o setter cssText
+                divEstilizada.style.cssText = "width: 100px; height: 100px; background: red;";
+                container.appendChild(divEstilizada);
+
+                // matchMedia é conhecido por criar listeners C++ complexos que podem corromper com alterações rápidas
+                let mediaQueryList = window.matchMedia("(min-width: 1px)");
+                
+                let disparos = 0;
+                mediaQueryList.addListener(function(e) {
+                    disparos++;
+                    if (disparos === 1) {
+                        // Durante o disparo nativo, destruímos as regras usando cssText
+                        divEstilizada.style.cssText = "";
+                    }
+                });
+
+                // Criamos um ciclo de microtasks que altera violentamente o estilo
+                // na esperança de engatilhar o listener e a destruição simultaneamente
+                for(let i = 0; i < 50; i++) {
+                    queueMicrotask(() => {
+                        divEstilizada.style.cssText = "width: " + (100 + i) + "px; color: blue;";
+                    });
+                }
+                
+                logOutput("[Teste 115] Corrida de cssText e matchMedia engatilhada. Registo no motor de estilos efetuado.");
+            } catch(e) {
+                logOutput("[Teste 115] Falha no motor de media queries e CSSOM: " + e);
+            }
+        }
+ // ==========================================
+        // Teste 116: onloadedmetadata + replaceChild (Media UAF)
+        // ==========================================
+        function runTest116() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let audio = document.createElement('audio');
+                let substituto = document.createElement('span');
+                container.appendChild(audio);
+
+                audio.onloadedmetadata = function() {
+                    try {
+                        // O C++ acabou de alocar os metadados. Destruímos o elemento imediatamente.
+                        container.replaceChild(substituto, audio);
+                        
+                        // Força a recolha de lixo da estrutura MediaElement
+                        audio = null;
+                        let lixo = new ArrayBuffer(16 * 1024 * 1024);
+                        logOutput("[Teste 116] replaceChild invocado durante onloadedmetadata. Motor multimédia sobreviveu.");
+                    } catch(err) {}
+                };
+
+                // Despacha o evento de forma sintética (como se a media tivesse carregado)
+                audio.dispatchEvent(new Event('loadedmetadata'));
+                
+            } catch(e) {
+                logOutput("[Teste 116] Falha na gestão de eventos multimédia: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 117: onsearch + deleteTFoot (Table Footer Collapse)
+        // ==========================================
+        function runTest117() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let tabela = document.createElement('table');
+                let tfoot = tabela.createTFoot();
+                let linha = tfoot.insertRow();
+                let celula = linha.insertCell();
+                
+                let inputSearch = document.createElement('input');
+                inputSearch.type = "search";
+                celula.appendChild(inputSearch);
+                container.appendChild(tabela);
+
+                inputSearch.onsearch = function() {
+                    try {
+                        // Aniquila o TFoot e todos os seus filhos, incluindo o input que disparou o evento
+                        tabela.deleteTFoot();
+                        let pressao = new Uint32Array(8 * 1024 * 1024);
+                    } catch(err) {}
+                };
+
+                // Despacha o evento de pesquisa
+                inputSearch.dispatchEvent(new Event('search', { bubbles: true }));
+                
+                logOutput("[Teste 117] deleteTFoot invocado durante onsearch. Árvore de tabela processada sem crash.");
+            } catch(e) {
+                logOutput("[Teste 117] Erro na destruição estrutural do rodapé: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 118: suspendRedraw + remove (SVG Render Panic)
+        // ==========================================
+        function runTest118() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                container.appendChild(svg);
+
+                if (typeof svg.suspendRedraw === 'function') {
+                    // Pausa a renderização nativa
+                    let suspendId = svg.suspendRedraw(1000);
+                    
+                    // Cria e injeta o retângulo usando a API específica do SVG
+                    let rect = svg.createSVGRect();
+                    rect.width = 100;
+                    rect.height = 100;
+                    
+                    let rectNode = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                    svg.appendChild(rectNode);
+                    
+                    // Remove o nó enquanto o motor está suspenso
+                    rectNode.remove();
+                    
+                    // Força o desenho e liberta a suspensão
+                    svg.forceRedraw();
+                    svg.unsuspendRedraw(suspendId);
+                    
+                    logOutput("[Teste 118] Manipulação de renderização SVG concluída. Motor gráfico estável.");
+                } else {
+                    logOutput("[Teste 118] A API SVG suspendRedraw não está exposta neste ambiente.");
+                }
+            } catch(e) {
+                logOutput("[Teste 118] Falha no motor de desenho vetorial nativo: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 119: onwebkitanimationend + deleteCell (Grid Corruption)
+        // ==========================================
+        function runTest119() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let tabela = document.createElement('table');
+                let linha = tabela.insertRow();
+                let celula = linha.insertCell(0);
+                container.appendChild(tabela);
+
+                celula.addEventListener('webkitanimationend', function() {
+                    try {
+                        // Apaga a célula da memória
+                        linha.deleteCell(0);
+                        // Injeta texto bruto no nó da linha, testando o tratamento de erros do renderizador de tabelas
+                        linha.insertAdjacentText('afterbegin', 'Texto Corrompido');
+                        logOutput("[Teste 119] deleteCell e insertAdjacentText processados após a animação.");
+                    } catch(inner) {}
+                });
+
+                // Dispara o evento específico da Apple/WebKit
+                celula.dispatchEvent(new Event('webkitanimationend'));
+
+            } catch(e) {
+                logOutput("[Teste 119] Erro de alinhamento ou estrutura na tabela: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 120: onunload + close (Context Suicide)
+        // ==========================================
+        function runTest120() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let iframe = document.createElement('iframe');
+                container.appendChild(iframe);
+
+                let doc = iframe.contentWindow.document;
+                doc.open();
+                doc.write(`
+                    <script>
+                        window.onunload = function() {
+                            try {
+                                // Tenta invocar close() num contexto que já está a ser desmantelado pela engine
+                                window.close();
+                            } catch(e) {}
+                        };
+                    <\/script>
+                `);
+                doc.close();
+
+                // Remove o iframe para forçar o onunload no seu contexto interno
+                setTimeout(() => {
+                    iframe.remove();
+                    logOutput("[Teste 120] Iframe removido. Evento onunload disparou a chamada de fecho sem crashar a thread principal.");
+                }, 100);
+
+            } catch(e) {
+                logOutput("[Teste 120] Falha no isolamento de contexto de janelas: " + e);
+            }
+        }
+// ==========================================
+        // Teste 121: onbeforeunload + cloneNode (Duplication Leak)
+        // ==========================================
+        function runTest121() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let iframe = document.createElement('iframe');
+                container.appendChild(iframe);
+
+                let doc = iframe.contentWindow.document;
+                let noGigante = doc.createElement('div');
+                // Cria um nó pesado
+                noGigante.innerHTML = "<span>Teste</span>".repeat(5000);
+                doc.body.appendChild(noGigante);
+
+                iframe.contentWindow.onbeforeunload = function() {
+                    try {
+                        // A engine C++ começou a desligar o documento.
+                        // Forçamos uma clonagem profunda massiva.
+                        let clone = noGigante.cloneNode(true);
+                        // Tentamos mantê-lo vivo no documento pai
+                        window.vazamento = clone;
+                    } catch(err) {}
+                };
+
+                // Força o desmantelamento do iframe
+                iframe.src = "about:blank";
+                
+                logOutput("[Teste 121] cloneNode forçado durante o onbeforeunload. C++ lidou com a alocação.");
+            } catch(e) {
+                logOutput("[Teste 121] Erro na duplicação de nós durante teardown: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 122: onseeked + outerHTML (Media State Race)
+        // ==========================================
+        function runTest122() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                // Elemento multimédia suportado inserido no DOM
+                container.innerHTML = '<video id="videoAlvo"></video>';
+                let video = document.getElementById('videoAlvo');
+
+                video.onseeked = function() {
+                    try {
+                        // O ponteiro nativo de leitura foi movido.
+                        // Reescrevemos violentamente o nó e os seus atributos com outerHTML
+                        video.outerHTML = '<div id="videoAlvo">Corrompido</div>';
+                        
+                        // Forçamos limpeza
+                        video = null;
+                        let lixo = new ArrayBuffer(8 * 1024 * 1024);
+                    } catch(err) {}
+                };
+
+                // Força um evento 'seeked' sintético
+                video.dispatchEvent(new Event('seeked'));
+
+                logOutput("[Teste 122] outerHTML destruiu o elemento durante onseeked. Pipeline estável.");
+            } catch(e) {
+                logOutput("[Teste 122] Motor multimédia falhou na gestão de estado: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 123: onerror + importNode (Cross-Document Panic)
+        // ==========================================
+        function runTest123() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let iframe = document.createElement('iframe');
+                container.appendChild(iframe);
+
+                let docIframe = iframe.contentWindow.document;
+                let img = docIframe.createElement('img');
+                
+                img.onerror = function() {
+                    try {
+                        // Durante a rotina C++ de fallback de erro da imagem,
+                        // o documento pai "rouba" o nó importando-o.
+                        let nóImportado = document.importNode(img, true);
+                        container.appendChild(nóImportado);
+                        
+                        // Destruímos o iframe original
+                        iframe.remove();
+                        logOutput("[Teste 123] importNode roubou o nó durante o onerror. Nenhuma falha de segmentação cruzada.");
+                    } catch(err) {}
+                };
+
+                docIframe.body.appendChild(img);
+                // Engatilha o erro solicitando um recurso malformado/inexistente
+                img.src = "falha://inexistente";
+                
+            } catch(e) {
+                logOutput("[Teste 123] Falha na importação de nós entre contextos: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 124: onscroll + insertRule (CSSOM Thrashing)
+        // ==========================================
+        function runTest124() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                
+                let style = document.createElement('style');
+                document.head.appendChild(style);
+                let sheet = style.sheet;
+
+                let areaScroll = document.createElement('div');
+                areaScroll.style.cssText = "width: 100px; height: 100px; overflow: scroll;";
+                
+                let conteudo = document.createElement('div');
+                conteudo.style.height = "500px";
+                areaScroll.appendChild(conteudo);
+                container.appendChild(areaScroll);
+
+                let limite = 0;
+                areaScroll.onscroll = function() {
+                    limite++;
+                    if (limite < 50) {
+                        try {
+                            // Injeta regras css globais repetidamente e apaga as antigas
+                            sheet.insertRule("body { margin-top: " + limite + "px; }", 0);
+                            
+                            // Remove propriedades inline no exato momento
+                            conteudo.style.removeProperty('height');
+                            conteudo.style.height = (500 + limite) + "px";
+                        } catch(err) {}
+                    }
+                };
+
+                // Simula rolagens massivas para atrofiar a engine
+                for (let i = 0; i < 50; i++) {
+                    areaScroll.scrollTop = i * 2;
+                }
+
+                logOutput("[Teste 124] Thrashing de CSSOM induzido pelo onscroll finalizado. Motor de layout resistiu.");
+                setTimeout(() => style.remove(), 100);
+            } catch(e) {
+                logOutput("[Teste 124] Erro crítico no motor de recálculo de estilos: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 125: onresize + createSVGMatrix (Math Overflow)
+        // ==========================================
+        function runTest125() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                container.appendChild(svg);
+
+                window.onresize = function() {
+                    try {
+                        let matriz = svg.createSVGMatrix();
+                        // Valores que estouram a precisão normal no C++
+                        matriz.a = Number.MAX_VALUE;
+                        matriz.b = -Number.MAX_VALUE;
+                        matriz.c = Infinity; // Tenta forçar cálculo com infinito
+                        matriz.d = NaN;
+                        
+                        // Força a engine a processar e ler a matriz
+                        let testeVuln = matriz.a * 2;
+                        logOutput("[Teste 125] createSVGMatrix manipulada durante onresize. Valor retido: " + matriz.a);
+                        
+                        window.onresize = null; // Previne spam
+                    } catch(err) {}
+                };
+
+                // Despacha o evento de resize global
+                window.dispatchEvent(new Event('resize'));
+                
+            } catch(e) {
+                logOutput("[Teste 125] O motor matemático SVG falhou perante a injeção de valores extremos: " + e);
+            }
+        }
+   // ==========================================
+        // Teste 131: onreset + deleteCell (Form Restore UAF)
+        // ==========================================
+        function runTest131() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let tabela = document.createElement('table');
+                let linha = tabela.insertRow();
+                let celula = linha.insertCell();
+                
+                let form = document.createElement('form');
+                form.innerHTML = '<input type="text" value="Valor Original">';
+                celula.appendChild(form);
+                container.appendChild(tabela);
+
+                form.onreset = function(e) {
+                    try {
+                        // O C++ preparou-se para limpar os valores dos inputs.
+                        // Apagamos o contentor pai da memória.
+                        linha.deleteCell(0);
+                        
+                        let lixo = new Uint32Array(16 * 1024 * 1024);
+                        logOutput("[Teste 131] deleteCell executado durante a rotina onreset do formulário.");
+                    } catch(err) {}
+                };
+
+                // Altera o valor para garantir que o motor faz trabalho durante o reset
+                form.querySelector('input').value = "Valor Modificado";
+                
+                // Dispara o reset
+                form.reset();
+
+            } catch(e) {
+                logOutput("[Teste 131] Falha ao gerir a reconstrução do formulário: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 132: onvolumechange + remove (Audio Hardware Panic)
+        // ==========================================
+        function runTest132() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let audio = document.createElement('audio');
+                container.appendChild(audio);
+
+                audio.onvolumechange = function() {
+                    try {
+                        // O evento é gerado de forma síncrona com as chamadas nativas do sistema operativo.
+                        // Removemos o nó e tentamos forçar a recolha de lixo no objeto MediaElement.
+                        audio.remove();
+                        audio = null;
+                        
+                        let pressao = new ArrayBuffer(32 * 1024 * 1024);
+                        logOutput("[Teste 132] Elemento de áudio removido e GC ativado durante onvolumechange.");
+                    } catch(err) {}
+                };
+
+                // Alterar o volume engatilha o evento
+                audio.volume = 0.5;
+
+            } catch(e) {
+                logOutput("[Teste 132] Motor de áudio perdeu a referência ao hardware virtual: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 133: onresize + deleteMedium (CSSOM Rule Collapse)
+        // ==========================================
+        function runTest133() {
+            clearOutput();
+            try {
+                let style = document.createElement('style');
+                style.innerText = "@media screen { body { background: #111; } }";
+                document.head.appendChild(style);
+
+                let sheet = style.sheet;
+                let regraMedia = sheet.cssRules[0];
+
+                window.onresize = function() {
+                    try {
+                        if (regraMedia && regraMedia.media) {
+                            // Quando o layout tenta adaptar-se, apagamos o target "screen" da memória CSSOM
+                            regraMedia.media.deleteMedium("screen");
+                            logOutput("[Teste 133] deleteMedium invocado durante o recalculo do onresize.");
+                        }
+                        window.onresize = null; // Impede spam
+                    } catch(err) {}
+                };
+
+                // Dispara manualmente o redimensionamento para engatilhar o listener
+                window.dispatchEvent(new Event('resize'));
+                
+                setTimeout(() => { if(style.parentNode) style.remove(); }, 100);
+            } catch(e) {
+                logOutput("[Teste 133] Motor de layout corrompeu ao recalcular CSSOM: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 134: animationiteration + createSVGTransform
+        // ==========================================
+        function runTest134() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                
+                let style = document.createElement('style');
+                style.innerText = "@keyframes spin { to { transform: rotate(360deg); } } #svgAlvo { animation: spin 0.01s infinite; }";
+                document.head.appendChild(style);
+
+                let svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                svg.id = "svgAlvo";
+                container.appendChild(svg);
+
+                let interacoes = 0;
+                svg.addEventListener('animationiteration', function() {
+                    interacoes++;
+                    if (interacoes === 2) {
+                        try {
+                            // Criação massiva de matrizes transformadoras nativas a meio do ciclo de renderização
+                            let t1 = svg.createSVGTransform();
+                            let t2 = svg.createSVGTransform();
+                            
+                            // Removemos a superfície de renderização SVG, tornando as transformações órfãs
+                            svg.remove();
+                            let matrizCorrompida = t1.matrix; 
+                            
+                            logOutput("[Teste 134] Nó SVG aniquilado enquanto matrizes de transformação órfãs eram alocadas.");
+                        } catch(err) {}
+                    }
+                });
+
+            } catch(e) {
+                logOutput("[Teste 134] Motor vetorial falhou durante o ciclo de animação: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 135: Worker terminate + IPC Buffer Transfer
+        // ==========================================
+        function runTest135() {
+            clearOutput();
+            try {
+                // Cria um Web Worker simples a partir de um Blob
+                let blob = new Blob(["self.onmessage = function(e) { self.postMessage('OK'); };"], { type: 'application/javascript' });
+                let worker = new Worker(URL.createObjectURL(blob));
+
+                // Aloca um ArrayBuffer
+                let buffer = new ArrayBuffer(1024 * 1024);
+                let visualizador = new Uint8Array(buffer);
+                visualizador[0] = 0xAA;
+
+                // Transferimos a propriedade absoluta do buffer para o Worker
+                worker.postMessage({ buf: buffer }, [buffer]);
+
+                // Imediatamente a seguir à postMessage e antes de a fila IPC estar garantidamente vazia, assassinamos a thread
+                worker.terminate();
+
+                try {
+                    // Verificamos se a thread principal recuperou magicamente a propriedade do buffer 
+                    // ou se deixou a memória num estado indefinido (Undefined Behavior).
+                    visualizador[0] = 0xBB;
+                    logOutput("[Teste 135] O buffer ainda era acessível após o terminate! Pode indicar uma fuga ou bloqueio IPC.");
+                } catch(inner) {
+                    logOutput("[Teste 135] Motor IPC agiu corretamente; memória desanexada e thread terminada com sucesso.");
+                }
+
+            } catch(e) {
+                logOutput("[Teste 135] Falha na fila de mensagens nativa (IPC): " + e);
+            }
+        }
+// ==========================================
+        // Teste 126: oncanplay + adoptNode (Media Context Transfer)
+        // ==========================================
+        function runTest126() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let iframe = document.createElement('iframe');
+                container.appendChild(iframe);
+
+                let audio = document.createElement('audio');
+                container.appendChild(audio);
+
+                audio.oncanplay = function() {
+                    try {
+                        // O buffer de áudio está pronto. Arrancamo-lo para dentro do iframe.
+                        iframe.contentWindow.document.adoptNode(audio);
+                        logOutput("[Teste 126] adoptNode invocado durante oncanplay. Motor transferiu o contexto C++.");
+                    } catch(err) {}
+                };
+
+                // Despacha o evento de forma sintética para acionar a rotina
+                audio.dispatchEvent(new Event('canplay'));
+
+            } catch(e) {
+                logOutput("[Teste 126] Erro na transferência de contexto multimédia: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 127: ondrag + insertAdjacentElement (Drag Layout Race)
+        // ==========================================
+        function runTest127() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let arrastavel = document.createElement('div');
+                arrastavel.draggable = true;
+                arrastavel.innerText = "Nó de Arrastamento";
+                container.appendChild(arrastavel);
+
+                let limite = 0;
+                arrastavel.ondrag = function() {
+                    limite++;
+                    if (limite < 50) {
+                        try {
+                            // Injeta nós adjacentes continuamente para forçar o recálculo do layout
+                            let intruso = document.createElement('span');
+                            intruso.innerText = "X";
+                            arrastavel.insertAdjacentElement('beforebegin', intruso);
+                        } catch(err) {}
+                    }
+                };
+
+                // Simula o ciclo de arrastamento
+                for(let i = 0; i < 50; i++) {
+                    arrastavel.dispatchEvent(new Event('drag', { bubbles: true }));
+                }
+
+                logOutput("[Teste 127] ondrag simulado e layout corrompido com insertAdjacentElement.");
+            } catch(e) {
+                logOutput("[Teste 127] Falha no motor de layout de arrastamento: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 128: onsubmit + innerHTML (Form Submission UAF)
+        // ==========================================
+        function runTest128() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let form = document.createElement('form');
+                form.innerHTML = '<input name="dado1" value="Teste"><button type="submit">Enviar</button>';
+                container.appendChild(form);
+
+                form.onsubmit = function(e) {
+                    e.preventDefault(); // Impede o recarregamento da página
+                    try {
+                        // O C++ preparou-se para processar os nós de input.
+                        // Destruímos a árvore interna do formulário completamente.
+                        form.innerHTML = '';
+                        let pressao = new Uint32Array(16 * 1024 * 1024);
+                        logOutput("[Teste 128] innerHTML aniquilado durante onsubmit. Serializador do formulário sobreviveu.");
+                    } catch(err) {}
+                };
+
+                // Engatilha a submissão
+                form.dispatchEvent(new Event('submit', { cancelable: true }));
+
+            } catch(e) {
+                logOutput("[Teste 128] Motor falhou ao recolher dados de nós destruídos: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 129: createSVGPathSegClosePath + remove (Path Leak)
+        // ==========================================
+        function runTest129() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                let path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                svg.appendChild(path);
+                container.appendChild(svg);
+
+                // Assegura que a API de segmentos de caminho existe neste WebKit
+                if (typeof svg.createSVGPathSegClosePath === 'function') {
+                    let segmentoFecho = svg.createSVGPathSegClosePath();
+                    
+                    // Tentamos interagir com a lista de caminhos
+                    if (path.pathSegList) {
+                        path.pathSegList.appendItem(segmentoFecho);
+                    }
+                    
+                    // Removemos o nó imediatamente após a alocação de memória do segmento gráfico
+                    svg.remove();
+                    logOutput("[Teste 129] Caminho SVG construído e removido da árvore. Sem fuga de memória visível.");
+                } else {
+                    logOutput("[Teste 129] API createSVGPathSegClosePath não disponível (WebKit possivelmente muito moderno ou desativado).");
+                }
+            } catch(e) {
+                logOutput("[Teste 129] Exceção no motor de renderização SVG: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 130: onstalled + cloneNode (Network State Panic)
+        // ==========================================
+        function runTest130() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let video = document.createElement('video');
+                container.appendChild(video);
+
+                video.onstalled = function() {
+                    try {
+                        // A rede da engine C++ bloqueou a obtenção dos dados
+                        // Forçamos a clonagem do nó de media num estado inconsistente
+                        let cloneErro = video.cloneNode(true);
+                        container.appendChild(cloneErro);
+                        logOutput("[Teste 130] Motor de media clonou o nó de vídeo em estado 'stalled'.");
+                    } catch(err) {}
+                };
+
+                // Despacha manualmente o evento de paragem de rede
+                video.dispatchEvent(new Event('stalled'));
+
+            } catch(e) {
+                logOutput("[Teste 130] Erro ao duplicar elementos de media paralisados: " + e);
+            }
+        }
+ // ==========================================
+        // Teste 136: onfocus + insertBefore (Focus Tree Mutation)
+        // ==========================================
+        function runTest136() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let input = document.createElement('input');
+                let invasor = document.createElement('iframe');
+                container.appendChild(input);
+
+                input.onfocus = function() {
+                    try {
+                        // O motor está a atualizar a UI para o elemento focado.
+                        // Injetamos um elemento complexo (iframe) imediatamente antes dele,
+                        // forçando um recálculo síncrono violento.
+                        container.insertBefore(invasor, input);
+                        
+                        // Mutamos o alvo original para testar Use-After-Free no manipulador de foco
+                        input.type = "hidden";
+                        
+                        logOutput("[Teste 136] insertBefore acionado durante o onfocus. Motor WebKit manteve a estabilidade da árvore de renderização.");
+                    } catch(err) {}
+                };
+
+                // Força o foco para engatilhar o evento
+                input.focus();
+                
+            } catch(e) {
+                logOutput("[Teste 136] Falha na gestão da árvore de foco: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 137: onpointerup + textContent (Pointer State Panic)
+        // ==========================================
+        function runTest137() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let alvo = document.createElement('button');
+                alvo.innerText = "Alvo de Ponteiro";
+                container.appendChild(alvo);
+
+                alvo.onpointerup = function(e) {
+                    try {
+                        // O C++ está a processar a libertação do ponteiro (rato/toque).
+                        // Reescrevemos o contentor pai de forma destrutiva.
+                        container.textContent = "Árvore Aniquilada";
+                        
+                        // Força a libertação de memória do botão alvo
+                        alvo = null;
+                        let lixo = new Uint32Array(16 * 1024 * 1024);
+                        
+                        logOutput("[Teste 137] textContent executado. Alvo destruído a meio da propagação do onpointerup.");
+                    } catch(err) {}
+                };
+
+                // Despacha o evento de forma sintética
+                alvo.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+
+            } catch(e) {
+                logOutput("[Teste 137] O motor de eventos de ponteiro colapsou: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 138: oncanplaythrough + toDataURL (Buffer Extraction Race)
+        // ==========================================
+        function runTest138() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let video = document.createElement('video');
+                container.appendChild(video);
+
+                let canvas = document.createElement('canvas');
+                let ctx = canvas.getContext('2d');
+
+                video.oncanplaythrough = function() {
+                    try {
+                        // O buffer de media nativo assinala prontidão.
+                        // Forçamos o desenho desse buffer num canvas.
+                        ctx.drawImage(video, 0, 0, 100, 100);
+                        
+                        // Tentamos extrair imediatamente a string Base64 dos pixéis (operação bloqueante e pesada)
+                        let data = canvas.toDataURL("image/png");
+                        
+                        // Destruímos o vídeo a meio
+                        video.remove();
+                        video = null;
+                        
+                        logOutput("[Teste 138] Extração toDataURL sobre o buffer de media efetuada de forma segura.");
+                    } catch(err) {
+                        logOutput("[Teste 138] Leitura de pixéis interrompida com segurança pelo motor gráfico: " + err);
+                    }
+                };
+
+                // Engatilha o evento sinteticamente (já que não temos um vídeo real a carregar)
+                video.dispatchEvent(new Event('canplaythrough'));
+
+            } catch(e) {
+                logOutput("[Teste 138] Falha grave na extração de memória de contexto 2D/Multimédia: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 139: ondurationchange + insertAdjacentText (Metadata Corruption)
+        // ==========================================
+        function runTest139() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let audio = document.createElement('audio');
+                container.appendChild(audio);
+
+                audio.ondurationchange = function() {
+                    try {
+                        // A engine C++ está a atualizar os metadados de duração no Shadow DOM interno do leitor.
+                        // Injetamos texto de forma anormal no próprio nó raiz do elemento.
+                        audio.insertAdjacentText('beforeend', 'LIXO_DE_METADADOS');
+                        
+                        let pressao = new ArrayBuffer(8 * 1024 * 1024);
+                        logOutput("[Teste 139] insertAdjacentText executado durante ondurationchange.");
+                    } catch(err) {}
+                };
+
+                // Despacha o evento listado no dicionário de ataque
+                audio.dispatchEvent(new Event('durationchange'));
+
+            } catch(e) {
+                logOutput("[Teste 139] Motor de metadados multimédia sofreu corrupção de árvore DOM: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 140: onwebkitfullscreenerror + releaseEvents (Dispatch Table Collapse)
+        // ==========================================
+        function runTest140() {
+            clearOutput();
+            try {
+                let alvoIsolado = document.createElement('div');
+                
+                document.addEventListener('webkitfullscreenerror', function handler() {
+                    try {
+                        // Evento de erro de ecrã inteiro foi acionado no documento.
+                        // Tentamos invocar a API de janela legada 'releaseEvents' (referenciada nos seus docs)
+                        // para forçar a engine a purgar a tabela de listeners durante a propagação.
+                        if (typeof window.releaseEvents === 'function') {
+                            window.releaseEvents();
+                            logOutput("[Teste 140] window.releaseEvents invocada no decorrer do erro de fullscreen.");
+                        } else {
+                            logOutput("[Teste 140] A API legada releaseEvents foi removida ou não está exposta nesta versão do WebKit.");
+                        }
+                        
+                        document.removeEventListener('webkitfullscreenerror', handler);
+                    } catch(err) {}
+                });
+
+                // Tentativa de ecrã inteiro num nó que não está no DOM (deve falhar e acionar o erro)
+                if (alvoIsolado.webkitRequestFullscreen) {
+                    alvoIsolado.webkitRequestFullscreen().catch(() => {
+                        // Se for capturado localmente, tenta acionar manualmente o evento de documento
+                        document.dispatchEvent(new Event('webkitfullscreenerror'));
+                    });
+                } else {
+                    document.dispatchEvent(new Event('webkitfullscreenerror'));
+                }
+                
+            } catch(e) {
+                logOutput("[Teste 140] O motor de eventos entrou em pânico durante o desmantelamento da tabela: " + e);
+            }
+        }
+// ==========================================
+        // Teste 141: ontimeupdate + deleteTexture (Media/WebGL Race)
+        // ==========================================
+        function runTest141() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let video = document.createElement('video');
+                container.appendChild(video);
+
+                let canvas = document.createElement('canvas');
+                let gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                
+                if (!gl) {
+                    logOutput("[Teste 141] WebGL não suportado neste contexto. Teste abortado.");
+                    return;
+                }
+
+                let textura = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, textura);
+
+                video.ontimeupdate = function() {
+                    try {
+                        // O motor está a sinalizar a progressão do tempo da media.
+                        // Destruímos a textura WebGL que poderia estar a ser alvo de um frame.
+                        gl.deleteTexture(textura);
+                        
+                        let lixo = new Uint32Array(16 * 1024 * 1024);
+                        logOutput("[Teste 141] deleteTexture invocado durante ontimeupdate.");
+                        
+                        video.ontimeupdate = null; // Previne spam infinito
+                    } catch(err) {}
+                };
+
+                // Despacha o evento listado no dicionário para engatilhar a rotina
+                video.dispatchEvent(new Event('timeupdate'));
+
+            } catch(e) {
+                logOutput("[Teste 141] Falha de memória na engine WebGL/Multimédia: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 142: ontouchstart + detach (NodeIterator Panic)
+        // ==========================================
+        function runTest142() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let alvo = document.createElement('div');
+                alvo.innerText = "Toque Aqui";
+                container.appendChild(alvo);
+
+                // Cria um iterador de nós
+                let iterador = document.createNodeIterator(alvo, NodeFilter.SHOW_ALL, null, false);
+                iterador.nextNode(); // Move o ponteiro interno C++ para o nó alvo
+
+                alvo.ontouchstart = function() {
+                    try {
+                        // O motor está a calcular as coordenadas e o alvo do toque.
+                        // Invocamos detach() para destruir a ligação do iterador C++ com o DOM.
+                        iterador.detach();
+                        
+                        let pressao = new ArrayBuffer(8 * 1024 * 1024);
+                        logOutput("[Teste 142] detach() invocado com sucesso durante ontouchstart.");
+                    } catch(err) {
+                        logOutput("[Teste 142] Iterador nativo reportou erro seguro: " + err);
+                    }
+                };
+
+                // Simula o evento de toque
+                alvo.dispatchEvent(new Event('touchstart', { bubbles: true }));
+
+            } catch(e) {
+                logOutput("[Teste 142] Motor de interface colapsou com o desmantelamento do NodeIterator: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 143: ontransitionend + deleteRule (CSSOM Resolve Crash)
+        // ==========================================
+        function runTest143() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                
+                let style = document.createElement('style');
+                document.head.appendChild(style);
+                let sheet = style.sheet;
+                sheet.insertRule("#anim { transition: opacity 0.01s; opacity: 1; }", 0);
+
+                let div = document.createElement('div');
+                div.id = "anim";
+                container.appendChild(div);
+
+                div.addEventListener('transitionend', function() {
+                    try {
+                        // O C++ finalizou a animação e está a aplicar o estado definitivo.
+                        // Destruímos agressivamente a regra CSSOM primária.
+                        sheet.deleteRule(0);
+                        
+                        // Forçamos um reflow síncrono para engatilhar o pânico
+                        let recálculo = div.offsetHeight;
+                        
+                        logOutput("[Teste 143] deleteRule processado no frame de encerramento da transição.");
+                    } catch(err) {}
+                });
+
+                // Engatilha a transição
+                setTimeout(() => { div.style.opacity = "0"; }, 10);
+                
+                // Limpeza posterior
+                setTimeout(() => { if(style.parentNode) style.remove(); }, 200);
+
+            } catch(e) {
+                logOutput("[Teste 143] Árvore de CSSOM corrompida: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 144: onsuspend + deleteDatabase (I/O Pause Collision)
+        // ==========================================
+        function runTest144() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let audio = document.createElement('audio');
+                container.appendChild(audio);
+
+                audio.onsuspend = function() {
+                    try {
+                        // A thread de rede de media suspendeu o carregamento.
+                        // Disparamos um comando IPC destrutivo para o IndexedDB na thread principal.
+                        let requisicaoDelete = indexedDB.deleteDatabase('BancoFalso_PoC');
+                        
+                        requisicaoDelete.onsuccess = function() {
+                            logOutput("[Teste 144] deleteDatabase concluído com segurança durante a suspensão de media.");
+                        };
+                        requisicaoDelete.onerror = function() {
+                            logOutput("[Teste 144] deleteDatabase bloqueado de forma segura.");
+                        };
+                    } catch(err) {}
+                };
+
+                // Despacha o evento manualmente
+                audio.dispatchEvent(new Event('suspend'));
+
+            } catch(e) {
+                logOutput("[Teste 144] Colapso nas operações de armazenamento/I/O: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 145: onratechange + isPointInPath + outerHTML (Geometry UAF)
+        // ==========================================
+        function runTest145() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                
+                // Criamos um contentor para o vídeo que será destruído
+                container.innerHTML = '<video id="mediaAlvo"></video>';
+                let video = document.getElementById('mediaAlvo');
+
+                // Canvas invisível para matemática vetorial
+                let canvas = document.createElement('canvas');
+                let ctx = canvas.getContext('2d');
+                ctx.rect(10, 10, 100, 100);
+
+                video.onratechange = function() {
+                    try {
+                        // A taxa de reprodução alterou-se.
+                        // Executamos matemática pesada no Canvas e, usando um getter, destruímos o alvo
+                        let armadilhaX = {
+                            valueOf: function() {
+                                // O C++ pausou a instrução matemática isPointInPath para ler a coordenada.
+                                // Aniquilamos o vídeo da memória com outerHTML
+                                video.outerHTML = "<span>Removido</span>";
+                                return 50;
+                            }
+                        };
+
+                        // Invoca a função de colisão vetorial
+                        let colisao = ctx.isPointInPath(armadilhaX, 50);
+                        
+                        logOutput("[Teste 145] isPointInPath completou o cálculo matemático mesmo com o outerHTML ativado. Colisão: " + colisao);
+                    } catch(err) {
+                        logOutput("[Teste 145] Falha matemática vetorial tratada com segurança: " + err);
+                    }
+                };
+
+                // Altera a taxa de reprodução para disparar o evento
+                video.playbackRate = 2.0;
+                
+                // Se a alteração síncrona não disparar imediatamente, forçamos o evento
+                video.dispatchEvent(new Event('ratechange'));
+
+            } catch(e) {
+                logOutput("[Teste 145] Falha nativa na engine gráfica de contexto 2D: " + e);
+            }
+        }
+  // ==========================================
+        // Teste 146: onmessage + importNode + textContent
+        // ==========================================
+        function runTest146() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let iframe = document.createElement('iframe');
+                container.appendChild(iframe);
+
+                let doc = iframe.contentWindow.document;
+                doc.open();
+                doc.write(`
+                    <div id="alvoImportacao">Nó de Teste C++</div>
+                    <script>
+                        window.parent.postMessage("iniciar", "*");
+                    <\/script>
+                `);
+                doc.close();
+
+                window.onmessage = function(e) {
+                    if (e.data === "iniciar") {
+                        try {
+                            let noAlvo = iframe.contentWindow.document.getElementById('alvoImportacao');
+                            // A engine C++ prepara a importação de memória de um contexto para outro
+                            let noImportado = document.importNode(noAlvo, true);
+                            
+                            // Reescrevemos o documento de origem violentamente com textContent
+                            iframe.contentWindow.document.body.textContent = "Destruído";
+                            
+                            container.appendChild(noImportado);
+                            logOutput("[Teste 146] importNode extraiu o nó antes da aniquilação via textContent.");
+                            window.onmessage = null; // Limpa o evento
+                        } catch(err) {
+                            logOutput("[Teste 146] Motor de importação bloqueou a leitura de memória suja: " + err);
+                        }
+                    }
+                };
+            } catch(e) {
+                logOutput("[Teste 146] Falha estrutural no IPC ou manipulação DOM: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 147: onpopstate + adoptNode UAF
+        // ==========================================
+        function runTest147() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let elementoAdotado = document.createElement('div');
+                elementoAdotado.innerText = "Serei Adotado";
+                
+                let frameSecundario = document.createElement('iframe');
+                container.appendChild(frameSecundario);
+                frameSecundario.contentWindow.document.body.appendChild(elementoAdotado);
+
+                window.onpopstate = function() {
+                    try {
+                        // O C++ está a tratar da navegação no histórico.
+                        // Arrancamos o nó do frame para o documento principal, alterando o dono nativo
+                        document.adoptNode(elementoAdotado);
+                        
+                        // Engatilhamos uma limpeza removendo o iframe instantaneamente
+                        frameSecundario.remove();
+                        frameSecundario = null;
+                        
+                        // Aplicamos pressão de memória
+                        let pressao = new Uint32Array(32 * 1024 * 1024);
+                        
+                        logOutput("[Teste 147] adoptNode concluído durante o onpopstate. Histórico estável.");
+                        window.onpopstate = null; 
+                    } catch(err) {}
+                };
+
+                // Manipula o histórico para forçar o evento
+                history.pushState({ state: 1 }, "PoC");
+                history.back();
+
+            } catch(e) {
+                logOutput("[Teste 147] Falha no gestor de histórico ou na reatribuição de dono do nó: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 148: onended + cloneNode + remove Panic
+        // ==========================================
+        function runTest148() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let video = document.createElement('video');
+                
+                // Cria uma árvore gigante acoplada ao elemento de vídeo
+                let arvoreAnexa = document.createElement('div');
+                arvoreAnexa.innerHTML = "<span>Teste</span>".repeat(2000);
+                video.appendChild(arvoreAnexa);
+                container.appendChild(video);
+
+                video.onended = function() {
+                    try {
+                        // O buffer de media chegou ao fim e será libertado
+                        // Tentamos atrasar a thread clonando uma árvore profunda nativamente
+                        let clone = video.cloneNode(true);
+                        
+                        // Enquanto o motor clona, apagamos a origem
+                        video.remove();
+                        
+                        logOutput("[Teste 148] cloneNode profundo lidou com a remoção paralela do alvo.");
+                    } catch(err) {}
+                };
+
+                // Despacha o evento listado de forma sintética
+                video.dispatchEvent(new Event('ended'));
+
+            } catch(e) {
+                logOutput("[Teste 148] Exceção crítica na duplicação C++ ou gestão de multimédia: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 149: onstorage + Fragment + replaceChild
+        // ==========================================
+        function runTest149() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let base = document.createElement('div');
+                container.appendChild(base);
+
+                window.onstorage = function() {
+                    try {
+                        // O evento onstorage está a sincronizar dados
+                        // Criamos uma árvore desligada no C++
+                        let fragmento = document.createDocumentFragment();
+                        let substituto = document.createElement('h1');
+                        substituto.innerText = "Invasor";
+                        fragmento.appendChild(substituto);
+
+                        // Tentamos injetar o fragmento e, no meio do processo, substituí-lo
+                        let armadilha = {
+                            valueOf: function() {
+                                container.replaceChild(document.createElement('br'), base);
+                                return fragmento;
+                            }
+                        };
+                        
+                        // Tentamos forçar a engine a aceitar a armadilha como nó
+                        try {
+                            container.replaceChild(armadilha.valueOf(), base);
+                        } catch(ignora) {}
+
+                        logOutput("[Teste 149] createDocumentFragment e replaceChild executados durante onstorage.");
+                        window.onstorage = null;
+                    } catch(err) {}
+                };
+
+                // Engatilha o evento escrevendo no localStorage
+                localStorage.setItem('vuln_test', Math.random().toString());
+                
+            } catch(e) {
+                logOutput("[Teste 149] Erro na gestão de fragmentos e armazenamento: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 150: DOM Cyclone (pageshow + adopt + innerHTML)
+        // ==========================================
+        function runTest150() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                
+                // Cria o cenário para adoção
+                let frameTemporario = document.createElement('iframe');
+                container.appendChild(frameTemporario);
+                let docFrame = frameTemporario.contentWindow.document;
+                
+                let nodoAlvo = docFrame.createElement('div');
+                nodoAlvo.innerHTML = "<p>Nó Crítico</p>";
+                docFrame.body.appendChild(nodoAlvo);
+
+                window.onpageshow = function() {
+                    try {
+                        // A engine C++ está a recuperar o estado da página
+                        // 1. Adotamos o nó de outro documento
+                        let nóAdotado = document.adoptNode(nodoAlvo);
+                        
+                        // 2. Clonamo-lo
+                        let clone = nóAdotado.cloneNode(true);
+                        
+                        // 3. Aniquilamos todo o body violentamente com innerHTML
+                        document.body.innerHTML = "<div id='output'>[Teste 150] Ciclone do DOM executado. O WebKit sobreviveu à aniquilação via innerHTML.</div>";
+                        
+                        // Forçamos o GC a tentar limpar o histórico de nós orfãos
+                        nóAdotado = null;
+                        clone = null;
+                        let lixoFinal = new Uint32Array(64 * 1024 * 1024);
+                        
+                        window.onpageshow = null;
+                    } catch(err) {
+                        // Se o document.body for destruído, tenta usar console.log (verifique no DevTools remoto se aplicável)
+                        console.error("[Teste 150] Falha no Ciclone: " + err);
+                    }
+                };
+
+                // Despacha o evento manualmente para engatilhar a PoC
+                window.dispatchEvent(new Event('pageshow'));
+
+            } catch(e) {
+                logOutput("[Teste 150] Exceção estrutural grave: " + e);
             }
         }
 
