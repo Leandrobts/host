@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>03 — ArrayBuffer Transfer/Detach</title>
+<style>
+body{background:#08080f;color:#ccc;font:12px monospace;padding:12px}
+h3{color:#5bf;margin-bottom:6px}
+#log{height:460px;overflow:auto;background:#0a0a12;color:#0f0;padding:8px;white-space:pre;border:1px solid #1a2a3a;margin-bottom:8px}
+button{background:#0f1a2a;color:#5bf;border:1px solid #1a3a5a;padding:5px 10px;margin:2px;font:11px monospace;cursor:pointer}
+button:hover{background:#1a2a3a}
+.guide{background:#0a001a;border:1px solid #1a003a;padding:8px;margin-bottom:8px;font-size:11px;color:#888}
+</style></head>
+<body>
+<h3>03 — ArrayBuffer.transfer: Detach, Stale Views, OOB</h3>
+<div class="guide">
+✓ Log v8/T10 confirmou: <code>ArrayBuffer.transfer</code> disponível (ES2024) neste WebKit.<br>
+🔍 O QUE OBSERVAR:<br>
+• <span style="color:#f44">crash</span> ao acessar view de buffer transferido = use-after-free<br>
+• <span style="color:#fa4">valor não-zero</span> em view de buffer detachado = leitura de memória stale<br>
+• <span style="color:#4f4">transferSize maior que original</span> → novo buffer usa nova região de memória<br>
+• <span style="color:#4f4">TypedArray após transfer</span>: byteLength=0 mas [i] retorna undefined (spec correto)<br>
+• <span style="color:#aaf">DataView após detach</span>: deve lançar TypeError — se não lançar, é bug
+</div>
+<div id="log"></div>
+<button onclick="t01()">T01 transfer básico: verifica byteLength e integridade do novo buffer</button>
+<button onclick="t02()">T02 View stale: TypedArray mantida após transfer do buffer</button>
+<button onclick="t03()">T03 DataView após detach: operações de leitura e escrita</button>
+<button onclick="t04()">T04 transfer com transferSize maior: novo buffer é maior?</button>
+<button onclick="t05()">T05 transfer com transferSize=0: buffer vazio mas válido?</button>
+<button onclick="t06()">T06 transfer encadeado: A→B→C, views intermediárias</button>
+<button onclick="t07()">T07 transfer de buffer com TypedArray ativa durante fill()</button>
+<button onclick="t08()">T08 structuredClone com transfer: remove do original</button>
+<button onclick="t09()">T09 MessageChannel transfer: detach via postMessage</button>
+<button onclick="t10()">T10 transfer dentro de Promise.then: timing de detach</button>
+<button onclick="t11()">T11 transfer de buffer resizable (se disponível)</button>
+<button onclick="t12()">T12 Múltiplos transferes do mesmo buffer: segundo deve falhar</button>
+<button onclick="t13()">T13 WeakRef ao buffer original após transfer</button>
+<button onclick="t14()">T14 transfer com offset: view criada com byteOffset sobrevive?</button>
+<button onclick="t15()">T15 transfer + Proxy: Proxy em buffer transferido/detachado</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html" style="color:#5bf">← Index</a>
+<script>
+'use strict';
+var _L=document.getElementById('log');
+function log(m){_L.textContent+=m+'\n';_L.scrollTop=_L.scrollHeight;}
+function hex(v){try{return '0x'+BigInt(v).toString(16).padStart(16,'0');}catch(e){return String(v);}}
+var _ab=new ArrayBuffer(8),_f64=new Float64Array(_ab),_u64=new BigUint64Array(_ab);
+function f2i(v){_f64[0]=v;return _u64[0];}
+
+function probe(label,fn){
+  try{
+    var r=fn();
+    var d=r===undefined?'undefined':r===null?'null':typeof r==='bigint'?hex(r):String(r).slice(0,50);
+    log('  '+label.padEnd(42)+d);
+    return r;
+  }catch(e){
+    log('  '+label.padEnd(42)+'exc: '+e.name+' ('+e.message.slice(0,30)+')');
+    return undefined;
+  }
+}
+
+function wait(ms){return new Promise(function(r){setTimeout(r,ms);});}
+function gc(){return new Promise(function(r){
+  var a=[];try{for(var i=0;i<40;i++)a.push(new ArrayBuffer(4*1024*1024));}catch(e){}
+  a=null;setTimeout(r,60);
+});}
+
+// T01
+function t01(){
+  log('[T01] Transfer básico: integridade do novo buffer');
+  var buf=new ArrayBuffer(64);
+  var f64=new Float64Array(buf);
+  for(var i=0;i<8;i++) f64[i]=i*Math.PI;
+  log('  Antes: buf.byteLength='+buf.byteLength+' f64[0]='+f64[0].toFixed(4));
+  var newBuf=buf.transfer();
+  log('  Após transfer:');
+  probe('  buf.byteLength (original)',function(){return buf.byteLength;}); // deve ser 0
+  probe('  buf.detached',            function(){return buf.detached;});    // deve ser true (ES2024)
+  probe('  newBuf.byteLength',       function(){return newBuf.byteLength;}); // deve ser 64
+  var newF64=new Float64Array(newBuf);
+  probe('  newF64[0] (dados copiados)',function(){return newF64[0].toFixed(4);}); // deve ser 0.000 (π)
+  probe('  newF64[7]',               function(){return newF64[7].toFixed(4);});
+  // Dados foram copiados?
+  var dataCopied=true;
+  for(var i=0;i<8;i++){
+    if(Math.abs(newF64[i]-(i*Math.PI))>0.0001) dataCopied=false;
+  }
+  log('  dados copiados corretamente: '+dataCopied);
+  log('[T01] done\n');
+}
+
+// T02
+function t02(){
+  log('[T02] View stale: Float64Array mantida após transfer do buffer subjacente');
+  var buf=new ArrayBuffer(64);
+  var f64=new Float64Array(buf); // view criada ANTES do transfer
+  var u8=new Uint8Array(buf);
+  for(var i=0;i<8;i++) f64[i]=i*Math.PI;
+  log('  f64 criada antes do transfer: byteLength='+f64.byteLength);
+  var newBuf=buf.transfer(); // detach buf
+  log('  Após transfer de buf:');
+  probe('  f64.byteLength após detach',  function(){return f64.byteLength;}); // 0 — stale!
+  probe('  f64.buffer === buf',          function(){return f64.buffer===buf;});
+  probe('  f64.buffer.detached',         function(){return f64.buffer.detached;});
+  probe('  f64[0] (acesso stale)',        function(){return f64[0];}); // deve ser undefined
+  probe('  f64[0]=99 (escrita stale)',    function(){f64[0]=99; return f64[0];}); // silencioso ou exc?
+  probe('  u8[0] (Uint8Array stale)',    function(){return u8[0];}); // deve ser undefined
+  probe('  f64.set([1,2,3]) stale',      function(){f64.set([1,2,3]); return 'ok';});
+  probe('  new Float64Array(buf) após detach',function(){return new Float64Array(buf).byteLength;});
+  // A nova view no novo buffer
+  var newF64=new Float64Array(newBuf);
+  probe('  newF64[0] (novo buffer ok)',  function(){return newF64[0].toFixed(4);});
+  log('[T02] done\n');
+}
+
+// T03
+function t03(){
+  log('[T03] DataView após detach: operações devem lançar TypeError');
+  var buf=new ArrayBuffer(32);
+  var dv=new DataView(buf);
+  dv.setFloat64(0,Math.PI);
+  dv.setFloat64(8,-Math.E);
+  buf.transfer(); // detach
+  log('  Operações em DataView de buffer detachado:');
+  probe('  dv.byteLength após detach',    function(){return dv.byteLength;});
+  probe('  dv.getFloat64(0)',             function(){return dv.getFloat64(0).toFixed(4);});
+  probe('  dv.getUint8(0)',               function(){return dv.getUint8(0);});
+  probe('  dv.getBigUint64(0)',           function(){return dv.getBigUint64(0);});
+  probe('  dv.setFloat64(0,1.0)',         function(){dv.setFloat64(0,1.0); return 'ok';});
+  probe('  dv.setUint8(0,0xFF)',          function(){dv.setUint8(0,0xFF); return 'ok';});
+  probe('  new DataView(buf,0,8)',        function(){return new DataView(buf,0,8).byteLength;});
+  log('[T03] done\n');
+}
+
+// T04
+function t04(){
+  log('[T04] transfer com transferSize diferente do original');
+  var buf=new ArrayBuffer(32);
+  var f64=new Float64Array(buf);
+  for(var i=0;i<4;i++) f64[i]=i*1.1;
+  // Transfer para tamanho maior
+  probe('  transfer(64) de buf de 32',   function(){var nb=buf.transfer(64); return nb.byteLength;});
+  // Recria para próximos testes
+  var buf2=new ArrayBuffer(32);
+  var f64b=new Float64Array(buf2);
+  for(var i=0;i<4;i++) f64b[i]=i*2.2;
+  probe('  transfer(16) de buf de 32 (encurta)',function(){
+    var nb=buf2.transfer(16);
+    var v=new Float64Array(nb);
+    return 'len='+nb.byteLength+' v[0]='+v[0].toFixed(1)+' v[2]='+v[2];
+  });
+  // Transfer para tamanho 0
+  var buf3=new ArrayBuffer(32);
+  probe('  transfer(0) de buf de 32',    function(){var nb=buf3.transfer(0); return 'len='+nb.byteLength;});
+  // Transfer para tamanho negativo
+  var buf4=new ArrayBuffer(32);
+  probe('  transfer(-1)',               function(){return buf4.transfer(-1).byteLength;});
+  // Transfer para Infinity
+  var buf5=new ArrayBuffer(16);
+  probe('  transfer(Infinity)',         function(){return buf5.transfer(Infinity).byteLength;});
+  // Transfer para NaN
+  var buf6=new ArrayBuffer(16);
+  probe('  transfer(NaN)',              function(){return buf6.transfer(NaN).byteLength;});
+  log('[T04] done\n');
+}
+
+// T05
+function t05(){
+  log('[T05] transfer(0): buffer vazio mas não-detachado');
+  var buf=new ArrayBuffer(64);
+  var f64=new Float64Array(buf);
+  for(var i=0;i<8;i++) f64[i]=i*Math.PI;
+  try{
+    var empty=buf.transfer(0);
+    log('  empty.byteLength: '+empty.byteLength);
+    log('  empty.detached: '+empty.detached);
+    log('  buf.byteLength após: '+buf.byteLength);
+    // View no buffer vazio
+    var emptyView=new Float64Array(empty);
+    log('  emptyView.length: '+emptyView.length);
+    probe('  emptyView[0]',     function(){return emptyView[0];});
+    probe('  emptyView.fill(1)',function(){emptyView.fill(1); return 'ok';});
+    // DataView de zero bytes
+    var emptyDV=new DataView(empty);
+    probe('  emptyDV.byteLength',function(){return emptyDV.byteLength;});
+    probe('  emptyDV.getUint8(0)',function(){return emptyDV.getUint8(0);});
+  }catch(e){log('  transfer(0) exc: '+e.name+' '+e.message.slice(0,40));}
+  log('[T05] done\n');
+}
+
+// T06
+function t06(){
+  log('[T06] Transfer encadeado: A→B→C, views em cada etapa');
+  var a=new ArrayBuffer(32);
+  var va=new Float64Array(a);
+  va[0]=1.1; va[1]=2.2;
+  var b=a.transfer();   // a detachado
+  var vb=new Float64Array(b);
+  log('  vb[0] após A→B: '+vb[0].toFixed(1));
+  log('  va.byteLength após A detachado: '+va.byteLength);
+  var c=b.transfer();   // b detachado
+  var vc=new Float64Array(c);
+  log('  vc[0] após B→C: '+vc[0].toFixed(1));
+  log('  vb.byteLength após B detachado: '+vb.byteLength);
+  probe('  va[0] (A detachado)',function(){return va[0];}); // undefined
+  probe('  vb[0] (B detachado)',function(){return vb[0];}); // undefined
+  probe('  vc[0] (C válido)',   function(){return vc[0].toFixed(1);}); // 1.1
+  log('[T06] done\n');
+}
+
+// T07
+function t07(){
+  log('[T07] Transfer durante fill() ativo via valueOf');
+  var buf=new ArrayBuffer(64);
+  var f64=new Float64Array(buf);
+  for(var i=0;i<8;i++) f64[i]=i*1.1;
+  var newBuf=null;
+  var transferred=false;
+  // O valueOf é chamado durante fill() para obter o valor de preenchimento
+  var fillVal={valueOf:function(){
+    if(!transferred){
+      transferred=true;
+      try{newBuf=buf.transfer();}catch(e){log('  transfer em valueOf exc: '+e.name);}
+    }
+    return 99.9;
+  }};
+  try{
+    f64.fill(fillVal); // durante o fill, o buffer é transferido
+    log('  fill completou sem crash');
+    log('  f64.byteLength após transfer em valueOf: '+f64.byteLength);
+    log('  f64[0] após fill+transfer: '+f64[0]);
+    if(newBuf){
+      var newF64=new Float64Array(newBuf);
+      log('  newF64[0]: '+newF64[0].toFixed(1));
+    }
+  }catch(e){log('  fill+transfer exc: '+e.name+' '+e.message.slice(0,40));}
+  log('[T07] done\n');
+}
+
+// T08
+function t08(){
+  log('[T08] structuredClone com transfer: remove do original');
+  var buf=new ArrayBuffer(64);
+  var f64=new Float64Array(buf);
+  for(var i=0;i<8;i++) f64[i]=i*Math.PI;
+  try{
+    var cloned=structuredClone(buf,[buf]); // transfere buf para o clone
+    log('  buf.byteLength após SC transfer: '+buf.byteLength); // 0
+    log('  cloned.byteLength: '+cloned.byteLength); // 64
+    var clonedF64=new Float64Array(cloned);
+    log('  clonedF64[0]: '+clonedF64[0].toFixed(4)); // π
+    log('  f64[0] (stale): '+f64[0]); // undefined
+    // Acesso ao f64 original após stale
+    probe('  f64.set([1,2]) stale',function(){f64.set([1,2]); return 'ok';});
+    probe('  new Uint8Array(buf)',  function(){return new Uint8Array(buf).byteLength;});
+  }catch(e){log('  structuredClone exc: '+e.name+' '+e.message.slice(0,40));}
+  log('[T08] done\n');
+}
+
+// T09
+function t09(){
+  log('[T09] MessageChannel transfer: detach via postMessage');
+  return new Promise(function(resolve){
+    var buf=new ArrayBuffer(64);
+    var f64=new Float64Array(buf);
+    for(var i=0;i<8;i++) f64[i]=i*1.1;
+    var ch=new MessageChannel();
+    ch.port2.onmessage=function(e){
+      log('  received: byteLength='+e.data.byteLength);
+      var recvF64=new Float64Array(e.data);
+      log('  recvF64[0]: '+recvF64[0].toFixed(1));
+      log('  buf.byteLength após postMessage: '+buf.byteLength); // 0 — detachado!
+      log('  f64[0] após detach: '+f64[0]); // undefined
+      probe('  f64.byteLength',function(){return f64.byteLength;});
+      probe('  f64[0] write',  function(){f64[0]=99; return f64[0];});
+      ch.port1.close(); ch.port2.close();
+      log('[T09] done\n');
+      resolve();
+    };
+    try{
+      ch.port1.postMessage(buf,[buf]); // transfere
+      log('  postMessage sent, buf.byteLength='+buf.byteLength);
+    }catch(e){
+      log('  postMessage exc: '+e.name);
+      log('[T09] done\n');
+      resolve();
+    }
+  });
+}
+
+// T10
+function t10(){
+  log('[T10] Transfer dentro de Promise.then: race de detach com microtask');
+  var buf=new ArrayBuffer(64);
+  var f64=new Float64Array(buf);
+  for(var i=0;i<8;i++) f64[i]=i*1.1;
+  var newBuf=null;
+  return Promise.resolve()
+    .then(function(){
+      newBuf=buf.transfer();
+      log('  transfer no primeiro .then');
+      log('  buf.detached: '+buf.detached);
+      log('  f64[0] após transfer: '+f64[0]);
+      return wait(10);
+    })
+    .then(function(){
+      log('  segundo .then:');
+      probe('  f64[0] no segundo then',function(){return f64[0];});
+      probe('  f64.fill(1)',           function(){f64.fill(1); return f64[0];});
+      if(newBuf){
+        var nf=new Float64Array(newBuf);
+        log('  newBuf[0]: '+nf[0].toFixed(1));
+      }
+      log('[T10] done\n');
+    });
+}
+
+// T11
+function t11(){
+  log('[T11] ResizableArrayBuffer (se disponível)');
+  try{
+    var rb=new ArrayBuffer(16,{maxByteLength:64});
+    log('  ResizableArrayBuffer(16,max=64): byteLength='+rb.byteLength);
+    log('  rb.resizable: '+rb.resizable);
+    log('  rb.maxByteLength: '+rb.maxByteLength);
+    rb.resize(32);
+    log('  após resize(32): byteLength='+rb.byteLength);
+    var f64=new Float64Array(rb);
+    f64[0]=Math.PI; f64[3]=Math.E;
+    rb.resize(64);
+    log('  após resize(64): byteLength='+rb.byteLength+' f64[0]='+f64[0].toFixed(4));
+    rb.resize(8); // encolhe — f64 fica inválida?
+    log('  após resize(8): byteLength='+rb.byteLength);
+    probe('  f64[0] após shrink',function(){return f64[0].toFixed(4);});
+    probe('  f64[3] após shrink (OOB?)',function(){return f64[3].toFixed(4);});
+    // Transfer de ResizableArrayBuffer
+    var newBuf=rb.transfer();
+    log('  após transfer: rb.byteLength='+rb.byteLength+' new.byteLength='+newBuf.byteLength);
+    probe('  f64[0] após transfer',function(){return f64[0];});
+  }catch(e){
+    if(e.name==='TypeError'||e.message.indexOf('not a constructor')>=0){
+      log('  ResizableArrayBuffer não disponível neste WebKit');
+    } else {
+      log('  ResizableArrayBuffer exc: '+e.name+' '+e.message.slice(0,50));
+    }
+  }
+  log('[T11] done\n');
+}
+
+// T12
+function t12(){
+  log('[T12] Transfer duplo: segundo deve falhar (buffer já detachado)');
+  var buf=new ArrayBuffer(32);
+  var first=buf.transfer();
+  log('  primeiro transfer: ok, first.byteLength='+first.byteLength);
+  log('  buf.byteLength após: '+buf.byteLength);
+  probe('  segundo transfer(buf)', function(){return buf.transfer().byteLength;});
+  probe('  transfer(first) (válido)',function(){
+    var third=first.transfer();
+    return 'ok byteLength='+third.byteLength;
+  });
+  // Transfer de novo buffer criado de detachado (impossível)
+  probe('  new ArrayBuffer(buf) de detachado',function(){
+    return new ArrayBuffer(buf).byteLength;
+  });
+  log('[T12] done\n');
+}
+
+// T13
+function t13(){
+  log('[T13] WeakRef ao buffer original após transfer');
+  var buf=new ArrayBuffer(64);
+  var ref=new WeakRef(buf);
+  log('  ref.deref() antes: '+(ref.deref()!==undefined?'vivo':'morto'));
+  var newBuf=buf.transfer();
+  log('  após transfer:');
+  log('  ref.deref() imediatamente: '+(ref.deref()!==undefined?'vivo (buffer detachado ainda referenciado)':'morto'));
+  // O buffer detachado (byteLength=0) ainda existe como objeto até ser GC'd
+  return gc().then(function(){
+    log('  ref.deref() após GC: '+(ref.deref()!==undefined?'vivo':'coletado'));
+    // WeakRef ao novo buffer
+    var newRef=new WeakRef(newBuf);
+    newBuf=null; // remove strong ref
+    return gc();
+  }).then(function(){
+    log('  newRef (sem strong ref) após GC: sobreviveu=?');
+    log('[T13] done\n');
+  });
+}
+
+// T14
+function t14(){
+  log('[T14] View com byteOffset: sobrevive ao transfer?');
+  var buf=new ArrayBuffer(64);
+  // View no meio do buffer
+  var offset16=new Float64Array(buf,16,4); // offset=16, length=4
+  var offset32=new Float64Array(buf,32,4);
+  offset16[0]=111.1; offset16[3]=222.2;
+  offset32[0]=333.3; offset32[3]=444.4;
+  log('  offset16[0]='+offset16[0]+' offset16.byteOffset='+offset16.byteOffset);
+  var newBuf=buf.transfer();
+  log('  Após transfer:');
+  probe('  offset16.byteLength',    function(){return offset16.byteLength;});
+  probe('  offset16[0]',            function(){return offset16[0];});
+  probe('  offset16.byteOffset',    function(){return offset16.byteOffset;});
+  probe('  offset32[0]',            function(){return offset32[0];});
+  // Cria view no novo buffer com mesmo offset
+  try{
+    var newOffset16=new Float64Array(newBuf,16,4);
+    log('  newOffset16[0]: '+newOffset16[0].toFixed(1)+' (deve ser 111.1)');
+    log('  newOffset16[3]: '+newOffset16[3].toFixed(1)+' (deve ser 222.2)');
+  }catch(e){log('  new view no novo buffer exc: '+e.name);}
+  log('[T14] done\n');
+}
+
+// T15
+function t15(){
+  log('[T15] Proxy em buffer transferido/detachado');
+  var buf=new ArrayBuffer(32);
+  var f64=new Float64Array(buf);
+  for(var i=0;i<4;i++) f64[i]=i*1.1;
+  // Proxy no buffer ANTES do transfer
+  var trapLog=[];
+  var bufProxy=new Proxy(buf,{
+    get:function(t,k,r){
+      trapLog.push('get:'+String(k));
+      return Reflect.get(t,k,r);
+    }
+  });
+  log('  Proxy criado antes do transfer');
+  log('  bufProxy.byteLength antes: '+bufProxy.byteLength);
+  try{
+    var newBuf=buf.transfer(); // detach buf (não bufProxy)
+    log('  buf transferido. buf.byteLength='+buf.byteLength);
+    log('  bufProxy.byteLength após transfer: '+bufProxy.byteLength); // 0 — via proxy!
+    probe('  new Float64Array(bufProxy)',function(){return new Float64Array(bufProxy).byteLength;});
+    probe('  new DataView(bufProxy)',    function(){return new DataView(bufProxy).byteLength;});
+    log('  trapLog: '+trapLog.slice(0,10).join(', '));
+  }catch(e){log('  exc: '+e.name+' '+e.message.slice(0,40));}
+  log('[T15] done\n');
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 03 — ARRAYBUFFER TRANSFER/DETACH ===\n');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){
+    if(i>=tests.length){log('\n=== FIM ===');return;}
+    var r; try{r=tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);}
+    i++;
+    if(r&&typeof r.then==='function') r.then(function(){setTimeout(next,400);}).catch(function(){setTimeout(next,400);});
+    else setTimeout(next,300);
+  }
+  next();
+}
+</script></body></html>

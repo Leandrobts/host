@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>04 — GC via Microtask</title>
+<style>
+body{background:#08080f;color:#ccc;font:12px monospace;padding:12px}
+h3{color:#5bf;margin-bottom:6px}
+#log{height:460px;overflow:auto;background:#0a0a12;color:#0f0;padding:8px;white-space:pre;border:1px solid #1a2a3a;margin-bottom:8px}
+button{background:#0f1a2a;color:#5bf;border:1px solid #1a3a5a;padding:5px 10px;margin:2px;font:11px monospace;cursor:pointer}
+button:hover{background:#1a2a3a}
+.guide{background:#001a0a;border:1px solid #003a1a;padding:8px;margin-bottom:8px;font-size:11px;color:#888}
+</style></head>
+<body>
+<h3>04 — GC via Microtask: gc() Correto + Timing para Exploit</h3>
+<div class="guide">
+✓ Logs v8 confirmaram: gc() via ArrayBuffer <b>NÃO funciona</b>. O GC só roda entre microtasks.<br>
+✓ T04 mostrou: Promise.then + gc(64) → alive 50→0 em 1 step.<br>
+✓ T05 mostrou: FinalizationRegistry latência = <b>94.8ms</b> determinístico.<br>
+🔍 O QUE OBSERVAR:<br>
+• <span style="color:#4f4">alive: X→0</span> após await/then confirma gc() correto<br>
+• <span style="color:#fa4">latência em ms</span>: consistência entre execuções → exploitabilidade<br>
+• <span style="color:#fa4">mínimo de await</span>: quantas suspensões são necessárias para GC completo<br>
+• <span style="color:#aaf">WeakRef morto</span> após N awaits = timing preciso para exploit UAF
+</div>
+<div id="log"></div>
+<button onclick="t01()">T01 Confirma: await vs sync — qual versão de gc() funciona?</button>
+<button onclick="t02()">T02 Mínimo de awaits: 1 await é suficiente para GC completo?</button>
+<button onclick="t03()">T03 Timing determinístico: 10 execuções, mede variância</button>
+<button onclick="t04()">T04 gc() correto: nova função para usar em exploits</button>
+<button onclick="t05()">T05 GC de objetos grandes vs pequenos: latência por tamanho</button>
+<button onclick="t06()">T06 FinalizationRegistry: callback sempre em 94.8ms?</button>
+<button onclick="t07()">T07 GC por tipo: Object, Array, TypedArray, Closure, DOM</button>
+<button onclick="t08()">T08 GC de ciclos de referência via await</button>
+<button onclick="t09()">T09 GC durante async generator: yield point</button>
+<button onclick="t10()">T10 Cadeia de awaits: timing de cada step</button>
+<button onclick="t11()">T11 gc() em Promise.all: paralelismo de GC</button>
+<button onclick="t12()">T12 GC de Shadow DOM via await</button>
+<button onclick="t13()">T13 GC de closures com upvalues via await</button>
+<button onclick="t14()">T14 WeakRef timing preciso: após exatamente N ms</button>
+<button onclick="t15()">T15 Exploit-ready gc(): implementação final + verificação</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html" style="color:#5bf">← Index</a>
+<script>
+'use strict';
+var _L=document.getElementById('log');
+function log(m){_L.textContent+=m+'\n';_L.scrollTop=_L.scrollHeight;}
+function wait(ms){return new Promise(function(r){setTimeout(r,ms);});}
+function alive(refs){return refs.filter(function(r){return r.deref()!==undefined;}).length;}
+
+// NOVA gc() — usa await para forçar GC no PS4
+async function gcAsync(pressure_mb, delay_ms){
+  pressure_mb=pressure_mb||64;
+  delay_ms=delay_ms||50;
+  var a=[];
+  try{
+    for(var i=0;i<Math.ceil(pressure_mb/4);i++) a.push(new ArrayBuffer(4*1024*1024));
+  }catch(e){}
+  a=null;
+  await wait(delay_ms); // yield para o GC rodar
+}
+
+// gc() SYNC (o que não funciona no PS4)
+function gcSync(pressure_mb){
+  pressure_mb=pressure_mb||64;
+  var a=[];
+  try{for(var i=0;i<Math.ceil(pressure_mb/4);i++)a.push(new ArrayBuffer(4*1024*1024));}catch(e){}
+  a=null;
+}
+
+// T01
+async function t01(){
+  log('[T01] Confirma: gcSync vs gcAsync');
+  var refs=[];
+  (function(){for(var i=0;i<50;i++) refs.push(new WeakRef({data:new Float64Array(256),id:i}));})();
+  log('  Criados 50 objetos com WeakRef');
+  log('  alive antes: '+alive(refs)+'/50');
+  gcSync(128);
+  log('  gcSync(128): alive='+alive(refs)+'/50  ← deve ser 50 (gc sync NÃO funciona)');
+  await gcAsync(64,50);
+  log('  gcAsync(64,50ms): alive='+alive(refs)+'/50  ← deve ser 0 (gc async FUNCIONA)');
+  var confirmed=alive(refs)===0;
+  log('  ✓ gcAsync funciona: '+confirmed);
+  log('[T01] done\n');
+}
+
+// T02
+async function t02(){
+  log('[T02] Mínimo de awaits necessários para GC completo');
+  var results=[];
+  for(var trial=0;trial<5;trial++){
+    var refs=[];
+    (function(){for(var i=0;i<30;i++) refs.push(new WeakRef({data:new Float64Array(512),id:i}));})();
+    // Tenta com awaits progressivos
+    var t0=performance.now();
+    for(var nAwaits=1;nAwaits<=5;nAwaits++){
+      var a=[];
+      try{for(var k=0;k<16;k++)a.push(new ArrayBuffer(4*1024*1024));}catch(e){}
+      a=null;
+      await wait(10);
+      var a2=alive(refs);
+      if(a2===0){
+        results.push({trial:trial,awaits:nAwaits,ms:performance.now()-t0});
+        break;
+      }
+    }
+  }
+  log('  Resultados (5 trials):');
+  results.forEach(function(r){
+    log('  trial '+r.trial+': '+r.awaits+' await(s), '+r.ms.toFixed(1)+'ms');
+  });
+  if(results.length>0){
+    var avg=results.reduce(function(a,r){return a+r.awaits;},0)/results.length;
+    log('  média de awaits necessários: '+avg.toFixed(1));
+  }
+  log('[T02] done\n');
+}
+
+// T03
+async function t03(){
+  log('[T03] Timing determinístico: 10 execuções');
+  var timings=[];
+  for(var i=0;i<10;i++){
+    var refs=[];
+    (function(){for(var j=0;j<20;j++) refs.push(new WeakRef({data:new Float64Array(256),id:j}));})();
+    var t0=performance.now();
+    var a=[];
+    try{for(var k=0;k<16;k++)a.push(new ArrayBuffer(4*1024*1024));}catch(e){}
+    a=null;
+    await wait(10);
+    var dt=performance.now()-t0;
+    var aliveCount=alive(refs);
+    timings.push({i:i,dt:dt,alive:aliveCount});
+    await wait(20); // pausa entre trials
+  }
+  log('  Trial | ms    | alive');
+  timings.forEach(function(t){
+    log('  '+String(t.i).padStart(5)+'  | '+t.dt.toFixed(1).padStart(5)+'| '+t.alive+'/20');
+  });
+  var zeros=timings.filter(function(t){return t.alive===0;}).length;
+  var dts=timings.map(function(t){return t.dt;});
+  var minDt=Math.min.apply(null,dts), maxDt=Math.max.apply(null,dts);
+  var avgDt=dts.reduce(function(a,b){return a+b;},0)/dts.length;
+  log('  GC completo: '+zeros+'/10 execuções');
+  log('  dt: min='+minDt.toFixed(1)+'ms max='+maxDt.toFixed(1)+'ms avg='+avgDt.toFixed(1)+'ms');
+  log('  variância: '+(maxDt-minDt).toFixed(1)+'ms → '+(maxDt-minDt<20?'DETERMINÍSTICO ✓':'variável ✗'));
+  log('[T03] done\n');
+}
+
+// T04
+async function t04(){
+  log('[T04] gc() correto — nova implementação para exploits');
+  log('  Implementação:');
+  log('    async function gc(mb=64, delay=50) {');
+  log('      let a = [];');
+  log('      for (let i=0; i<Math.ceil(mb/4); i++) a.push(new ArrayBuffer(4<<20));');
+  log('      a = null;');
+  log('      await new Promise(r => setTimeout(r, delay));');
+  log('    }');
+  log('');
+  // Verifica que funciona com diferentes parâmetros
+  var configs=[
+    {mb:16,  delay:10,  label:'gc(16, 10ms)'},
+    {mb:32,  delay:25,  label:'gc(32, 25ms)'},
+    {mb:64,  delay:50,  label:'gc(64, 50ms)  ← recomendado'},
+    {mb:128, delay:50,  label:'gc(128, 50ms)'},
+    {mb:64,  delay:100, label:'gc(64, 100ms)'},
+  ];
+  for(var ci=0;ci<configs.length;ci++){
+    var cfg=configs[ci];
+    var refs=[];
+    (function(){for(var i=0;i<20;i++) refs.push(new WeakRef({data:new Float64Array(256),id:i}));})();
+    await gcAsync(cfg.mb,cfg.delay);
+    log('  '+cfg.label+': alive='+alive(refs)+'/20 '+(alive(refs)===0?'✓':'✗'));
+  }
+  log('[T04] done\n');
+}
+
+// T05
+async function t05(){
+  log('[T05] GC por tamanho de objeto: latência varia?');
+  var sizes=[
+    {name:'pequeno (8B)',    bytes:8},
+    {name:'médio (1KB)',     bytes:1024},
+    {name:'grande (64KB)',   bytes:65536},
+    {name:'enorme (4MB)',    bytes:4*1024*1024},
+  ];
+  for(var si=0;si<sizes.length;si++){
+    var sz=sizes[si];
+    var refs=[];
+    (function(b){for(var i=0;i<20;i++) refs.push(new WeakRef(new ArrayBuffer(b)));})(sz.bytes);
+    var t0=performance.now();
+    var a=[];
+    try{for(var k=0;k<16;k++)a.push(new ArrayBuffer(4*1024*1024));}catch(e){}
+    a=null;
+    await wait(10);
+    var a1=alive(refs), dt1=performance.now()-t0;
+    if(a1>0){
+      await wait(40);
+      var a2=alive(refs), dt2=performance.now()-t0;
+      log('  '+sz.name.padEnd(20)+' alive='+a1+'/20@'+dt1.toFixed(0)+'ms → '+a2+'/20@'+dt2.toFixed(0)+'ms');
+    } else {
+      log('  '+sz.name.padEnd(20)+' alive=0/20 em '+dt1.toFixed(0)+'ms ✓');
+    }
+  }
+  log('[T05] done\n');
+}
+
+// T06
+async function t06(){
+  log('[T06] FinalizationRegistry: confirma latência de 94.8ms');
+  var N=20;
+  var callbacks=[];
+  var reg=new FinalizationRegistry(function(tok){ callbacks.push({tok:tok,t:performance.now()}); });
+  var t0=performance.now();
+  (function(){
+    for(var i=0;i<N;i++){
+      var o={data:new Float64Array(256),id:i};
+      reg.register(o,'obj-'+i);
+    }
+  })();
+  log('  '+N+' objetos criados e liberados em '+(performance.now()-t0).toFixed(1)+'ms');
+  // GC via await
+  await gcAsync(64,50);
+  log('  após gcAsync: callbacks='+callbacks.length+'/'+N+' ('+( performance.now()-t0).toFixed(0)+'ms)');
+  await wait(60);
+  log('  após +60ms: callbacks='+callbacks.length+'/'+N+' ('+(performance.now()-t0).toFixed(0)+'ms)');
+  if(callbacks.length>0){
+    var lats=callbacks.map(function(c){return c.t-t0;});
+    var minL=Math.min.apply(null,lats), maxL=Math.max.apply(null,lats);
+    var avgL=lats.reduce(function(a,b){return a+b;},0)/lats.length;
+    log('  latência: min='+minL.toFixed(1)+'ms avg='+avgL.toFixed(1)+'ms max='+maxL.toFixed(1)+'ms');
+    log('  variância: '+(maxL-minL).toFixed(1)+'ms');
+    log('  (v8 log mostrou 94.8ms — este run: '+avgL.toFixed(1)+'ms)');
+  }
+  log('[T06] done\n');
+}
+
+// T07
+async function t07(){
+  log('[T07] GC por tipo via gcAsync: qual tipo sobrevive mais?');
+  var groups={
+    'Object{}':     [],
+    'Float64Array': [],
+    'Closure':      [],
+    'DOM div':      [],
+    'Promise':      [],
+  };
+  (function(){
+    for(var i=0;i<20;i++){
+      groups['Object{}'].push(new WeakRef({x:i,data:new ArrayBuffer(1024)}));
+      groups['Float64Array'].push(new WeakRef(new Float64Array(256)));
+      var j=i; groups['Closure'].push(new WeakRef(function(){return j;}));
+      groups['DOM div'].push(new WeakRef(document.createElement('div')));
+      groups['Promise'].push(new WeakRef(Promise.resolve(i)));
+    }
+  })();
+  var snapshots=[];
+  for(var step=0;step<4;step++){
+    await gcAsync(32,25);
+    var snap={};
+    Object.keys(groups).forEach(function(k){snap[k]=alive(groups[k]);});
+    snapshots.push(snap);
+  }
+  log('  Tipo            | step1 | step2 | step3 | step4');
+  Object.keys(groups).forEach(function(k){
+    var row='  '+k.padEnd(16)+'|';
+    snapshots.forEach(function(s){row+=' '+String(s[k]).padStart(5)+' |';});
+    log(row+' /20');
+  });
+  log('[T07] done\n');
+}
+
+// T08
+async function t08(){
+  log('[T08] GC de ciclos de referência via gcAsync');
+  // v8 log mostrou que gc() sync não coletava ciclos — testamos com async
+  var cycleRefs=[];
+  (function(){
+    for(var i=0;i<20;i++){
+      var a={id:'a'+i}, b={id:'b'+i};
+      a.ref=b; b.ref=a; // ciclo
+      cycleRefs.push(new WeakRef(a));
+      cycleRefs.push(new WeakRef(b));
+    }
+  })();
+  log('  Ciclos a↔b antes: alive='+alive(cycleRefs)+'/40');
+  await gcAsync(64,50);
+  log('  Após gcAsync×1: alive='+alive(cycleRefs)+'/40');
+  if(alive(cycleRefs)>0){
+    await gcAsync(128,100);
+    log('  Após gcAsync×2: alive='+alive(cycleRefs)+'/40');
+  }
+  // Ciclos profundos
+  var deepRefs=[];
+  (function(){
+    for(var i=0;i<10;i++){
+      var a={},b={},c={},d={};
+      a.n=b;b.n=c;c.n=d;d.n=a;
+      [a,b,c,d].forEach(function(o){deepRefs.push(new WeakRef(o));});
+    }
+  })();
+  log('  Ciclos a→b→c→d→a antes: alive='+alive(deepRefs)+'/40');
+  await gcAsync(64,50);
+  log('  Após gcAsync: alive='+alive(deepRefs)+'/40');
+  log('[T08] done\n');
+}
+
+// T09
+async function t09(){
+  log('[T09] GC durante async generator: timing no yield point');
+  var snapshots=[];
+  async function* gcGen(){
+    for(var r=0;r<5;r++){
+      var batch=[];
+      (function(){for(var i=0;i<10;i++) batch.push(new WeakRef({data:new Float64Array(256),r:r,i:i}));})();
+      var before=alive(batch);
+      yield {phase:'before-gc',round:r,alive:before};
+      await gcAsync(32,25);
+      var after=alive(batch);
+      yield {phase:'after-gc',round:r,alive:after,collected:before-after};
+      batch=null;
+    }
+  }
+  for await(var v of gcGen()){
+    if(v.phase==='after-gc'){
+      log('  round '+v.round+': coletados='+v.collected+'/10  alive='+v.alive+'/10');
+    }
+  }
+  log('[T09] done\n');
+}
+
+// T10
+async function t10(){
+  log('[T10] Cadeia de awaits: timing de cada step');
+  var refs=[];
+  (function(){for(var i=0;i<50;i++) refs.push(new WeakRef({data:new Float64Array(128),id:i}));})();
+  var t0=performance.now();
+  for(var step=1;step<=8;step++){
+    // Pressão mínima por step
+    var a=[];
+    try{for(var k=0;k<8;k++)a.push(new ArrayBuffer(4*1024*1024));}catch(e){}
+    a=null;
+    await wait(15);
+    var a1=alive(refs);
+    log('  step '+step+' ('+Math.round(performance.now()-t0)+'ms): alive='+a1+'/50');
+    if(a1===0) break;
+  }
+  log('[T10] done\n');
+}
+
+// T11
+async function t11(){
+  log('[T11] Promise.all com gcAsync paralelo');
+  var refs=[];
+  (function(){for(var i=0;i<60;i++) refs.push(new WeakRef({data:new Float64Array(256),id:i}));})();
+  log('  alive antes: '+alive(refs)+'/60');
+  var t0=performance.now();
+  // 3 gcAsync em paralelo
+  await Promise.all([gcAsync(32,30),gcAsync(32,30),gcAsync(32,30)]);
+  log('  alive após Promise.all(3×gcAsync): '+alive(refs)+'/60 em '+(performance.now()-t0).toFixed(0)+'ms');
+  // Compara com sequencial
+  var refs2=[];
+  (function(){for(var i=0;i<60;i++) refs2.push(new WeakRef({data:new Float64Array(256),id:i}));})();
+  var t1=performance.now();
+  await gcAsync(32,30);
+  log('  alive após 1×gcAsync sequencial: '+alive(refs2)+'/60 em '+(performance.now()-t1).toFixed(0)+'ms');
+  log('[T11] done\n');
+}
+
+// T12
+async function t12(){
+  log('[T12] GC de Shadow DOM via gcAsync');
+  var hostRefs=[], shadowRefs=[];
+  (function(){
+    for(var i=0;i<20;i++){
+      var host=document.createElement('div');
+      hostRefs.push(new WeakRef(host));
+      try{
+        var shadow=host.attachShadow({mode:'open'});
+        shadowRefs.push(new WeakRef(shadow));
+      }catch(e){ shadowRefs.push(new WeakRef({})); }
+    }
+  })();
+  log('  antes: hosts='+alive(hostRefs)+' shadows='+alive(shadowRefs));
+  await gcAsync(64,50);
+  log('  após gcAsync×1: hosts='+alive(hostRefs)+' shadows='+alive(shadowRefs));
+  if(alive(hostRefs)>0 || alive(shadowRefs)>0){
+    await gcAsync(128,100);
+    log('  após gcAsync×2: hosts='+alive(hostRefs)+' shadows='+alive(shadowRefs));
+  }
+  log('[T12] done\n');
+}
+
+// T13
+async function t13(){
+  log('[T13] GC de closures via gcAsync (v8 sync falhou)');
+  var closureRefs=[];
+  var closures=[];
+  (function(){
+    for(var i=0;i<20;i++){
+      var cap={data:new Float64Array(512),id:i};
+      closureRefs.push(new WeakRef(cap));
+      closures.push((function(c){return function(){return c.id;};})(cap));
+    }
+  })();
+  log('  alive (closures vivos, sync): '+alive(closureRefs)+'/20');
+  gcSync(128); // sync — não deve funcionar
+  log('  após gcSync: '+alive(closureRefs)+'/20 ← esperado 20');
+  closures=null; // remove strong refs
+  await gcAsync(64,50);
+  log('  após closures=null + gcAsync: '+alive(closureRefs)+'/20 ← esperado 0');
+  log('[T13] done\n');
+}
+
+// T14
+async function t14(){
+  log('[T14] WeakRef timing preciso: após exatamente N ms');
+  var delays=[10,25,50,75,100,150];
+  for(var di=0;di<delays.length;di++){
+    var d=delays[di];
+    var refs=[];
+    (function(){for(var i=0;i<10;i++) refs.push(new WeakRef({data:new Float64Array(256)}));})();
+    var t0=performance.now();
+    var a=[];
+    try{for(var k=0;k<16;k++)a.push(new ArrayBuffer(4*1024*1024));}catch(e){}
+    a=null;
+    await wait(d);
+    var dt=performance.now()-t0;
+    log('  delay='+String(d).padStart(3)+'ms actual='+dt.toFixed(0)+'ms: alive='+alive(refs)+'/10 '+(alive(refs)===0?'✓ GC OK':'✗'));
+  }
+  log('[T14] done\n');
+}
+
+// T15
+async function t15(){
+  log('[T15] Exploit-ready gc(): implementação final verificada');
+  log('  ╔══════════════════════════════════════════════════════╗');
+  log('  ║ EXPLOIT gc() PARA PS4 FW12.00                        ║');
+  log('  ║                                                       ║');
+  log('  ║ async function gc() {                                 ║');
+  log('  ║   let a = [];                                         ║');
+  log('  ║   try { for(let i=0;i<16;i++)                        ║');
+  log('  ║     a.push(new ArrayBuffer(4<<20)); } catch(e){}     ║');
+  log('  ║   a = null;                                           ║');
+  log('  ║   await new Promise(r => setTimeout(r, 50));          ║');
+  log('  ║ }                                                     ║');
+  log('  ╚══════════════════════════════════════════════════════╝');
+  log('');
+  log('  IMPORTANTE: Toda função que usa gc() deve ser async!');
+  log('  Substitua: gc(); por await gc();');
+  log('  Substitua: function exploit(){...} por async function exploit(){...}');
+  log('');
+  // Teste final de robustez: 20 execuções
+  var successCount=0;
+  for(var trial=0;trial<20;trial++){
+    var refs=[];
+    (function(){for(var i=0;i<10;i++) refs.push(new WeakRef({data:new Float64Array(128)}));})();
+    await gcAsync(64,50);
+    if(alive(refs)===0) successCount++;
+  }
+  log('  Robustez: '+successCount+'/20 execuções com GC completo');
+  log('  Taxa de sucesso: '+(successCount/20*100).toFixed(0)+'%');
+  log('  Status: '+(successCount>=18?'✓ CONFIÁVEL para exploit':'⚠ instável'));
+  log('[T15] done\n');
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 04 — GC VIA MICROTASK ===\n');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){
+    if(i>=tests.length){log('\n=== FIM ===');return;}
+    var r; try{r=tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);}
+    i++;
+    if(r&&typeof r.then==='function') r.then(function(){setTimeout(next,200);}).catch(function(e){log('err: '+e.name);setTimeout(next,200);});
+    else setTimeout(next,200);
+  }
+  next();
+}
+</script></body></html>

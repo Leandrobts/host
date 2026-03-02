@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>05 — Stack Exhaustion</title>
+<style>
+body{background:#08080f;color:#ccc;font:12px monospace;padding:12px}
+h3{color:#5bf;margin-bottom:6px}
+#log{height:460px;overflow:auto;background:#0a0a12;color:#0f0;padding:8px;white-space:pre;border:1px solid #1a2a3a;margin-bottom:8px}
+button{background:#0f1a2a;color:#5bf;border:1px solid #1a3a5a;padding:5px 10px;margin:2px;font:11px monospace;cursor:pointer}
+button:hover{background:#1a2a3a}
+.guide{background:#1a0a00;border:1px solid #3a1a00;padding:8px;margin-bottom:8px;font-size:11px;color:#888}
+</style></head>
+<body>
+<h3>05 — Stack Exhaustion: Limites, yield* Abuse, Trampolim</h3>
+<div class="guide">
+✓ Logs v8 confirmaram: call stack = <b>10.429 frames</b>. yield* USA call stack (não heap).<br>
+🔍 O QUE OBSERVAR:<br>
+• <span style="color:#fa4">profundidade máxima</span>: muda entre execuções? Indica padding de stack<br>
+• <span style="color:#4f4">yield* recursivo</span>: causa stack overflow como recursão normal<br>
+• <span style="color:#4f4">trampolim</span>: 1M iterações sem overflow — alternativa segura<br>
+• <span style="color:#f44">crash em vez de RangeError</span>: overflow não foi capturado = potencial exploitável<br>
+• <span style="color:#aaf">diferença de depth</span> entre chamadas simples vs com try/catch/closure
+</div>
+<div id="log"></div>
+<button onclick="t01()">T01 Confirma: profundidade máxima (deve ser ~10429)</button>
+<button onclick="t02()">T02 Variância: 10 medições da profundidade máxima</button>
+<button onclick="t03()">T03 yield* recursivo: confirma uso de call stack</button>
+<button onclick="t04()">T04 Custo por frame: simples vs try/catch vs closure vs arguments</button>
+<button onclick="t05()">T05 Stack overflow em callback nativo (forEach, map, etc)</button>
+<button onclick="t06()">T06 Stack overflow em Proxy trap recursivo</button>
+<button onclick="t07()">T07 Stack overflow em getter recursivo</button>
+<button onclick="t08()">T08 Recuperação: pode usar o stack após RangeError?</button>
+<button onclick="t09()">T09 Trampolim: implementação correta e limites</button>
+<button onclick="t10()">T10 Async recursão: await quebra o stack?</button>
+<button onclick="t11()">T11 eval recursivo: eval("eval(...)") profundidade</button>
+<button onclick="t12()">T12 Mutual recursion: A→B→A vs A→A profundidade</button>
+<button onclick="t13()">T13 Stack durante Promise chain: .then() usa stack?</button>
+<button onclick="t14()">T14 Stack em MutationObserver e FinalizationRegistry callbacks</button>
+<button onclick="t15()">T15 Exploit de stack exhaustion: DoS controlado</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html" style="color:#5bf">← Index</a>
+<script>
+'use strict';
+var _L=document.getElementById('log');
+function log(m){_L.textContent+=m+'\n';_L.scrollTop=_L.scrollHeight;}
+function wait(ms){return new Promise(function(r){setTimeout(r,ms);});}
+
+function measureDepth(fn){
+  var depth=0;
+  try{fn(function inc(){depth++;inc();});}catch(e){}
+  return depth;
+}
+
+// T01
+function t01(){
+  log('[T01] Confirma profundidade máxima de call stack');
+  var d=0;
+  function rec(){d++;rec();}
+  try{rec();}catch(e){log('  exc: '+e.name);}
+  log('  profundidade direta: '+d+' frames');
+  log('  (v8 log mostrou 10429 — este run: '+d+')');
+  // Profundidade com argumentos passados
+  var dWithArgs=0;
+  function recArgs(a,b,c){dWithArgs++;recArgs(a,b,c);}
+  try{recArgs(1,2,3);}catch(e){}
+  log('  com 3 argumentos: '+dWithArgs+' frames');
+  log('  diferença: '+(d-dWithArgs)+' frames menos com args');
+  // Com return value
+  var dRet=0;
+  function recRet(){dRet++;return recRet()+1;}
+  try{recRet();}catch(e){}
+  log('  com return value: '+dRet+' frames');
+  log('[T01] done\n');
+}
+
+// T02
+function t02(){
+  log('[T02] Variância: 10 medições da profundidade máxima');
+  var depths=[];
+  for(var trial=0;trial<10;trial++){
+    var d=0;
+    function rec(){d++;rec();}
+    try{rec();}catch(e){}
+    depths.push(d);
+    d=0; // reset (necessário para nova medição)
+  }
+  // Cria novas funções para cada trial para evitar JIT cache
+  var depths2=[];
+  for(var trial=0;trial<10;trial++){
+    var d2=0;
+    (function makeRec(){
+      function r(){d2++;r();}
+      try{r();}catch(e){}
+      depths2.push(d2);
+    })();
+  }
+  log('  Trial | depth (shared fn) | depth (fresh fn)');
+  for(var i=0;i<10;i++){
+    log('  '+String(i).padStart(5)+'  | '+String(depths[i]).padStart(17)+' | '+depths2[i]);
+  }
+  var minD=Math.min.apply(null,depths2), maxD=Math.max.apply(null,depths2);
+  var avgD=depths2.reduce(function(a,b){return a+b;},0)/depths2.length;
+  log('  min='+minD+' max='+maxD+' avg='+avgD.toFixed(0));
+  log('  variância: '+(maxD-minD)+' frames → '+(maxD-minD<50?'DETERMINÍSTICO ✓':'variável - ASLR stack?'));
+  log('[T02] done\n');
+}
+
+// T03
+function t03(){
+  log('[T03] yield* recursivo: usa call stack como recursão normal?');
+  // v8 confirmou: yield* causa RangeError — confirmar aqui
+  function* deepYield(n){
+    if(n>0) yield* deepYield(n-1);
+    else yield 0;
+  }
+  var depthAtOverflow=0;
+  function measureYieldDepth(target){
+    try{
+      var gen=deepYield(target);
+      var result=gen.next();
+      return result.done?-1:result.value;
+    }catch(e){
+      return e.name; // RangeError se stack overflow
+    }
+  }
+  // Busca binária pelo limite
+  var lo=0, hi=50000;
+  while(hi-lo>100){
+    var mid=Math.floor((lo+hi)/2);
+    var r=measureYieldDepth(mid);
+    if(r==='RangeError') hi=mid;
+    else lo=mid;
+  }
+  log('  Limite de yield* recursivo: ~'+lo+' níveis (antes do overflow)');
+  log('  Comparação com call stack ~10429 frames');
+  log('  Ratio yield*/direct: '+(lo/10429).toFixed(2)+'x');
+  // yield normal (não recursivo) não usa call stack
+  function* flatYield(n){for(var i=0;i<n;i++) yield i;}
+  var flatGen=flatYield(100000);
+  var flatCount=0;
+  try{
+    var r;
+    while(!(r=flatGen.next()).done) flatCount++;
+    log('  yield normal (flat, 100k): '+flatCount+' yields sem overflow ✓');
+  }catch(e){log('  flat yield exc @'+flatCount+': '+e.name);}
+  log('[T03] done\n');
+}
+
+// T04
+function t04(){
+  log('[T04] Custo por frame: diferentes tipos de função');
+  var configs=[
+    {name:'função simples',          fn:function rec(d){d++;try{rec(d);}catch(e){return d;}return d;}},
+    {name:'com try/catch',           fn:function rec(d){d++;try{try{rec(d);}catch(e2){throw e2;}}catch(e){return d;}return d;}},
+    {name:'com closure',             fn:(function(){var x=1;return function rec(d){d++;x++;try{rec(d);}catch(e){return d;}return d;};})()},
+    {name:'com arguments',           fn:function rec(d,a,b,c,e,f){d++;try{rec(d,a,b,c,e,f);}catch(err){return d;}return d;}},
+    {name:'com array local',         fn:function rec(d){d++;var a=[1,2,3];try{rec(d);}catch(e){return d;}return d;}},
+    {name:'com objeto local',        fn:function rec(d){d++;var o={x:1,y:2};try{rec(d);}catch(e){return d;}return d;}},
+    {name:'arrow fn',                fn:(function makeArrow(){var r;r=function(d){d++;try{return r(d);}catch(e){return d;}};return r;})()},
+  ];
+  configs.forEach(function(c){
+    var depth=0;
+    try{depth=c.fn(0);}catch(e){log('  '+c.name+': exc '+e.name);}
+    log('  '+c.name.padEnd(22)+': '+depth+' frames');
+  });
+  log('[T04] done\n');
+}
+
+// T05
+function t05(){
+  log('[T05] Stack overflow em callbacks nativos');
+  // forEach recursivo
+  var fDepth=0;
+  function forEachRec(){
+    fDepth++;
+    [1].forEach(forEachRec);
+  }
+  try{forEachRec();}catch(e){log('  forEach recursivo: '+fDepth+' → '+e.name);}
+  // map recursivo
+  var mDepth=0;
+  function mapRec(){mDepth++;return [1].map(mapRec)[0];}
+  try{mapRec();}catch(e){log('  map recursivo: '+mDepth+' → '+e.name);}
+  // Promise.then recursivo (usa microtask — NÃO usa call stack!)
+  var thenCount=0;
+  function thenRec(){
+    thenCount++;
+    if(thenCount<1000) return Promise.resolve().then(thenRec);
+    return thenCount;
+  }
+  thenRec().then(function(n){log('  Promise.then recursivo 1000×: '+n+' (sem overflow — usa microtask)');});
+  // setTimeout recursivo
+  var setCount=0;
+  function setRec(){
+    setCount++;
+    if(setCount<100) setTimeout(setRec,0);
+    else log('  setTimeout recursivo 100×: ok (não usa call stack)');
+  }
+  setRec();
+  // Getter recursivo
+  var gDepth=0;
+  var obj={get x(){gDepth++;return this.x;}};
+  try{obj.x;}catch(e){log('  getter recursivo: '+gDepth+' → '+e.name);}
+  log('[T05] done\n');
+}
+
+// T06
+function t06(){
+  log('[T06] Stack overflow em Proxy trap recursivo');
+  // Proxy cujo get trap chama o mesmo proxy
+  var pDepth=0;
+  var p=new Proxy({},{
+    get:function(t,k,r){
+      pDepth++;
+      return p[k]; // acessa o mesmo proxy recursivamente!
+    }
+  });
+  try{p.x;}catch(e){log('  Proxy get recursivo: '+pDepth+' → '+e.name);}
+  // Proxy set recursivo
+  var sDepth=0;
+  var sp=new Proxy({},{
+    set:function(t,k,v,r){
+      sDepth++;
+      sp[k]=v+1; // escreve no mesmo proxy
+      return true;
+    }
+  });
+  try{sp.x=0;}catch(e){log('  Proxy set recursivo: '+sDepth+' → '+e.name);}
+  // Proxy has recursivo
+  var hDepth=0;
+  var hp=new Proxy({},{
+    has:function(t,k){
+      hDepth++;
+      return k in hp; // has no mesmo proxy
+    }
+  });
+  try{'x' in hp;}catch(e){log('  Proxy has recursivo: '+hDepth+' → '+e.name);}
+  log('[T06] done\n');
+}
+
+// T07
+function t07(){
+  log('[T07] Stack overflow em getter e setter recursivos');
+  // Getter que se chama
+  var gObj={};
+  var gDepth=0;
+  Object.defineProperty(gObj,'self',{
+    get:function(){ gDepth++; return gObj.self; },
+    configurable:true
+  });
+  try{gObj.self;}catch(e){log('  getter recursivo: '+gDepth+' → '+e.name);}
+  // toString recursivo
+  var tDepth=0;
+  var tObj={toString:function(){tDepth++;return String(this);}};
+  try{String(tObj);}catch(e){log('  toString recursivo: '+tDepth+' → '+e.name);}
+  // valueOf recursivo
+  var vDepth=0;
+  var vObj={valueOf:function(){vDepth++;return vObj+0;}};
+  try{vObj+0;}catch(e){log('  valueOf recursivo: '+vDepth+' → '+e.name);}
+  // Symbol.toPrimitive recursivo
+  var spDepth=0;
+  var spObj={[Symbol.toPrimitive]:function(h){spDepth++;return spObj+'';}};
+  try{spObj+'';}catch(e){log('  toPrimitive recursivo: '+spDepth+' → '+e.name);}
+  log('[T07] done\n');
+}
+
+// T08
+function t08(){
+  log('[T08] Recuperação: pode usar o stack após RangeError?');
+  var maxDepth=0;
+  function rec(){maxDepth++;rec();}
+  try{rec();}catch(e){}
+  log('  depth no overflow: '+maxDepth);
+  // Tenta usar o stack logo após o overflow
+  function simple(){return 42;}
+  try{
+    var r=simple();
+    log('  chamada simples após overflow: '+r+' ✓');
+  }catch(e){log('  chamada simples após overflow: exc '+e.name);}
+  // Stack disponível para novas recursões?
+  var depth2=0;
+  function rec2(){depth2++;rec2();}
+  try{rec2();}catch(e){}
+  log('  nova recursão após overflow: '+depth2+' frames');
+  log('  diferença: '+(maxDepth-depth2)+' frames (deve ser ~0)');
+  // Objetos criados durante o overflow sobrevivem?
+  var overflowObjs=[];
+  function recAlloc(){
+    overflowObjs.push({depth:overflowObjs.length});
+    recAlloc();
+  }
+  try{recAlloc();}catch(e){}
+  log('  objetos alocados durante overflow: '+overflowObjs.length);
+  log('  overflowObjs[0] válido: '+(overflowObjs.length>0&&overflowObjs[0].depth===0?'✓':'✗'));
+  log('[T08] done\n');
+}
+
+// T09
+function t09(){
+  log('[T09] Trampolim: implementação correta e limites');
+  // Trampolim básico
+  function trampoline(fn){
+    var result=fn;
+    while(typeof result==='function') result=result();
+    return result;
+  }
+  // Função trampolizada (retorna thunk em vez de chamar recursivamente)
+  function factTramp(n,acc){
+    acc=acc||1n;
+    if(n<=1n) return acc;
+    return function(){return factTramp(n-1n,n*acc);};
+  }
+  var fact20=trampoline(factTramp(20n));
+  log('  fatorial 20 via trampolim: '+fact20);
+  // Profundidade máxima com trampolim
+  var tramCount=0;
+  function tramRec(){
+    tramCount++;
+    if(tramCount<2000000) return function(){return tramRec();};
+    return tramCount;
+  }
+  var t0=performance.now();
+  var result=trampoline(tramRec);
+  log('  trampolim 2M iterações: '+result+' em '+(performance.now()-t0).toFixed(0)+'ms ✓');
+  // Trampolim async (para integrar com gcAsync)
+  async function asyncTrampoline(fn){
+    var result=fn;
+    var i=0;
+    while(typeof result==='function'){
+      result=result();
+      if(++i%10000===0) await wait(0); // cede o event loop a cada 10k
+    }
+    return result;
+  }
+  var tramCount2=0;
+  function asyncRecFn(){
+    tramCount2++;
+    if(tramCount2<500000) return function(){return asyncRecFn();};
+    return tramCount2;
+  }
+  var t1=performance.now();
+  asyncTrampoline(asyncRecFn).then(function(r){
+    log('  async trampolim 500k iterações: '+r+' em '+(performance.now()-t1).toFixed(0)+'ms ✓');
+    log('[T09] done\n');
+  });
+}
+
+// T10
+async function t10(){
+  log('[T10] Async recursão: await quebra o call stack?');
+  // Recursão async — cada await suspende e retoma o stack
+  var asyncDepth=0;
+  async function asyncRec(n){
+    asyncDepth++;
+    if(n>0) return await asyncRec(n-1);
+    return 0;
+  }
+  // Testa profundidades progressivas
+  var limits=[100,1000,5000,10000,10429,11000];
+  for(var li=0;li<limits.length;li++){
+    var lim=limits[li];
+    asyncDepth=0;
+    try{
+      await asyncRec(lim);
+      log('  asyncRec('+String(lim).padStart(5)+'): '+asyncDepth+' frames ✓');
+    }catch(e){
+      log('  asyncRec('+String(lim).padStart(5)+'): OVERFLOW @'+asyncDepth+' → '+e.name);
+      break;
+    }
+  }
+  log('  Nota: async recursão usa o mesmo call stack!');
+  log('  O await NÃO elimina o frame da função async — apenas suspende.');
+  log('[T10] done\n');
+}
+
+// T11
+function t11(){
+  log('[T11] eval recursivo: profundidade máxima');
+  // eval aninhado — cada eval adiciona um frame
+  var evalDepth=0;
+  // eval aninhado via string dinâmica é bloqueado (v8 log mostrou SyntaxError)
+  // Testa via eval de função que chama eval
+  try{
+    eval('(function rec(){evalDepth++;eval("rec()")})()')
+  }catch(e){log('  eval recursivo: '+evalDepth+' → '+e.name);}
+  // eval de código que usa recursão normal
+  var evalRecDepth=0;
+  try{
+    eval('(function r(){evalRecDepth++;r()})()');
+  }catch(e){log('  eval com recursão interna: '+evalRecDepth+' → '+e.name);}
+  log('  Overhead do eval por frame: ~'+(10429-evalRecDepth)+' frames a menos que recursão direta');
+  // eval em Promise
+  Promise.resolve().then(function(){
+    var pDepth=0;
+    try{eval('(function r(){pDepth++;r()})()');}catch(e){}
+    log('  eval em Promise.then: '+pDepth+' frames');
+    log('[T11] done\n');
+  });
+}
+
+// T12
+function t12(){
+  log('[T12] Mutual recursion: profundidade A↔B vs A→A');
+  // Recursão direta
+  var da=0;
+  function recA(){da++;recA();}
+  try{recA();}catch(e){}
+  log('  A→A direta: '+da+' frames');
+  // Recursão mútua A↔B (v8 mostrou 10428 — quase igual)
+  var db=0;
+  function rA(){db++;rB();}
+  function rB(){db++;rA();}
+  try{rA();}catch(e){}
+  log('  A↔B mútua: '+db+' frames totais = '+(db/2).toFixed(0)+' por função');
+  log('  diferença: '+(da-(db/2)).toFixed(0)+' frames (overhead do despacho extra)');
+  // Recursão com 3 funções: A→B→C→A
+  var dc=0;
+  function rABC_A(){dc++;rABC_B();}
+  function rABC_B(){dc++;rABC_C();}
+  function rABC_C(){dc++;rABC_A();}
+  try{rABC_A();}catch(e){}
+  log('  A→B→C→A: '+dc+' frames totais = '+(dc/3).toFixed(0)+' ciclos');
+  log('[T12] done\n');
+}
+
+// T13
+function t13(){
+  log('[T13] Stack durante Promise chain: .then() usa call stack?');
+  // Cada .then() é uma microtask separada — NÃO deve empilhar
+  var maxChain=100000;
+  var p=Promise.resolve(0);
+  for(var i=0;i<maxChain;i++){
+    p=p.then(function(n){return n+1;});
+  }
+  p.then(function(result){
+    log('  Promise chain '+maxChain+'×: resultado='+result+' (sem stack overflow ✓)');
+    log('[T13] done\n');
+  }).catch(function(e){
+    log('  Promise chain exc: '+e.name);
+    log('[T13] done\n');
+  });
+  // Mas .then() com callback recursivo direto USA stack
+  var syncDepth=0;
+  Promise.resolve().then(function syncRec(){
+    syncDepth++;
+    return Promise.resolve().then(syncRec); // chama a si dentro do then
+  }).catch(function(e){
+    log('  .then() com callback recursivo: '+syncDepth+' → (catch invocado)');
+  });
+  log('  (aguardando resolução das promises)');
+}
+
+// T14
+function t14(){
+  log('[T14] Stack em MutationObserver e FinalizationRegistry callbacks');
+  // MutationObserver callback — qual é a profundidade de call stack disponível?
+  var observerDepth=0;
+  var sandbox=document.createElement('div');
+  document.body.appendChild(sandbox);
+  var obs=new MutationObserver(function(){
+    // Mede profundidade disponível dentro do callback
+    function rec(){observerDepth++;rec();}
+    try{rec();}catch(e){}
+    obs.disconnect();
+    log('  MutationObserver callback depth: '+observerDepth+' frames');
+    document.body.removeChild(sandbox);
+  });
+  obs.observe(sandbox,{childList:true});
+  sandbox.appendChild(document.createElement('span'));
+  // FinalizationRegistry callback
+  var regDepth=0;
+  var reg=new FinalizationRegistry(function(){
+    function rec(){regDepth++;rec();}
+    try{rec();}catch(e){}
+    log('  FinalizationRegistry callback depth: '+regDepth+' frames');
+    log('[T14] done\n');
+  });
+  (function(){var o={};reg.register(o,'obj');})();
+  // Força GC via pressão
+  var a=[];
+  try{for(var i=0;i<40;i++)a.push(new ArrayBuffer(4*1024*1024));}catch(e){}
+  a=null;
+  setTimeout(function(){
+    if(regDepth===0) log('  FinalizationRegistry: callback ainda não executou (aguardar)');
+    log('[T14] done\n');
+  },500);
+}
+
+// T15
+function t15(){
+  log('[T15] Stack exhaustion DoS: máxima profundidade sem crash');
+  // O objetivo é atingir exatamente maxDepth-1 sem overflow
+  var maxDepth=0;
+  function measure(){maxDepth++;measure();}
+  try{measure();}catch(e){}
+  log('  max depth: '+maxDepth);
+  var safeDepth=maxDepth-100; // margem de segurança
+  log('  safe depth (max-100): '+safeDepth);
+  // Chega exatamente em safeDepth sem overflow
+  function reachDepth(target){
+    var curr=0;
+    function rec(){
+      curr++;
+      if(curr<target) rec();
+      return curr;
+    }
+    return rec();
+  }
+  var reached=reachDepth(safeDepth);
+  log('  alcançou '+reached+' frames sem overflow ✓');
+  // Tenta safeDepth+50 (deve funcionar)
+  var r2=0;
+  try{r2=reachDepth(safeDepth+50);}catch(e){log('  safeDepth+50 exc: '+e.name);}
+  log('  safeDepth+50: '+(r2>0?'ok ('+r2+')':'overflow ← borda precisa ajuste'));
+  log('');
+  log('  SUMÁRIO DO STACK PS4 FW 12.00:');
+  log('  ┌──────────────────────────────────────────┐');
+  log('  │ call stack max:    ~'+maxDepth+' frames          │');
+  log('  │ yield* recursivo:  usa call stack!       │');
+  log('  │ async recursivo:   usa call stack!       │');
+  log('  │ Promise.then():    NÃO usa call stack ✓  │');
+  log('  │ trampolim:         NÃO usa call stack ✓  │');
+  log('  │ setTimeout():      NÃO usa call stack ✓  │');
+  log('  └──────────────────────────────────────────┘');
+  log('[T15] done\n');
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 05 — STACK EXHAUSTION ===\n');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){
+    if(i>=tests.length){log('\n=== FIM ===');return;}
+    var r; try{r=tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);}
+    i++;
+    if(r&&typeof r.then==='function') r.then(function(){setTimeout(next,400);}).catch(function(){setTimeout(next,400);});
+    else setTimeout(next,350);
+  }
+  next();
+}
+</script></body></html>

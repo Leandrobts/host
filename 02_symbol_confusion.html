@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>02 — Symbol Confusion Bug</title>
+<style>
+body{background:#08080f;color:#ccc;font:12px monospace;padding:12px}
+h3{color:#5bf;margin-bottom:6px}
+#log{height:460px;overflow:auto;background:#0a0a12;color:#0f0;padding:8px;white-space:pre;border:1px solid #1a2a3a;margin-bottom:8px}
+button{background:#0f1a2a;color:#5bf;border:1px solid #1a3a5a;padding:5px 10px;margin:2px;font:11px monospace;cursor:pointer}
+button:hover{background:#1a2a3a}
+.guide{background:#1a001a;border:1px solid #3a003a;padding:8px;margin-bottom:8px;font-size:11px;color:#888}
+</style></head>
+<body>
+<h3>02 — Symbol Bug: Symbol() == Symbol() = true?</h3>
+<div class="guide">
+⚠ Log v8 mostrou: <code>Symbol() == Symbol() → true</code> (deveria ser false!)<br>
+🔍 O QUE OBSERVAR:<br>
+• <span style="color:#f44">CONFIRMADO</span>: Se == entre symbols distintos retorna true → type confusion real<br>
+• <span style="color:#fa4">operações derivadas</span>: switch/case, Set, Map, indexOf — todas afetadas?<br>
+• <span style="color:#4f4">exploitability</span>: se dois symbols collidem em Map/Set → overwrite de chave
+</div>
+<div id="log"></div>
+<button onclick="t01()">T01 Confirma: Symbol() == Symbol() retorna true?</button>
+<button onclick="t02()">T02 Identidade: o mesmo Symbol é == a si mesmo?</button>
+<button onclick="t03()">T03 Symbol.for(): símbolos globais — igualdade esperada</button>
+<button onclick="t04()">T04 Symbol em switch/case: SameValueZero vs ==</button>
+<button onclick="t05()">T05 Symbol em Set: collisão de keys?</button>
+<button onclick="t06()">T06 Symbol em Map: overwrite acidental?</button>
+<button onclick="t07()">T07 Symbol em WeakMap/WeakRef</button>
+<button onclick="t08()">T08 Symbol como chave de objeto: colisão?</button>
+<button onclick="t09()">T09 Symbol.toPrimitive: o == chama toPrimitive?</button>
+<button onclick="t10()">T10 typeof Symbol() e instanceof</button>
+<button onclick="t11()">T11 Symbol coerção: Boolean/Number/String</button>
+<button onclick="t12()">T12 Symbol em Proxy has/get/set trap</button>
+<button onclick="t13()">T13 Symbol.iterator e Symbol.species collision</button>
+<button onclick="t14()">T14 Symbol bem-conhecido vs criado: == comparação</button>
+<button onclick="t15()">T15 Stress: 1000 symbols — quantos são "iguais" entre si?</button>
+<br><br>
+<button onclick="runAll()"><b>▶ RODAR TUDO</b></button>
+<button onclick="document.getElementById('log').textContent=''">Limpar</button>
+<a href="index.html" style="color:#5bf">← Index</a>
+<script>
+'use strict';
+var _L=document.getElementById('log');
+function log(m){_L.textContent+=m+'\n';_L.scrollTop=_L.scrollHeight;}
+
+function t01(){
+  log('[T01] CONFIRMA: Symbol() == Symbol()');
+  log('  Spec: dois Symbol() distintos NUNCA são iguais (==, ===, Object.is)');
+  var results=[];
+  for(var i=0;i<20;i++){
+    var a=Symbol('test'), b=Symbol('test');
+    var loose=(a==b), strict=(a===b), oi=Object.is(a,b);
+    results.push({loose:loose,strict:strict,oi:oi});
+  }
+  var anyLoose=results.some(function(r){return r.loose;});
+  var anyStrict=results.some(function(r){return r.strict;});
+  log('  20 pares de Symbol("test"):');
+  log('  == true: '+results.filter(function(r){return r.loose;}).length+'/20 → '+(anyLoose?'⚠ BUG CONFIRMADO':'OK'));
+  log('  === true: '+results.filter(function(r){return r.strict;}).length+'/20 → '+(anyStrict?'⚠ BUG STRICT':'OK'));
+  log('  Object.is true: '+results.filter(function(r){return r.oi;}).length+'/20');
+  // Testa com descriptions diferentes
+  var sA=Symbol('alpha'), sB=Symbol('beta');
+  log('  Symbol("alpha")==Symbol("beta"): '+(sA==sB)+' (deve ser false)');
+  // Testa sem description
+  var s1=Symbol(), s2=Symbol();
+  log('  Symbol()==Symbol(): '+(s1==s2)+' (deve ser false)');
+  // Testa o mesmo symbol consigo
+  log('  s1==s1: '+(s1==s1)+' (deve ser true)');
+  log('  s1===s1: '+(s1===s1)+' (deve ser true)');
+  log('[T01] done\n');
+}
+
+function t02(){
+  log('[T02] Identidade de Symbol: mesmo objeto vs cópia');
+  var s=Symbol('id');
+  var ref=s; // mesma referência
+  log('  s == ref (mesma ref): '+(s==ref)+' (deve ser true)');
+  log('  s === ref: '+(s===ref)+' (deve ser true)');
+  // Symbol em variáveis diferentes mas mesma referência
+  var arr=[s];
+  log('  arr[0] == s: '+(arr[0]==s));
+  log('  arr[0] === s: '+(arr[0]===s));
+  // Symbol passado por parâmetro
+  function checkSym(a,b){ return a==b; }
+  log('  checkSym(s,s): '+checkSym(s,s));
+  log('  checkSym(s,Symbol("id")): '+checkSym(s,Symbol('id')));
+  // Symbol em array indexOf
+  var haystack=[Symbol('a'),Symbol('b'),s,Symbol('c')];
+  log('  indexOf(s): '+haystack.indexOf(s)+' (deve ser 2)');
+  log('  indexOf(Symbol("id") novo): '+haystack.indexOf(Symbol('id'))+' (deve ser -1)');
+  log('[T02] done\n');
+}
+
+function t03(){
+  log('[T03] Symbol.for(): símbolos globais com mesma chave devem ser ===');
+  var g1=Symbol.for('global-key');
+  var g2=Symbol.for('global-key');
+  log('  Symbol.for("x") === Symbol.for("x"): '+(g1===g2)+' (deve ser true)');
+  log('  Symbol.for("x") == Symbol.for("x"): '+(g1==g2)+' (deve ser true)');
+  log('  Symbol.keyFor(g1): '+Symbol.keyFor(g1));
+  var unique=Symbol('not-global');
+  log('  Symbol.keyFor(Symbol()): '+Symbol.keyFor(unique)+' (deve ser undefined)');
+  // Symbol.for vs Symbol()
+  var gA=Symbol.for('test'), local=Symbol('test');
+  log('  Symbol.for("test") == Symbol("test"): '+(gA==local)+' (deve ser false)');
+  log('  Symbol.for("test") === Symbol("test"): '+(gA===local)+' (deve ser false)');
+  // Dois Symbol.for com chaves diferentes
+  var gX=Symbol.for('x'), gY=Symbol.for('y');
+  log('  Symbol.for("x") == Symbol.for("y"): '+(gX==gY)+' (deve ser false)');
+  log('[T03] done\n');
+}
+
+function t04(){
+  log('[T04] Symbol em switch/case (usa SameValueZero = ===)');
+  var s1=Symbol('sw'), s2=Symbol('sw');
+  function sw(val){
+    switch(val){
+      case s1: return 'case s1';
+      case s2: return 'case s2';
+      default: return 'default';
+    }
+  }
+  log('  switch(s1): '+sw(s1)+' (deve ser "case s1")');
+  log('  switch(s2): '+sw(s2)+' (deve ser "case s2")');
+  log('  switch(Symbol("sw")): '+sw(Symbol('sw'))+' (deve ser "default")');
+  // Se == e switch são inconsistentes → bug mais grave
+  var sNew=Symbol('sw');
+  var eqResult=(sNew==s1);
+  var swResult=sw(sNew);
+  log('  Symbol("sw") novo:');
+  log('    == s1: '+eqResult);
+  log('    switch: '+swResult);
+  if(eqResult&&swResult==='default'){
+    log('  ⚠ INCONSISTÊNCIA: == retorna true mas switch não matcheia!');
+  }
+  log('[T04] done\n');
+}
+
+function t05(){
+  log('[T05] Symbol em Set: colisão de keys?');
+  var set=new Set();
+  var symbols=[];
+  for(var i=0;i<10;i++) symbols.push(Symbol('s'));
+  symbols.forEach(function(s){set.add(s);});
+  log('  Set com 10 Symbol("s") distintos: size='+set.size+' (deve ser 10)');
+  // Verifica se algum foi deduplicado
+  if(set.size<10){
+    log('  ⚠ BUG: Set deduplicou symbols distintos! size='+set.size);
+    log('  ⚠ Isso confirma que o motor trata symbols distintos como iguais');
+  }
+  // Adiciona o mesmo symbol duas vezes
+  var s=Symbol('dup');
+  set.add(s); set.add(s);
+  log('  Set após add(s)+add(s): size='+set.size+' (deve ser 11)');
+  // has()
+  log('  set.has(symbols[0]): '+set.has(symbols[0]));
+  log('  set.has(Symbol("s") novo): '+set.has(Symbol('s'))+' (deve ser false)');
+  // delete
+  set.delete(symbols[0]);
+  log('  após delete(symbols[0]): size='+set.size);
+  log('[T05] done\n');
+}
+
+function t06(){
+  log('[T06] Symbol em Map: overwrite acidental de chaves?');
+  var map=new Map();
+  var symbols=[];
+  for(var i=0;i<10;i++) symbols.push(Symbol('k'));
+  symbols.forEach(function(s,i){map.set(s,'val'+i);});
+  log('  Map com 10 Symbol("k") distintos: size='+map.size+' (deve ser 10)');
+  if(map.size<10){
+    log('  ⚠ BUG: Map colapsou chaves Symbol distintas! size='+map.size);
+  }
+  // Verifica get
+  symbols.forEach(function(s,i){
+    var v=map.get(s);
+    if(v!=='val'+i) log('  ⚠ map.get(symbols['+i+'])='+v+' esperado "val'+i+'"');
+  });
+  log('  get(Symbol("k") novo): '+map.get(Symbol('k'))+' (deve ser undefined)');
+  // Testa se set(Symbol("k")) sobrescreve alguma entrada
+  var before=map.size;
+  map.set(Symbol('k'),'new-val');
+  log('  map.size após set(Symbol("k") novo): '+map.size+' (antes='+before+', deve ser '+(before+1)+')');
+  log('[T06] done\n');
+}
+
+function t07(){
+  log('[T07] Symbol em WeakMap e WeakRef');
+  // WeakMap com Symbol como chave (ES2023)
+  var wm=new WeakMap();
+  var s1=Symbol('wk'), s2=Symbol('wk');
+  try{
+    wm.set(s1,'val1');
+    wm.set(s2,'val2');
+    log('  WeakMap.set(Symbol) suportado: ok');
+    log('  wm.get(s1): '+wm.get(s1));
+    log('  wm.get(s2): '+wm.get(s2));
+    log('  wm.get(Symbol("wk") novo): '+wm.get(Symbol('wk'))+' (deve ser undefined)');
+    log('  wm.has(s1): '+wm.has(s1));
+    // Consistência com == bug
+    var s3=Symbol('wk');
+    var s3EqS1=(s3==s1);
+    var s3InMap=wm.has(s3);
+    log('  s3==s1: '+s3EqS1+'  wm.has(s3): '+s3InMap);
+    if(s3EqS1&&!s3InMap) log('  ⚠ == bug não afeta WeakMap (usa identidade ref)');
+    if(s3EqS1&&s3InMap)  log('  ⚠⚠ == bug AFETA WeakMap!');
+  }catch(e){
+    log('  WeakMap com Symbol: exc '+e.name+' — ES2023 não suportado');
+  }
+  log('[T07] done\n');
+}
+
+function t08(){
+  log('[T08] Symbol como chave de objeto: property lookup com ==?');
+  var s1=Symbol('prop'), s2=Symbol('prop');
+  var obj={};
+  obj[s1]='value-s1';
+  log('  obj[s1]: '+obj[s1]);
+  log('  obj[s2]: '+obj[s2]+' (deve ser undefined)');
+  log('  obj[Symbol("prop")]: '+obj[Symbol('prop')]+' (deve ser undefined)');
+  // Se == afeta property lookup
+  if(obj[s2]!==undefined){
+    log('  ⚠⚠ BUG CRÍTICO: property lookup usa == para symbols!');
+    log('  ⚠⚠ Isso permite ler propriedades com symbol "errado"');
+  }
+  // Enumera as chaves symbol
+  var ownSyms=Object.getOwnPropertySymbols(obj);
+  log('  Object.getOwnPropertySymbols: '+ownSyms.length+' (deve ser 1)');
+  // Adiciona s2 como chave
+  obj[s2]='value-s2';
+  var ownSyms2=Object.getOwnPropertySymbols(obj);
+  log('  após obj[s2]="value-s2": symbols='+ownSyms2.length+' (deve ser 2)');
+  log('  obj[s1]: '+obj[s1]+' obj[s2]: '+obj[s2]);
+  log('[T08] done\n');
+}
+
+function t09(){
+  log('[T09] Symbol.toPrimitive: o == chama toPrimitive num Symbol?');
+  // Spec: Symbol == anything → usa SameValueNonNumeric (identidade)
+  // NÃO deve chamar toPrimitive
+  var called=[];
+  var s=Symbol('sym');
+  // Tenta comparar Symbol com objeto que tem toPrimitive
+  var obj={[Symbol.toPrimitive]:function(h){called.push(h);return 42;}};
+  try{
+    var r=(s==obj);
+    log('  Symbol==obj-com-toPrimitive: '+r);
+    log('  toPrimitive foi chamado: '+(called.length>0?'SIM ('+called[0]+')':'NÃO'));
+  }catch(e){log('  exc: '+e.name);}
+  // Compara Symbol com número (deve ser false sem coerção)
+  var s2=Symbol();
+  try{
+    log('  Symbol()==0: '+(s2==0)+' (deve ser false)');
+    log('  Symbol()==false: '+(s2==false)+' (deve ser false)');
+    log('  Symbol()==null: '+(s2==null)+' (deve ser false)');
+    log('  Symbol()==undefined: '+(s2==undefined)+' (deve ser false)');
+    log('  Symbol()==Symbol(): '+(Symbol()==Symbol())+' ← O BUG');
+  }catch(e){log('  coercion exc: '+e.name);}
+  log('[T09] done\n');
+}
+
+function t10(){
+  log('[T10] typeof e instanceof de Symbol');
+  var s=Symbol('t');
+  log('  typeof Symbol(): "'+typeof Symbol()+'" (deve ser "symbol")');
+  log('  typeof s: "'+typeof s+'"');
+  // Symbol não tem constructor exposto para instanceof
+  try{ log('  s instanceof Symbol: '+(s instanceof Symbol)); }
+  catch(e){ log('  instanceof Symbol: exc '+e.name+' (esperado — Symbol não é constructor)'); }
+  // Object(symbol) é um Symbol wrapper
+  var wrapped=Object(s);
+  log('  typeof Object(s): "'+typeof wrapped+'"');
+  log('  Object(s) instanceof Symbol: '+(wrapped instanceof Symbol));
+  log('  Object(s).valueOf() === s: '+(wrapped.valueOf()===s));
+  // Comparação wrapped vs unwrapped
+  log('  Object(s) == s: '+(wrapped==s)+' (deve ser true — abstract eq unboxes)');
+  log('  Object(s) === s: '+(wrapped===s)+' (deve ser false — tipos diferentes)');
+  // Dois Object(Symbol()) wrappers
+  var w1=Object(Symbol('x')), w2=Object(Symbol('x'));
+  log('  Object(Symbol("x")) == Object(Symbol("x")): '+(w1==w2)+' (deve ser false)');
+  log('[T10] done\n');
+}
+
+function t11(){
+  log('[T11] Symbol: coerções Boolean/Number/String');
+  var s=Symbol('coerce');
+  log('  Boolean(s): '+Boolean(s)+' (deve ser true)');
+  log('  Boolean(Symbol()): '+Boolean(Symbol())+' (deve ser true)');
+  log('  !s: '+(!s)+' (deve ser false)');
+  log('  s ? "yes" : "no": '+(s?'yes':'no')+' (deve ser yes)');
+  try{ log('  Number(s): '+Number(s)); }
+  catch(e){ log('  Number(s): exc '+e.name+' (esperado TypeError)'); }
+  try{ log('  +s: '+(+s)); }
+  catch(e){ log('  +s: exc '+e.name+' (esperado TypeError)'); }
+  log('  String(s): '+String(s)+' (deve ser "Symbol(coerce)")');
+  try{ log('  ""+s: '+('')+s); }
+  catch(e){ log('  ""+s: exc '+e.name+' (esperado TypeError)'); }
+  try{ log('  `${s}`: '+(function(){return `${s}`;})() ); }
+  catch(e){ log('  `${s}`: exc '+e.name+' (esperado TypeError)'); }
+  log('[T11] done\n');
+}
+
+function t12(){
+  log('[T12] Symbol em Proxy has/get/set: usa == ou === internamente?');
+  var s1=Symbol('p'), s2=Symbol('p');
+  var trapLog=[];
+  var target={};
+  target[s1]='val-s1';
+  var proxy=new Proxy(target,{
+    has:function(t,k){
+      trapLog.push('has:'+String(k)+'(typeofK='+typeof k+')');
+      return Reflect.has(t,k);
+    },
+    get:function(t,k,r){
+      trapLog.push('get:'+String(k));
+      return Reflect.get(t,k,r);
+    },
+    set:function(t,k,v,r){
+      trapLog.push('set:'+String(k)+'='+v);
+      return Reflect.set(t,k,v,r);
+    }
+  });
+  log('  proxy[s1]: '+proxy[s1]);
+  log('  proxy[s2]: '+proxy[s2]);
+  log('  s1 in proxy: '+(s1 in proxy));
+  log('  s2 in proxy: '+(s2 in proxy));
+  proxy[s2]='val-s2';
+  var syms=Object.getOwnPropertySymbols(target);
+  log('  target symbols após proxy[s2]=...: '+syms.length+' (deve ser 2)');
+  log('  trapLog: '+trapLog.join(' | '));
+  log('[T12] done\n');
+}
+
+function t13(){
+  log('[T13] Symbol.iterator e Symbol.species: well-known symbols e ==');
+  // Well-known symbols são globais — sempre o mesmo objeto
+  var iter1=Symbol.iterator, iter2=Symbol.iterator;
+  log('  Symbol.iterator === Symbol.iterator: '+(iter1===iter2)+' (deve ser true)');
+  log('  Symbol.iterator == Symbol.iterator: '+(iter1==iter2)+' (deve ser true)');
+  // Cria um Symbol com mesmo description que Symbol.iterator
+  var fakeIter=Symbol('Symbol(Symbol.iterator)');
+  log('  fake Symbol.iterator == real: '+(fakeIter==Symbol.iterator)+' (deve ser false)');
+  // Usa Symbol.iterator vs string
+  var obj={[Symbol.iterator]:function*(){yield 1;yield 2;}};
+  log('  for...of funciona: '+JSON.stringify([...obj]));
+  // Substitui Symbol.iterator por outro Symbol com == bug
+  if(Symbol()==Symbol()){
+    log('  ⚠ == bug confirmado — testando se afeta lookup de Symbol.iterator:');
+    var obj2={};
+    obj2[Symbol()]='fake-iter';
+    log('  obj2[Symbol.iterator]: '+obj2[Symbol.iterator]+' (deve ser undefined)');
+    if(obj2[Symbol.iterator]!==undefined){
+      log('  ⚠⚠ CRÍTICO: == bug afeta lookup de well-known symbols!');
+    }
+  }
+  log('[T13] done\n');
+}
+
+function t14(){
+  log('[T14] Comparação Symbol vs Symbol.for (global vs local)');
+  var localSym=Symbol('registered');
+  var globalSym=Symbol.for('registered');
+  log('  local==global (mesmo description): '+(localSym==globalSym)+' (deve ser false)');
+  log('  global==global: '+(globalSym==Symbol.for('registered'))+' (deve ser true)');
+  log('  local==local: '+(localSym==localSym)+' (deve ser true)');
+  // Well-known symbols vs criados
+  log('  Symbol.iterator==Symbol.iterator: '+(Symbol.iterator==Symbol.iterator));
+  log('  Symbol.for("Symbol.iterator")==Symbol.iterator: '+(Symbol.for('Symbol.iterator')==Symbol.iterator));
+  // Símbolo com description undefined
+  var noDesc=Symbol();
+  var noDesc2=Symbol();
+  log('  Symbol()==Symbol() (sem description): '+(noDesc==noDesc2)+' ← o BUG');
+  log('  Symbol(undefined)==Symbol(undefined): '+(Symbol(undefined)==Symbol(undefined)));
+  // Arrays de symbols
+  var arr=[Symbol('a'),Symbol('b'),Symbol('c')];
+  var s=Symbol('a');
+  log('  [Symbol("a"),...].indexOf(Symbol("a")): '+arr.indexOf(s)+' (deve ser -1)');
+  if(arr.indexOf(s)>=0) log('  ⚠ indexOf encontrou symbol "diferente" — == bug confirmado em indexOf');
+  log('[T14] done\n');
+}
+
+function t15(){
+  log('[T15] Stress: 1000 symbols — quantos colidem com ==?');
+  var N=1000;
+  var symbols=[];
+  for(var i=0;i<N;i++) symbols.push(Symbol('s'));
+  // Conta quantos pares são == true (amostra de 100 pares aleatórios)
+  var collisions=0, samples=200;
+  for(var i=0;i<samples;i++){
+    var a=symbols[Math.floor(Math.random()*N)];
+    var b=symbols[Math.floor(Math.random()*N)];
+    if(a!==b && a==b) collisions++;  // diferente por referência mas igual por ==
+  }
+  log('  '+N+' symbols criados, '+samples+' pares aleatórios testados');
+  log('  colisões (a!==b mas a==b): '+collisions+'/'+samples);
+  if(collisions>0){
+    log('  ⚠ TAXA DE COLISÃO: '+(collisions/samples*100).toFixed(1)+'%');
+    log('  ⚠ Isso confirma que o bug afeta symbols aleatórios, não apenas "Symbol()"');
+  } else {
+    log('  Nenhuma colisão em pares aleatórios');
+    log('  O bug pode ser específico para Symbol() sem argumentos ou determinístico');
+  }
+  // Testa em Set
+  var set=new Set(symbols);
+  log('  Set('+N+' symbols).size: '+set.size+' (deve ser '+N+')');
+  if(set.size<N){
+    log('  ⚠ SET PERDEU '+(N-set.size)+' SYMBOLS (colisão de hash!)');
+  }
+  // Testa em Map
+  var map=new Map();
+  symbols.forEach(function(s,i){ map.set(s,i); });
+  log('  Map('+N+' symbols).size: '+map.size+' (deve ser '+N+')');
+  if(map.size<N){
+    log('  ⚠ MAP PERDEU '+(N-map.size)+' ENTRIES');
+  }
+  log('[T15] done\n');
+}
+
+function runAll(){
+  document.getElementById('log').textContent='';
+  log('=== 02 — SYMBOL CONFUSION BUG ===\n');
+  var tests=[t01,t02,t03,t04,t05,t06,t07,t08,t09,t10,t11,t12,t13,t14,t15];
+  var i=0;
+  function next(){
+    if(i>=tests.length){log('\n=== FIM ===');return;}
+    try{tests[i]();}catch(e){log('CRASH T'+(i+1)+': '+e.name+' '+e.message);}
+    i++; setTimeout(next,250);
+  }
+  next();
+}
+</script></body></html>

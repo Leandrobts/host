@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>PS4 v9 — Análise + Testes Direcionados</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#08080f;color:#bbb;font:12px monospace;padding:20px;line-height:1.8}
+h1{color:#5bf;font-size:14px;margin-bottom:4px}
+h2{color:#4af;font-size:12px;margin:16px 0 5px;border-left:3px solid #4af;padding-left:8px}
+h3{color:#fa4;font-size:11px;margin:10px 0 3px}
+.box{background:#0f0f1a;border:1px solid #1a2a3a;padding:10px 14px;margin:5px 0;border-radius:3px;font-size:11px}
+.p0{color:#f44}.p1{color:#fa4}.p2{color:#5bf}.p3{color:#888}
+code{background:#1a1a2a;color:#adf;padding:1px 5px;border-radius:2px}
+a{display:block;padding:7px 12px;margin:3px 0;background:#0f0f1a;color:#5bf;
+  text-decoration:none;border-left:3px solid #5bf;border-radius:0 3px 3px 0}
+a:hover{background:#15152a}
+.tag{float:right;color:#444;font-size:10px}
+hr{border:none;border-top:1px solid #1a2a3a;margin:14px 0}
+li{margin:2px 0;font-size:11px}ul{padding-left:18px;margin:4px 0}
+.finding{background:#0a0a1a;border-left:3px solid;padding:8px 12px;margin:5px 0;font-size:11px}
+.f-crit{border-color:#f44}.f-high{border-color:#fa4}.f-med{border-color:#5bf}.f-info{border-color:#555}
+</style></head>
+<body>
+<h1>PS4 WebKit v9 — Análise dos Logs v8 + Testes Direcionados</h1>
+<p class="p3">FW 12.00 · WebKit 605.1.15 · LLInt · Resultado dos 4 arquivos de log</p>
+
+<hr>
+<h2>ANÁLISE: O QUE OS LOGS REVELARAM</h2>
+
+<div class="finding f-crit">
+  <b class="p0">🔴 [CRÍTICO] Array.fill() OOB: PATCHEADO neste firmware</b><br>
+  <code>oob_idx</code> não encontrado em nenhum dos 48 índices testados — mesmo após pressão GC.<br>
+  Impacto: o exploit principal do <code>ps4-jsc-fill-oob.html</code> não funciona.<br>
+  Próximo passo: <b>testar primitivos OOB alternativos</b> (v9 arquivo 01).
+</div>
+
+<div class="finding f-crit">
+  <b class="p0">🔴 [CRÍTICO] gc() via ArrayBuffer NÃO dispara o GC</b><br>
+  <b>Todos</b> os testes de GC mostram <code>alive=100/100</code> mesmo após 500MB de pressão.<br>
+  O GC do JSC no PS4 <b>não roda</b> via alocação de ArrayBuffer em loop.<br>
+  <b>Mas</b>: T04 mostra <code>alive: 50→0 após Promise.then</code> e T13 mostra <code>alive: 20→0 após async/await</code>.<br>
+  Conclusão: o GC só roda <b>entre microtasks e await suspensions</b>, não por pressão de heap.<br>
+  Todos os exploits que usam <code>gc()</code> precisam ser <b>reescritos com await</b>.
+</div>
+
+<div class="finding f-high">
+  <b class="p1">🟡 [ALTO] Symbol() == Symbol() retorna TRUE</b><br>
+  Log 04/T04: <code>✓ Symbol() == Symbol()  true</code><br>
+  A spec diz que dois <code>Symbol()</code> diferentes nunca são iguais.<br>
+  Isso indica um bug na implementação de Abstract Equality para Symbols.<br>
+  <b>Pode ser explorado para type confusion</b>. Testando mais fundo no v9 arquivo 02.
+</div>
+
+<div class="finding f-high">
+  <b class="p1">🟡 [ALTO] ArrayBuffer.transfer disponível (ES2024)</b><br>
+  Log 03/T10: <code>ArrayBuffer.prototype.transfer exists: true</code><br>
+  Após transfer: buffer original <code>byteLength=0</code>, TypedArray retorna <code>undefined</code>.<br>
+  <code>new DataView(detached)</code> lança <code>TypeError</code> corretamente.<br>
+  <b>Mas</b>: o buffer detachado não causa crash — abre superfície para transfer + race conditions.
+</div>
+
+<div class="finding f-high">
+  <b class="p1">🟡 [ALTO] Generator yield* usa call stack (não heap)</b><br>
+  Log 03/T08: <code>generator 1M yields exc: RangeError (Maximum call stack size exceeded)</code><br>
+  Stack máxima: <b>~10.429 frames</b>. Recursão mútua: ~10.428 frames.<br>
+  <b>Trampolim funciona</b> para 1M iterações sem stack overflow.<br>
+  Implicação: <code>yield*</code> recursivo é vulnerável a stack exhaustion igual a recursão normal.
+</div>
+
+<div class="finding f-med">
+  <b class="p2">🔵 [MED] DataView: getFloat64(7) retorna valor válido (leitura não-alinhada)</b><br>
+  Log 03/T04: <code>getFloat64(7) = 1.7980491576306266e-189</code><br>
+  Leituras não-alinhadas são permitidas. Offset 9 já lança RangeError.<br>
+  <code>getFloat64(NaN)</code> retorna <code>Math.PI</code> (NaN → 0). <code>DataView(buf,16)</code> retorna byteLength=0 (correto).
+</div>
+
+<div class="finding f-med">
+  <b class="p2">🔵 [MED] GC funciona via microtask/await — timing determinístico</b><br>
+  T04: após 1 <code>Promise.then</code> com gc(64), alive cai de 50 para 0.<br>
+  T13: após <code>await wait(10)</code> + gc(64), alive cai de 20 para 0.<br>
+  T05: FinalizationRegistry callbacks chegam todos na mesma latência: <b>94.8ms</b> (muito determinístico!).<br>
+  Isso é <b>excelente para exploits</b>: o timing é previsível.
+</div>
+
+<div class="finding f-med">
+  <b class="p2">🔵 [MED] eval aninhado falha com SyntaxError</b><br>
+  <code>eval("eval(\"eval(42)\")")</code> → SyntaxError (missing ) after argument list)<br>
+  O escape de aspas dentro de eval não é processado corretamente neste WebKit.<br>
+  Pode ser explorado para injeção de código via eval em contextos específicos.
+</div>
+
+<div class="finding f-info">
+  <b class="p3">⚪ [INFO] Proxy invariants: todos detectados e lançam TypeError</b><br>
+  Liar proxy, denier proxy, keyOmitter — todos lançam TypeError corretamente.<br>
+  O engine verifica invariantes de integridade do Proxy. Não há bypass aqui.
+</div>
+
+<div class="finding f-info">
+  <b class="p3">⚪ [INFO] Stack depth: 10.429 frames (LLInt sem JIT)</b><br>
+  Sem JIT, o overhead por frame é maior. Com JIT ativo seria ~3-4× mais profundo.<br>
+  Trampolim com 1M iterações funciona perfeitamente.
+</div>
+
+<div class="finding f-info">
+  <b class="p3">⚪ [INFO] ReDoS: (a+)+$ com 20 chars: 88ms</b><br>
+  Backtracking catastrófico existe mas é "apenas" 88ms para 20 chars.<br>
+  Sem timeout automático de regex. Pode causar DoS com strings maiores.
+</div>
+
+<hr>
+<h2>RESUMO DA SITUAÇÃO DO EXPLOIT</h2>
+<div class="box">
+<ul>
+<li><b class="p0">BLOQUEADO:</b> Array.fill() OOB → addrof não funciona</li>
+<li><b class="p0">BLOQUEADO:</b> gc() via ArrayBuffer → GC não dispara</li>
+<li><b class="p1">INVESTIGAR:</b> Symbol() == Symbol() bug → type confusion?</li>
+<li><b class="p1">INVESTIGAR:</b> Primitivos OOB alternativos (Array.species, arguments shrink, Proxy+TypedArray)</li>
+<li><b class="p2">CONFIRMADO:</b> GC via await/microtask → reescrever gc() function</li>
+<li><b class="p2">CONFIRMADO:</b> ArrayBuffer.transfer disponível → nova superfície</li>
+<li><b class="p2">CONFIRMADO:</b> FinalizationRegistry timing: 94.8ms determinístico</li>
+</ul>
+</div>
+
+<hr>
+<h2>TESTES v9 — FOCADOS NOS FINDINGS</h2>
+<a href="01_alt_oob_primitives.html">01 — Primitivos OOB Alternativos: species, arguments, Proxy+TypedArray, sort<span class="tag">15 testes</span></a>
+<a href="02_symbol_confusion.html">02 — Symbol Bug: investiga Symbol()==Symbol() e type confusion em symbols<span class="tag">15 testes</span></a>
+<a href="03_transfer_detach.html">03 — ArrayBuffer.transfer: detach races, view stale, transfer OOB<span class="tag">15 testes</span></a>
+<a href="04_microtask_gc.html">04 — GC via Microtask: gc() correto + timing determinístico para exploit<span class="tag">15 testes</span></a>
+<a href="05_stack_exhaustion.html">05 — Stack Exhaustion: limites de recursão, yield* abuse, trampolim vs call stack<span class="tag">15 testes</span></a>
+<hr>
+<button onclick="runAll()" style="background:#1a2a3a;color:#5bf;border:1px solid #5bf;padding:7px 18px;font:12px monospace;cursor:pointer">▶ Abrir Todos</button>
+<script>
+function runAll(){
+  ['01_alt_oob_primitives.html','02_symbol_confusion.html','03_transfer_detach.html',
+   '04_microtask_gc.html','05_stack_exhaustion.html'].forEach(function(p,i){
+    setTimeout(function(){window.open(p);},i*600);
+  });
+}
+</script>
+</body></html>
