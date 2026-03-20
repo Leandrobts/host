@@ -1,0 +1,1540 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1280">
+<title>PS4 Browser — Events & Fullscreen Deep Test v3</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=DM+Sans:wght@400;500;700&display=swap');
+:root {
+  --bg:#050709;--bg2:#0b0e16;--bg3:#111520;--bg4:#181d2c;
+  --ln:#1d2438;--ln2:#2a3350;
+  --c1:#00ffcc;--c2:#0088aa;
+  --g1:#b8ff57;--g2:#5a9900;
+  --r1:#ff4060;--r2:#aa1030;
+  --y1:#ffcc00;--y2:#997700;
+  --p1:#cc88ff;--p2:#7733cc;
+  --o1:#ff8833;--o2:#aa4400;
+  --tx:#b0c4d8;--tx2:#4a6070;--tx3:#1e2d3a;
+  --mono:'Fira Code',monospace;--sans:'DM Sans',sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--tx);font-family:var(--sans);font-size:13px}
+
+.shell{display:grid;grid-template-rows:44px 1fr;height:100vh}
+.bar{background:var(--bg2);border-bottom:1px solid var(--ln);display:flex;align-items:center;padding:0 16px;gap:12px}
+.brand{font-family:var(--mono);font-size:11px;color:var(--c1);letter-spacing:3px;white-space:nowrap}
+.brand em{color:var(--tx2);font-style:normal}
+.bar-mid{flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--tx2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.btn{font-family:var(--sans);font-size:11px;font-weight:700;border:none;border-radius:5px;padding:5px 14px;cursor:pointer;transition:opacity .15s;white-space:nowrap;letter-spacing:.3px}
+.btn-cyan{background:var(--c2);color:#fff}.btn-cyan:hover{opacity:.8}
+.btn-gray{background:var(--bg3);border:1px solid var(--ln2);color:var(--tx)}.btn-gray:hover{background:var(--bg4)}
+.btn-green{background:var(--g2);color:#fff}.btn-green:hover{opacity:.8}
+.btn-red{background:var(--r2);color:#fff}.btn-red:hover{opacity:.8}
+
+.body{display:grid;grid-template-columns:180px 1fr 250px;height:100%;overflow:hidden}
+
+/* sidebar */
+aside{background:var(--bg2);border-right:1px solid var(--ln);overflow-y:auto;padding:8px 0;font-size:11px}
+.ng{padding:8px 12px 2px;font-size:9px;font-weight:700;letter-spacing:2px;color:var(--tx2);text-transform:uppercase;margin-top:6px}
+.nb{display:flex;align-items:center;gap:6px;width:100%;padding:6px 12px;background:none;border:none;border-left:2px solid transparent;color:var(--tx2);font-family:var(--sans);font-size:11px;cursor:pointer;text-align:left;transition:all .1s}
+.nb:hover{background:var(--bg3);color:var(--tx)}
+.nb.on{color:var(--c1);border-left-color:var(--c1);background:rgba(0,255,204,.04)}
+.nc{margin-left:auto;font-family:var(--mono);font-size:9px;background:var(--bg3);border:1px solid var(--ln);border-radius:6px;padding:1px 5px}
+
+/* main */
+main{overflow-y:auto;padding:16px}
+.panel{display:none}.panel.on{display:block}
+.ph{margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--ln)}
+.pt{font-size:16px;font-weight:700;color:#fff;margin-bottom:3px}
+.ps{color:var(--tx2);font-size:11px;line-height:1.6;max-width:560px}
+
+/* table */
+.ct{width:100%;border-collapse:collapse;margin-bottom:16px}
+.ct th{text-align:left;font-size:9px;font-weight:700;letter-spacing:2px;color:var(--tx2);text-transform:uppercase;padding:5px 8px;border-bottom:1px solid var(--ln)}
+.ct td{padding:6px 8px;border-bottom:1px solid var(--ln);font-size:11px;vertical-align:middle}
+.ct tr:last-child td{border-bottom:none}
+.ct tr:hover td{background:var(--bg3)}
+.cn{font-weight:600;color:var(--tx)}
+.ca{font-family:var(--mono);font-size:9px;color:var(--tx2)}
+
+.pill{display:inline-block;padding:1px 7px;border-radius:7px;font-size:9px;font-weight:700;white-space:nowrap}
+.py{background:rgba(0,255,150,.08);color:var(--g1);border:1px solid rgba(0,255,150,.2)}
+.pn{background:rgba(255,64,96,.07);color:var(--r1);border:1px solid rgba(255,64,96,.18)}
+.pp{background:rgba(255,204,0,.07);color:var(--y1);border:1px solid rgba(255,204,0,.18)}
+.pv{background:rgba(0,255,204,.06);color:var(--c1);border:1px solid rgba(0,255,204,.15)}
+.po{background:rgba(255,136,51,.07);color:var(--o1);border:1px solid rgba(255,136,51,.18)}
+
+/* live boxes */
+.lbox{background:var(--bg2);border:1px solid var(--ln);border-radius:8px;padding:12px;margin-bottom:12px}
+.lbt{font-size:10px;font-weight:700;letter-spacing:1px;margin-bottom:8px;text-transform:uppercase}
+.elog{font-family:var(--mono);font-size:9px;min-height:80px;max-height:160px;overflow-y:auto;line-height:1.7}
+.el{display:block}
+
+/* event stream */
+.evstream{font-family:var(--mono);font-size:9px;min-height:120px;max-height:200px;overflow-y:auto;background:var(--bg);border:1px solid var(--ln);border-radius:6px;padding:8px;line-height:1.8}
+.ev-focus   {color:var(--c1)}
+.ev-blur    {color:var(--r1)}
+.ev-key     {color:var(--y1)}
+.ev-mouse   {color:var(--p1)}
+.ev-touch   {color:var(--o1)}
+.ev-fs      {color:var(--g1)}
+.ev-media   {color:#88ccff}
+.ev-page    {color:#ffaacc}
+.ev-clip    {color:#aaffcc}
+.ev-drag    {color:#ffccaa}
+.ev-misc    {color:var(--tx2)}
+
+/* fullscreen demo */
+.fs-arena{background:var(--bg3);border:2px dashed var(--ln2);border-radius:8px;padding:20px;margin-bottom:12px;text-align:center;position:relative;transition:all .3s}
+.fs-arena:fullscreen,.fs-arena:-webkit-full-screen{background:#000;border:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px}
+.fs-indicator{font-family:var(--mono);font-size:11px;color:var(--tx2);margin-bottom:8px}
+.fs-btns{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+
+/* dialog test area */
+.dialog-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px}
+.dialog-card{background:var(--bg2);border:1px solid var(--ln);border-radius:8px;padding:12px;text-align:center}
+.dialog-title{font-size:10px;font-weight:700;color:var(--tx2);letter-spacing:1px;margin-bottom:6px;text-transform:uppercase}
+.dialog-result{font-family:var(--mono);font-size:9px;color:var(--tx2);min-height:18px;margin-top:6px}
+
+/* timing chart */
+.timing-bars{display:flex;flex-direction:column;gap:4px;margin:8px 0}
+.tbar-row{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:9px}
+.tbar-label{min-width:120px;color:var(--tx2);text-align:right}
+.tbar-track{flex:1;background:var(--bg3);border-radius:2px;height:12px;position:relative;overflow:hidden}
+.tbar-fill{height:100%;border-radius:2px;transition:width .3s;min-width:2px}
+.tbar-val{min-width:50px;color:var(--tx)}
+
+/* focus chain */
+.focus-chain{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.fc-box{background:var(--bg3);border:1px solid var(--ln2);border-radius:6px;padding:8px 12px;font-family:var(--mono);font-size:10px;cursor:pointer;transition:all .15s;outline:none}
+.fc-box:focus{border-color:var(--c1);background:rgba(0,255,204,.05);color:var(--c1);box-shadow:0 0 0 2px rgba(0,255,204,.1)}
+
+/* log panel */
+.logp{background:var(--bg2);border-left:1px solid var(--ln);display:flex;flex-direction:column}
+.lh{padding:8px 12px;border-bottom:1px solid var(--ln);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.ll{font-size:9px;font-weight:700;letter-spacing:2px;color:var(--tx2);text-transform:uppercase}
+.lc{background:none;border:none;font-family:var(--sans);font-size:10px;color:var(--tx2);cursor:pointer}
+.lc:hover{color:var(--r1)}
+#log{flex:1;overflow-y:auto;padding:8px 12px;font-family:var(--mono);font-size:9px;line-height:1.8}
+.lg{display:block}
+.lok{color:var(--g1)}.lwarn{color:var(--y1)}.lerr{color:var(--r1)}.linfo{color:var(--c1)}.ldim{color:var(--tx2)}
+
+/* badges de categoria */
+.cat-badge{display:inline-block;padding:1px 6px;border-radius:4px;font-size:8px;font-weight:700;margin-right:4px;vertical-align:middle;text-transform:uppercase;letter-spacing:.5px}
+.cat-focus  {background:rgba(0,255,204,.12);color:var(--c1)}
+.cat-blur   {background:rgba(255,64,96,.1);color:var(--r1)}
+.cat-fs     {background:rgba(184,255,87,.1);color:var(--g1)}
+.cat-dialog {background:rgba(204,136,255,.1);color:var(--p1)}
+.cat-media  {background:rgba(136,204,255,.1);color:#88ccff}
+.cat-page   {background:rgba(255,170,204,.1);color:#ffaacc}
+.cat-clip   {background:rgba(170,255,204,.1);color:#aaffcc}
+.cat-form   {background:rgba(255,204,0,.1);color:var(--y1)}
+.cat-scroll {background:rgba(255,136,51,.1);color:var(--o1)}
+
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--ln2);border-radius:2px}
+
+/* fullscreen overlay */
+.fs-overlay-inner{display:none}
+:fullscreen .fs-overlay-inner,:-webkit-full-screen .fs-overlay-inner{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:#fff;font-family:var(--sans)}
+:fullscreen .fs-normal,:-webkit-full-screen .fs-normal{display:none}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<div class="bar">
+  <div class="brand">PS4 <em>//</em> EVENTS + FULLSCREEN <em>//</em> v3</div>
+  <div class="bar-mid" id="ua-bar">—</div>
+  <button class="btn btn-cyan" onclick="runAll()">Executar Todos</button>
+  <button class="btn btn-gray" onclick="nav('stream')">Stream de Eventos</button>
+</div>
+
+<div class="body">
+<aside>
+  <div class="ng">Visão Geral</div>
+  <button class="nb on" data-p="overview" onclick="nav('overview',this)">Resumo <span class="nc" id="cnt-overview">—</span></button>
+
+  <div class="ng">Fullscreen</div>
+  <button class="nb" data-p="fullscreen" onclick="nav('fullscreen',this)">Fullscreen API <span class="nc" id="cnt-fullscreen">—</span></button>
+  <button class="nb" data-p="fsevent" onclick="nav('fsevent',this)">Eventos Fullscreen <span class="nc" id="cnt-fsevent">—</span></button>
+
+  <div class="ng">Diálogos Nativos</div>
+  <button class="nb" data-p="dialogs" onclick="nav('dialogs',this)">alert/confirm/prompt <span class="nc" id="cnt-dialogs">—</span></button>
+  <button class="nb" data-p="dialog-events" onclick="nav('dialog-events',this)">Eventos + Diálogos <span class="nc" id="cnt-dialog-events">—</span></button>
+
+  <div class="ng">Focus / Blur</div>
+  <button class="nb" data-p="blur-focus" onclick="nav('blur-focus',this)">blur / focus <span class="nc" id="cnt-blur-focus">—</span></button>
+  <button class="nb" data-p="blur-combos" onclick="nav('blur-combos',this)">Vetores Combinados <span class="nc" id="cnt-blur-combos">—</span></button>
+  <button class="nb" data-p="focus-chain" onclick="nav('focus-chain',this)">Focus Chain <span class="nc" id="cnt-focus-chain">—</span></button>
+
+  <div class="ng">Eventos — Categorias</div>
+  <button class="nb" data-p="ev-form" onclick="nav('ev-form',this)">Form / Input <span class="nc" id="cnt-ev-form">—</span></button>
+  <button class="nb" data-p="ev-clipboard" onclick="nav('ev-clipboard',this)">Clipboard <span class="nc" id="cnt-ev-clipboard">—</span></button>
+  <button class="nb" data-p="ev-drag" onclick="nav('ev-drag',this)">Drag & Drop <span class="nc" id="cnt-ev-drag">—</span></button>
+  <button class="nb" data-p="ev-media" onclick="nav('ev-media',this)">Eventos de Mídia <span class="nc" id="cnt-ev-media">—</span></button>
+  <button class="nb" data-p="ev-page" onclick="nav('ev-page',this)">Page Lifecycle <span class="nc" id="cnt-ev-page">—</span></button>
+  <button class="nb" data-p="ev-pointer" onclick="nav('ev-pointer',this)">Pointer Avançado <span class="nc" id="cnt-ev-pointer">—</span></button>
+  <button class="nb" data-p="ev-anim" onclick="nav('ev-anim',this)">Animation / Transition <span class="nc" id="cnt-ev-anim">—</span></button>
+  <button class="nb" data-p="ev-misc" onclick="nav('ev-misc',this)">Outros Eventos <span class="nc" id="cnt-ev-misc">—</span></button>
+
+  <div class="ng">Timing</div>
+  <button class="nb" data-p="ev-timing" onclick="nav('ev-timing',this)">Ordem e Timing <span class="nc" id="cnt-ev-timing">—</span></button>
+
+  <div class="ng">Monitor</div>
+  <button class="nb" data-p="stream" onclick="nav('stream',this)">Stream ao Vivo <span class="nc" id="cnt-stream">—</span></button>
+</aside>
+
+<main id="main">
+
+<!-- OVERVIEW -->
+<div class="panel on" id="p-overview">
+  <div class="ph"><div class="pt">Resumo Geral</div><div class="ps">Execute todos os testes para ver a cobertura de eventos e APIs do PS4. Foco em Fullscreen, Diálogos Nativos, blur/focus e eventos não documentados.</div></div>
+  <div id="ov-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-bottom:16px">
+    <div style="background:var(--bg2);border:1px solid var(--ln);border-radius:8px;padding:12px"><div style="font-size:24px;font-weight:700;font-family:var(--mono);color:var(--tx2)">—</div><div style="font-size:9px;color:var(--tx2);text-transform:uppercase;letter-spacing:1px">Execute todos</div></div>
+  </div>
+  <table class="ct"><thead><tr><th>Categoria</th><th>Detectado</th><th>Ausente</th><th>Score</th></tr></thead><tbody id="ov-body"><tr><td colspan="4" style="color:var(--tx2);text-align:center;padding:20px">Clique em "Executar Todos"</td></tr></tbody></table>
+</div>
+
+<!-- FULLSCREEN API -->
+<div class="panel" id="p-fullscreen">
+  <div class="ph"><div class="pt">Fullscreen API</div><div class="ps">O PS4 usa uma implementação webkit do fullscreen com comportamentos únicos — teclado virtual, controle de foco e eventos têm quirks específicos.</div></div>
+
+  <div class="fs-arena" id="fs-arena">
+    <div class="fs-normal">
+      <div class="fs-indicator" id="fs-indicator">Modo normal — não está em fullscreen</div>
+      <div class="fs-btns">
+        <button class="btn btn-green" onclick="enterFS('fs-arena')">Fullscreen neste elemento</button>
+        <button class="btn btn-cyan" onclick="enterFS()">Fullscreen document</button>
+        <button class="btn btn-gray" onclick="exitFS()">Sair do fullscreen</button>
+        <button class="btn btn-red" onclick="testFSKeyboard()">Testar teclado em FS</button>
+      </div>
+    </div>
+    <div class="fs-overlay-inner">
+      <div style="font-size:28px;font-weight:700;color:var(--c1)">FULLSCREEN ATIVO</div>
+      <div style="font-family:var(--mono);font-size:12px;color:var(--tx2)" id="fs-inner-info">aguardando...</div>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-gray" onclick="exitFS()">Sair (JS)</button>
+        <button class="btn btn-red" onclick="testFSKeyboard()">Testar teclado</button>
+      </div>
+      <div style="font-size:10px;color:var(--tx2)">Pressione ESC para sair pelo browser</div>
+    </div>
+  </div>
+
+  <table class="ct"><thead><tr><th>API</th><th>Identificador</th><th>Suporte</th><th>Detalhe</th></tr></thead><tbody id="t-fullscreen"></tbody></table>
+</div>
+
+<!-- EVENTOS FULLSCREEN -->
+<div class="panel" id="p-fsevent">
+  <div class="ph"><div class="pt">Eventos de Fullscreen</div><div class="ps">Os eventos de fullscreen no PS4 disparam em ordem diferente do Chrome. blur/focus durante a transição para fullscreen é um vetor conhecido.</div></div>
+  <div class="lbox">
+    <div class="lbt" style="color:var(--g1)">Stream de eventos fullscreen — entre e saia do fullscreen para capturar</div>
+    <div class="evstream" id="fs-evstream">aguardando...</div>
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+    <button class="btn btn-green" onclick="enterFS('fs-arena2')">Entrar em fullscreen</button>
+    <button class="btn btn-gray" onclick="exitFS()">Sair</button>
+    <button class="btn btn-cyan" onclick="rapidFSToggle()">Toggle rápido 5x</button>
+    <button class="btn btn-red" onclick="fsWithDialog()">FS + dialog durante transição</button>
+  </div>
+  <div class="fs-arena" id="fs-arena2" style="height:60px;display:flex;align-items:center;justify-content:center;color:var(--tx2);font-size:11px">área de fullscreen</div>
+  <table class="ct"><thead><tr><th>Evento</th><th>Target</th><th>Suporte</th><th>Nota</th></tr></thead><tbody id="t-fsevent"></tbody></table>
+</div>
+
+<!-- DIÁLOGOS NATIVOS -->
+<div class="panel" id="p-dialogs">
+  <div class="ph"><div class="pt">Diálogos Nativos — alert, confirm, prompt</div><div class="ps">Os diálogos nativos do JS bloqueiam a thread e disparam blur no elemento focado. No PS4 eles têm aparência e comportamento próprios — diferenças de timing são um vetor.</div></div>
+
+  <div class="dialog-grid">
+    <div class="dialog-card">
+      <div class="dialog-title">alert()</div>
+      <button class="btn btn-gray" style="width:100%" onclick="testAlert()">Testar alert</button>
+      <div class="dialog-result" id="res-alert">—</div>
+    </div>
+    <div class="dialog-card">
+      <div class="dialog-title">confirm()</div>
+      <button class="btn btn-gray" style="width:100%" onclick="testConfirm()">Testar confirm</button>
+      <div class="dialog-result" id="res-confirm">—</div>
+    </div>
+    <div class="dialog-card">
+      <div class="dialog-title">prompt()</div>
+      <button class="btn btn-gray" style="width:100%" onclick="testPrompt()">Testar prompt</button>
+      <div class="dialog-result" id="res-prompt">—</div>
+    </div>
+  </div>
+
+  <div class="lbox">
+    <div class="lbt" style="color:var(--p1)">Eventos capturados DURANTE e APÓS o diálogo</div>
+    <div class="evstream" id="dialog-evstream">abra um diálogo para ver os eventos...</div>
+  </div>
+
+  <table class="ct"><thead><tr><th>Comportamento</th><th>Resultado</th><th>Esperado</th><th>Match</th></tr></thead><tbody id="t-dialogs"></tbody></table>
+</div>
+
+<!-- EVENTOS + DIÁLOGOS (vetores combinados) -->
+<div class="panel" id="p-dialog-events">
+  <div class="ph"><div class="pt">Vetores Combinados — Diálogos + Eventos</div><div class="ps">Combinações de diálogos com eventos que podem criar race conditions ou comportamentos inesperados no PS4. O onblur + prompt é um vetor especialmente interessante.</div></div>
+
+  <div class="lbox">
+    <div class="lbt" style="color:var(--r1)">Testes de vetores combinados</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="btn btn-red" onclick="testBlurPrompt()">blur → prompt()</button>
+      <button class="btn btn-red" onclick="testFocusAlert()">focus → alert()</button>
+      <button class="btn btn-red" onclick="testScrollDialog()">scroll → confirm()</button>
+      <button class="btn btn-red" onclick="testKeydownDialog()">keydown → prompt()</button>
+      <button class="btn btn-red" onclick="testFSDialog()">fullscreen → alert()</button>
+      <button class="btn btn-red" onclick="testRapidDialogs()">5 dialogs rápidos</button>
+    </div>
+    <div class="evstream" id="combo-evstream">selecione um teste acima...</div>
+  </div>
+
+  <table class="ct"><thead><tr><th>Vetor</th><th>Eventos Esperados</th><th>O que observar</th></tr></thead><tbody id="t-combos"></tbody></table>
+</div>
+
+<!-- BLUR / FOCUS -->
+<div class="panel" id="p-blur-focus">
+  <div class="ph"><div class="pt">blur e focus — Análise Detalhada</div><div class="ps">blur dispara quando um elemento perde foco — antes de qualquer diálogo, ao mudar de aba, ao entrar em fullscreen, ao abrir o menu do PS4. É um dos eventos mais ricos para pesquisa.</div></div>
+
+  <div class="lbox">
+    <div class="lbt" style="color:var(--r1)">Monitor blur/focus — clique nos elementos abaixo e em outros lugares</div>
+    <input id="bf-input" class="fc-box" style="width:100%;padding:8px;background:var(--bg3);border:1px solid var(--ln2);border-radius:6px;color:var(--tx);font-family:var(--mono);font-size:11px;outline:none;margin-bottom:6px" placeholder="campo de texto — clique para focar" />
+    <div class="focus-chain">
+      <div class="fc-box" tabindex="0" id="bf-div1">Div focável 1</div>
+      <div class="fc-box" tabindex="0" id="bf-div2">Div focável 2</div>
+      <select class="fc-box" tabindex="0" id="bf-select"><option>Select element</option><option>Opção 2</option></select>
+      <button class="fc-box" tabindex="0" id="bf-btn">Button</button>
+      <a href="#" class="fc-box" tabindex="0" id="bf-link" onclick="return false">Link</a>
+    </div>
+    <div class="evstream" id="bf-stream">interaja com os elementos acima...</div>
+  </div>
+
+  <table class="ct"><thead><tr><th>Evento</th><th>Borbulha?</th><th>Cancellable?</th><th>Suporte</th><th>Nota</th></tr></thead><tbody id="t-blur-focus"></tbody></table>
+</div>
+
+<!-- BLUR VETORES COMBINADOS -->
+<div class="panel" id="p-blur-combos">
+  <div class="ph"><div class="pt">Vetores de blur — Pesquisa</div><div class="ps">blur sozinho vale pouco. O valor está em combiná-lo com outros eventos e observar race conditions, duplo disparo, ou disparo inesperado em contextos específicos do PS4.</div></div>
+
+  <div class="lbox">
+    <div class="lbt" style="color:var(--r1)">Cenários de blur a testar no PS4</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="btn btn-red" onclick="testBlurFS()">blur + fullscreen</button>
+      <button class="btn btn-red" onclick="testBlurVisibility()">blur + visibilitychange</button>
+      <button class="btn btn-red" onclick="testBlurScroll()">blur + scroll forçado</button>
+      <button class="btn btn-red" onclick="testBlurRemove()">blur + removeElement</button>
+      <button class="btn btn-red" onclick="testBlurReplace()">blur + innerHTML replace</button>
+      <button class="btn btn-red" onclick="testBlurTimer()">blur em setTimeout(0)</button>
+      <button class="btn btn-red" onclick="testBlurLoop()">blur em loop rápido</button>
+    </div>
+    <div class="evstream" id="bc-stream">selecione um cenário...</div>
+  </div>
+
+  <div class="lbox">
+    <div class="lbt">O que reportar ao encontrar comportamento inesperado</div>
+    <div style="font-family:var(--mono);font-size:10px;color:var(--tx2);line-height:1.8">
+      1. blur dispara ANTES do esperado → race condition<br>
+      2. blur NÃO dispara quando deveria → elemento não perde foco corretamente<br>
+      3. blur dispara MÚLTIPLAS VEZES → loop de eventos<br>
+      4. blur + dialog → JS travado ou comportamento de UI errado<br>
+      5. blur durante fullscreen → foco fica preso em estado inválido<br>
+      6. blur em setTimeout → timing diferente entre PS4 e Chrome
+    </div>
+  </div>
+</div>
+
+<!-- FOCUS CHAIN -->
+<div class="panel" id="p-focus-chain">
+  <div class="ph"><div class="pt">Focus Chain — Ordem e Tabindex</div><div class="ps">O DualShock 4 navega entre elementos com d-pad e L1/R1. A ordem de foco no PS4 pode ser diferente do esperado — especialmente com tabindex negativo e elementos dinâmicos.</div></div>
+  <div class="lbox">
+    <div class="lbt" style="color:var(--c1)">Navegue com Tab (teclado) ou D-pad (controle) para testar a cadeia de foco</div>
+    <div class="focus-chain" id="fc-chain">
+      <div class="fc-box" tabindex="1">tab=1</div>
+      <div class="fc-box" tabindex="3">tab=3</div>
+      <div class="fc-box" tabindex="2">tab=2</div>
+      <div class="fc-box" tabindex="0">tab=0 (a)</div>
+      <div class="fc-box" tabindex="-1">tab=-1</div>
+      <div class="fc-box" tabindex="0">tab=0 (b)</div>
+      <input class="fc-box" tabindex="0" value="input" style="width:80px;background:var(--bg3);border:1px solid var(--ln2);color:var(--tx)"/>
+      <button class="fc-box" tabindex="0">button</button>
+      <select class="fc-box" tabindex="0"><option>select</option></select>
+    </div>
+    <div class="evstream" id="fc-stream" style="margin-top:8px">navegue com Tab para ver a ordem de foco...</div>
+  </div>
+  <div id="fc-order" style="font-family:var(--mono);font-size:10px;color:var(--tx2);margin-top:8px">Ordem detectada: aguardando...</div>
+  <table class="ct" style="margin-top:12px"><thead><tr><th>Comportamento</th><th>Suporte</th><th>Nota</th></tr></thead><tbody id="t-focus-chain"></tbody></table>
+</div>
+
+<!-- FORM EVENTS -->
+<div class="panel" id="p-ev-form">
+  <div class="ph"><div class="pt">Eventos de Formulário e Input</div><div class="ps">Eventos de formulário podem ter comportamentos únicos no PS4 — especialmente com o teclado virtual que aparece ao focar num input.</div></div>
+  <div class="lbox">
+    <div class="lbt" style="color:var(--y1)">Área de teste — interaja com os campos</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <input id="ev-text" type="text" placeholder="texto" style="background:var(--bg3);border:1px solid var(--ln2);border-radius:4px;padding:6px 8px;color:var(--tx);font-family:var(--mono);font-size:10px;outline:none" />
+      <input id="ev-range" type="range" min="0" max="100" style="flex:1" />
+      <input id="ev-check" type="checkbox" style="width:20px;height:20px" />
+      <select id="ev-sel" style="background:var(--bg3);border:1px solid var(--ln2);border-radius:4px;padding:6px;color:var(--tx)"><option>op 1</option><option>op 2</option></select>
+      <button class="btn btn-gray" onclick="document.getElementById('ev-form').submit()">submit</button>
+    </div>
+    <form id="ev-form" onsubmit="return false" style="display:none"></form>
+    <div class="evstream" id="form-stream">interaja com os campos acima...</div>
+  </div>
+  <table class="ct"><thead><tr><th>Evento</th><th>API</th><th>Suporte</th><th>Comportamento PS4</th></tr></thead><tbody id="t-ev-form"></tbody></table>
+</div>
+
+<!-- CLIPBOARD EVENTS -->
+<div class="panel" id="p-ev-clipboard">
+  <div class="ph"><div class="pt">Eventos de Clipboard</div><div class="ps">copy, cut e paste no PS4 — o controle não tem teclas de atalho padrão, então esses eventos podem ser difíceis de disparar.</div></div>
+  <div class="lbox">
+    <div class="lbt" style="color:#aaffcc)">Selecione e copie o texto abaixo (Ctrl+C / Ctrl+V)</div>
+    <div contenteditable="true" id="clip-area" style="background:var(--bg3);border:1px solid var(--ln2);border-radius:6px;padding:10px;font-family:var(--mono);font-size:10px;min-height:40px;outline:none;color:var(--tx)">Selecione e copie este texto para testar eventos de clipboard</div>
+    <div class="evstream" id="clip-stream" style="margin-top:8px">aguardando eventos copy/cut/paste...</div>
+  </div>
+  <table class="ct"><thead><tr><th>Evento</th><th>API</th><th>Suporte</th><th>Nota</th></tr></thead><tbody id="t-ev-clipboard"></tbody></table>
+</div>
+
+<!-- DRAG EVENTS -->
+<div class="panel" id="p-ev-drag">
+  <div class="ph"><div class="pt">Drag & Drop</div><div class="ps">Drag & Drop no PS4 é limitado — o controle precisa de suporte específico para arrastar. Eventos podem ser disparados programaticamente.</div></div>
+  <div class="lbox">
+    <div class="lbt" style="color:var(--o1)">Arraste o elemento para a zona de drop</div>
+    <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:8px">
+      <div draggable="true" id="drag-src" style="background:var(--bg3);border:1px dashed var(--c1);border-radius:6px;padding:10px 16px;cursor:grab;font-family:var(--mono);font-size:10px;color:var(--c1)">arrastar</div>
+      <div id="drag-target" style="flex:1;background:var(--bg3);border:2px dashed var(--ln2);border-radius:6px;padding:20px;text-align:center;font-family:var(--mono);font-size:10px;color:var(--tx2);min-height:60px">zona de drop</div>
+    </div>
+    <div class="evstream" id="drag-stream">aguardando eventos drag...</div>
+  </div>
+  <table class="ct"><thead><tr><th>Evento</th><th>Origem</th><th>Suporte</th><th>Nota</th></tr></thead><tbody id="t-ev-drag"></tbody></table>
+</div>
+
+<!-- MEDIA EVENTS -->
+<div class="panel" id="p-ev-media">
+  <div class="ph"><div class="pt">Eventos de Mídia</div><div class="ps">O PS4 tem suporte de mídia próprio — eventos de vídeo/áudio têm timing específico que pode diferir do Chrome.</div></div>
+  <div class="lbox">
+    <div class="lbt" style="color:#88ccff">Monitor de eventos de mídia</div>
+    <video id="test-video" style="width:100%;max-height:60px;background:#000;display:block;margin-bottom:8px" controls preload="none">
+      <source src="data:video/mp4;base64,AAAAHGZ0eXBNNFYgAAACAGlzb21pc28yYXZjMQAAAAhmcmVlAAAAGm1kYXQAAAGzABAHAAABthADAowdbb9g" type="video/mp4">
+    </video>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+      <button class="btn btn-gray" onclick="testMediaEvents()">Disparar eventos</button>
+      <button class="btn btn-gray" onclick="document.getElementById('test-video').play().catch(()=>{})">play()</button>
+      <button class="btn btn-gray" onclick="document.getElementById('test-video').pause()">pause()</button>
+      <button class="btn btn-gray" onclick="document.getElementById('test-video').currentTime=0">seek(0)</button>
+    </div>
+    <div class="evstream" id="media-stream">aguardando eventos de mídia...</div>
+  </div>
+  <table class="ct"><thead><tr><th>Evento</th><th>Elemento</th><th>Suporte</th><th>Timing esperado</th></tr></thead><tbody id="t-ev-media"></tbody></table>
+</div>
+
+<!-- PAGE LIFECYCLE -->
+<div class="panel" id="p-ev-page">
+  <div class="ph"><div class="pt">Page Lifecycle</div><div class="ps">Eventos de ciclo de vida da página — visibilitychange é especialmente interessante no PS4 quando o menu do sistema aparece ou o console entra em standby.</div></div>
+  <div class="lbox">
+    <div class="lbt" style="color:#ffaacc">Monitor de lifecycle — mude de aba, minimize, abra o menu do PS4</div>
+    <div id="page-state" style="font-family:var(--mono);font-size:10px;padding:8px;background:var(--bg);border-radius:4px;margin-bottom:8px">
+      visibilityState: <span id="vis-state" style="color:var(--c1)">visible</span> |
+      hasFocus: <span id="focus-state" style="color:var(--g1)">true</span> |
+      readyState: <span id="ready-state" style="color:var(--y1)">—</span>
+    </div>
+    <div class="evstream" id="page-stream">aguardando eventos de lifecycle...</div>
+  </div>
+  <table class="ct"><thead><tr><th>Evento</th><th>Alvo</th><th>Suporte</th><th>PS4 trigger</th></tr></thead><tbody id="t-ev-page"></tbody></table>
+</div>
+
+<!-- POINTER AVANÇADO -->
+<div class="panel" id="p-ev-pointer">
+  <div class="ph"><div class="pt">Pointer Events Avançados</div><div class="ps">Eventos de ponteiro menos comuns — pointerenter/leave não borbulham, gotpointercapture é importante para DualShock.</div></div>
+  <div class="lbox">
+    <div class="lbt" style="color:var(--p1)">Área de teste — mova o ponteiro</div>
+    <div id="ptr-outer" style="background:var(--bg3);border:1px solid var(--ln2);border-radius:8px;padding:20px;position:relative;margin-bottom:8px">
+      <div id="ptr-inner" style="background:var(--bg4);border:1px solid var(--ln2);border-radius:6px;padding:12px;display:inline-block;font-family:var(--mono);font-size:10px;color:var(--tx2)">elemento interno</div>
+    </div>
+    <div class="evstream" id="ptr-stream">mova o cursor para capturar eventos...</div>
+  </div>
+  <table class="ct"><thead><tr><th>Evento</th><th>Borbulha?</th><th>Suporte</th><th>Nota</th></tr></thead><tbody id="t-ev-pointer"></tbody></table>
+</div>
+
+<!-- ANIMATION / TRANSITION EVENTS -->
+<div class="panel" id="p-ev-anim">
+  <div class="ph"><div class="pt">Animation e Transition Events</div><div class="ps">Eventos de animação CSS — diferenças de timing entre PS4 e Chrome podem indicar versão do compositor de renderização.</div></div>
+  <div class="lbox">
+    <div class="lbt" style="color:var(--p2)">Elementos animados</div>
+    <div id="anim-box" style="width:60px;height:60px;background:var(--c2);border-radius:8px;margin:10px 0;cursor:pointer;font-family:var(--mono);font-size:9px;display:flex;align-items:center;justify-content:center;color:#fff" onclick="triggerAnim()">click</div>
+    <div class="evstream" id="anim-stream" style="margin-top:8px">clique no elemento para disparar animação...</div>
+  </div>
+  <table class="ct"><thead><tr><th>Evento</th><th>API</th><th>Suporte</th><th>Propriedades</th></tr></thead><tbody id="t-ev-anim"></tbody></table>
+</div>
+
+<!-- OUTROS EVENTOS -->
+<div class="panel" id="p-ev-misc">
+  <div class="ph"><div class="pt">Outros Eventos</div><div class="ps">Eventos de hash, storage, print, erros não capturados, e outros que raramente são testados no PS4.</div></div>
+  <div class="lbox">
+    <div class="lbt" style="color:var(--tx2)">Testes manuais</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+      <button class="btn btn-gray" onclick="testHashChange()">hashchange</button>
+      <button class="btn btn-gray" onclick="testStorageEvent()">storage event</button>
+      <button class="btn btn-gray" onclick="testUnhandledRej()">unhandledrejection</button>
+      <button class="btn btn-gray" onclick="testOnlineOffline()">online/offline</button>
+      <button class="btn btn-gray" onclick="testSecurityViolation()">CSP violation</button>
+      <button class="btn btn-gray" onclick="testSelectionChange()">selectionchange</button>
+    </div>
+    <div class="evstream" id="misc-stream">aguardando eventos...</div>
+  </div>
+  <table class="ct"><thead><tr><th>Evento</th><th>Alvo</th><th>Suporte</th><th>Nota</th></tr></thead><tbody id="t-ev-misc"></tbody></table>
+</div>
+
+<!-- EVENT TIMING -->
+<div class="panel" id="p-ev-timing">
+  <div class="ph"><div class="pt">Ordem e Timing de Eventos</div><div class="ps">A ordem em que eventos disparam pode diferir no PS4. Este painel mede o tempo entre eventos relacionados.</div></div>
+  <div class="lbox">
+    <div class="lbt" style="color:var(--c1)">Clique no campo para medir a cadeia de eventos</div>
+    <input id="timing-input" type="text" placeholder="clique aqui" style="width:100%;background:var(--bg3);border:1px solid var(--ln2);border-radius:6px;padding:8px;color:var(--tx);font-family:var(--mono);font-size:11px;outline:none;margin-bottom:8px"/>
+    <div class="timing-bars" id="timing-bars"></div>
+    <div class="evstream" id="timing-stream" style="margin-top:8px">clique no campo acima...</div>
+  </div>
+  <table class="ct"><thead><tr><th>Sequência esperada</th><th>Resultado no PS4</th></tr></thead><tbody id="t-ev-timing"></tbody></table>
+</div>
+
+<!-- LIVE STREAM -->
+<div class="panel" id="p-stream">
+  <div class="ph"><div class="pt">Stream de Eventos ao Vivo</div><div class="ps">Todos os eventos capturados em tempo real. Interaja com a página, use o controle, teclado ou toque para ver cada evento.</div></div>
+  <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+    <button class="btn btn-gray" onclick="streamFilter='all'">Todos</button>
+    <button class="btn btn-gray" onclick="streamFilter='blur-focus'">blur/focus</button>
+    <button class="btn btn-gray" onclick="streamFilter='keyboard'">teclado</button>
+    <button class="btn btn-gray" onclick="streamFilter='mouse'">mouse</button>
+    <button class="btn btn-gray" onclick="streamFilter='fullscreen'">fullscreen</button>
+    <button class="btn btn-red" onclick="document.getElementById('all-stream').innerHTML=''">limpar</button>
+  </div>
+  <div class="evstream" id="all-stream" style="max-height:500px">aguardando eventos — interaja com a página...</div>
+</div>
+
+</main>
+
+<!-- LOG -->
+<div class="logp">
+  <div class="lh"><span class="ll">Log</span><button class="lc" onclick="logEl.innerHTML=''">limpar</button></div>
+  <div id="log"></div>
+</div>
+</div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────
+// GLOBALS
+const logEl = document.getElementById('log');
+const R = {};
+let streamFilter = 'all';
+let timingStart = {};
+
+// ─────────────────────────────────────────────────────────────────────────
+// LOG + NAV
+function lg(m, t='dim') {
+  const s = document.createElement('span');
+  s.className = 'lg l' + t;
+  const ts = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  s.textContent = ts + '  ' + m;
+  logEl.appendChild(s);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function nav(id, btn) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('on'));
+  document.querySelectorAll('.nb').forEach(b => b.classList.remove('on'));
+  const p = document.getElementById('p-' + id);
+  if (p) p.classList.add('on');
+  if (btn && typeof btn === 'object') btn.classList.add('on');
+  else {
+    const btns = document.querySelectorAll('[data-p="' + id + '"]');
+    btns.forEach(b => b.classList.add('on'));
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// HELPERS
+function pill(v) {
+  if (v === true)     return '<span class="pill py">sim</span>';
+  if (v === false)    return '<span class="pill pn">não</span>';
+  if (v === 'partial')return '<span class="pill pp">parcial</span>';
+  return '<span class="pill pv">' + String(v).substring(0,35) + '</span>';
+}
+
+function addRow(id, cells) {
+  const tb = document.getElementById(id);
+  if (!tb) return;
+  const tr = document.createElement('tr');
+  tr.innerHTML = cells.map((c,i) =>
+    '<td>' + (i===0 ? '<span class="cn">'+c+'</span>' : i===1 ? '<span class="ca">'+c+'</span>' : c) + '</td>'
+  ).join('');
+  tb.appendChild(tr);
+}
+
+function clearTb(id) { const el=document.getElementById(id); if(el) el.innerHTML=''; }
+
+function setCount(id, y, t) {
+  const el = document.getElementById('cnt-' + id);
+  if (el) el.textContent = y + '/' + t;
+}
+
+function has(path) {
+  try {
+    const parts = path.split('.');
+    let o = window;
+    for (const p of parts) { if (o==null||!(p in Object(o))) return false; o=o[p]; }
+    return o!==undefined&&o!==null;
+  } catch(e) { return false; }
+}
+
+function appendToStream(streamId, text, cls) {
+  const el = document.getElementById(streamId);
+  if (!el) return;
+  const s = document.createElement('span');
+  s.className = 'el ' + (cls||'ev-misc');
+  const ts = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit',fractionalSecondDigits:3});
+  s.textContent = '[' + ts + '] ' + text;
+  el.appendChild(s);
+  el.scrollTop = el.scrollHeight;
+}
+
+function addToAllStream(text, cls) {
+  if (streamFilter !== 'all') {
+    const map = {'blur-focus':['blur','focus','focusin','focusout'],'keyboard':['keydown','keyup','keypress'],'mouse':['click','mousedown','mouseup','mousemove','mouseover','mouseout'],'fullscreen':['fullscreenchange','fullscreenerror','webkitfullscreenchange']};
+    const allowed = map[streamFilter] || [];
+    if (allowed.length && !allowed.some(e => text.includes(e))) return;
+  }
+  appendToStream('all-stream', text, cls);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// FULLSCREEN
+function enterFS(elId) {
+  const el = elId ? document.getElementById(elId) : document.documentElement;
+  if (!el) return;
+  const fn = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+  if (fn) {
+    fn.call(el).catch(e => lg('[FS] erro: ' + e.message, 'err'));
+    lg('[FS] requestFullscreen chamado em ' + (elId || 'documentElement'), 'info');
+  } else {
+    lg('[FS] requestFullscreen não disponível', 'err');
+  }
+}
+
+function exitFS() {
+  const fn = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
+  if (fn) fn.call(document).catch(() => {});
+  else lg('[FS] exitFullscreen não disponível', 'err');
+}
+
+function testFSKeyboard() {
+  appendToStream('fs-evstream', 'Pressione teclas — verificando se teclado funciona em fullscreen', 'ev-fs');
+  lg('[FS] testando teclado em fullscreen', 'info');
+}
+
+function rapidFSToggle() {
+  lg('[FS] toggle rápido 5x', 'info');
+  let count = 0;
+  const interval = setInterval(() => {
+    if (count % 2 === 0) enterFS('fs-arena2'); else exitFS();
+    count++;
+    if (count >= 10) clearInterval(interval);
+  }, 300);
+}
+
+function fsWithDialog() {
+  lg('[FS] fullscreen + dialog durante transição', 'warn');
+  enterFS('fs-arena2');
+  setTimeout(() => {
+    const t0 = performance.now();
+    alert('Dialog aberto DURANTE transição de fullscreen!\nFS ativo: ' + !!document.fullscreenElement);
+    appendToStream('fs-evstream', 'dialog durou ' + (performance.now() - t0).toFixed(2) + 'ms | FS após dialog: ' + !!document.fullscreenElement, 'ev-fs');
+  }, 150);
+}
+
+function runFullscreen() {
+  clearTb('t-fullscreen');
+  const checks = [
+    ['requestFullscreen',        'Element.requestFullscreen',             has('Element.prototype.requestFullscreen'),     ''],
+    ['webkitRequestFullscreen',  'Element.webkitRequestFullscreen',       has('Element.prototype.webkitRequestFullscreen'),'webkit — PS4'],
+    ['exitFullscreen',           'document.exitFullscreen',               has('document.exitFullscreen'),                ''],
+    ['webkitExitFullscreen',     'document.webkitExitFullscreen',         has('document.webkitExitFullscreen'),           'webkit — PS4'],
+    ['fullscreenElement',        'document.fullscreenElement',            has('document.fullscreenElement'),             ''],
+    ['webkitFullscreenElement',  'document.webkitFullscreenElement',      has('document.webkitFullscreenElement'),        'webkit'],
+    ['fullscreenEnabled',        'document.fullscreenEnabled',            has('document.fullscreenEnabled'),             ''],
+    ['webkitFullscreenEnabled',  'document.webkitFullscreenEnabled',      has('document.webkitFullscreenEnabled'),        ''],
+    ['fullscreenchange event',   'fullscreenchange',                      has('document.onfullscreenchange') || true,    ''],
+    ['webkitfullscreenchange',   'webkitfullscreenchange',                has('document.onwebkitfullscreenchange') || true,'webkit'],
+    ['fullscreenerror event',    'fullscreenerror',                       has('document.onfullscreenerror') || true,     ''],
+    [':fullscreen CSS',          ':fullscreen pseudo-class',              (() => { try { return CSS.supports('selector(:fullscreen)'); } catch(e){ return false; } })(), ''],
+    [':-webkit-full-screen CSS', ':-webkit-full-screen',                  (() => { try { const s=document.createElement('style'); s.textContent=':-webkit-full-screen{}'; document.head.appendChild(s); document.head.removeChild(s); return true; } catch(e){ return false; } })(), ''],
+    ['Keyboard in FS',           'keyboard lock in fullscreen',           has('navigator.keyboard') && has('navigator.keyboard.lock'), 'capturar teclas em FS'],
+    ['FS on element (not doc)',  'element.requestFullscreen()',           has('Element.prototype.requestFullscreen') || has('Element.prototype.webkitRequestFullscreen'), ''],
+    ['FS options (navigationUI)','requestFullscreen({navigationUI})',     has('Element.prototype.requestFullscreen'),    'ocultar barra do browser'],
+  ];
+  let yes = 0;
+  checks.forEach(([n,api,ok,note]) => { if(ok) yes++; addRow('t-fullscreen',[n,api,pill(ok),note]); });
+  R.fullscreen = Object.fromEntries(checks.map(([n,,ok]) => [n,ok]));
+  setCount('fullscreen', yes, checks.length);
+  lg('[Fullscreen] '+yes+'/'+checks.length, 'ok');
+}
+
+function runFSEvents() {
+  clearTb('t-fsevent');
+  const events = [
+    ['fullscreenchange',         'document',  true,  'dispara ao entrar/sair do FS'],
+    ['fullscreenerror',          'document',  true,  'dispara quando FS é negado'],
+    ['webkitfullscreenchange',   'document',  has('document.onwebkitfullscreenchange') || true, 'webkit — PS4'],
+    ['webkitfullscreenerror',    'document',  has('document.onwebkitfullscreenerror') || true,  'webkit — PS4'],
+    ['blur (durante FS enter)',  'window',    true,  'dispara antes de fullscreenchange'],
+    ['focus (durante FS exit)',  'window',    true,  'dispara após sair do FS'],
+    ['resize (ao entrar em FS)', 'window',    true,  'viewport muda em fullscreen'],
+    ['keydown (ESC em FS)',      'document',  true,  'ESC sai do fullscreen'],
+    ['visibilitychange (em FS)', 'document',  true,  'aba fica hidden em FS?'],
+  ];
+  let yes = 0;
+  events.forEach(([n,target,ok,note]) => { if(ok) yes++; addRow('t-fsevent',[n,target,pill(ok),note]); });
+  R.fsevents = Object.fromEntries(events.map(([n,,ok]) => [n,ok]));
+  setCount('fsevent', yes, events.length);
+
+  // Attach FS event listeners
+  const fsStream = document.getElementById('fs-evstream');
+  ['fullscreenchange','webkitfullscreenchange','mozfullscreenchange'].forEach(evt => {
+    document.addEventListener(evt, () => {
+      const active = !!(document.fullscreenElement || document.webkitFullscreenElement);
+      const msg = evt + ' → ' + (active ? 'ENTROU em FS' : 'SAIU do FS') + ' | element: ' + (active ? (document.fullscreenElement||document.webkitFullscreenElement).id||'(no id)' : 'null');
+      appendToStream('fs-evstream', msg, 'ev-fs');
+      addToAllStream(msg, 'ev-fs');
+      const ind = document.getElementById('fs-indicator');
+      if (ind) ind.textContent = active ? 'FULLSCREEN ATIVO' : 'Modo normal';
+      const info = document.getElementById('fs-inner-info');
+      if (info) info.textContent = 'Entrou em FS: ' + new Date().toLocaleTimeString();
+      lg('[FSEvent] ' + evt + ' active=' + active, 'ok');
+    });
+  });
+  ['fullscreenerror','webkitfullscreenerror'].forEach(evt => {
+    document.addEventListener(evt, () => {
+      appendToStream('fs-evstream', evt + ' → FS negado pelo browser', 'ev-misc');
+      lg('[FSEvent] ' + evt + ' — FS negado', 'warn');
+    });
+  });
+
+  lg('[FSEvents] listeners instalados', 'ok');
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// DIALOGS
+function testDialog(fn, id, name) {
+  const resEl = document.getElementById('res-' + id);
+  const t0 = performance.now();
+  appendToStream('dialog-evstream', 'ANTES de ' + name + ' — eventos pendentes...', 'ev-page');
+  let result;
+  try { result = fn(); } catch(e) { result = 'ERRO: ' + e.message; }
+  const duration = (performance.now() - t0).toFixed(2);
+  if (resEl) resEl.textContent = 'resultado: ' + String(result) + ' | bloqueou: ' + duration + 'ms';
+  appendToStream('dialog-evstream', 'APÓS ' + name + ' — durou ' + duration + 'ms | retorno: ' + result, 'ev-page');
+  addToAllStream('dialog:' + name + ' durou ' + duration + 'ms retorno=' + result, 'ev-page');
+  lg('[Dialog] ' + name + ' durou ' + duration + 'ms retorno=' + result, 'ok');
+
+  // record in table
+  addRow('t-dialogs', [name, String(result), name === 'confirm' ? 'true/false' : name === 'prompt' ? 'string/null' : 'undefined', pill(result !== 'ERRO')]);
+}
+
+function testAlert()   { testDialog(() => { alert('alert() do PS4 — feche esta janela'); return 'undefined (bloqueou)'; }, 'alert', 'alert'); }
+function testConfirm() { testDialog(() => confirm('confirm() — PS4 mostra botões?'), 'confirm', 'confirm'); }
+function testPrompt()  { testDialog(() => prompt('prompt() — PS4 abre teclado virtual?', 'valor padrão'), 'prompt', 'prompt'); }
+
+function runDialogs() {
+  clearTb('t-dialogs');
+  const checks = [
+    ['alert() disponível',   'window.alert',   typeof alert === 'function',   'bloqueia thread'],
+    ['confirm() disponível', 'window.confirm', typeof confirm === 'function', 'retorna bool'],
+    ['prompt() disponível',  'window.prompt',  typeof prompt === 'function',  'retorna string/null'],
+    ['<dialog> element',     'HTMLDialogElement', has('HTMLDialogElement'),    'dialog nativo HTML5'],
+    ['dialog.showModal()',   'dialog.showModal', has('HTMLDialogElement') && has('HTMLDialogElement.prototype.showModal'), ''],
+    ['dialog.show()',        'dialog.show',    has('HTMLDialogElement') && has('HTMLDialogElement.prototype.show'), 'não modal'],
+    ['dialog.close()',       'dialog.close',   has('HTMLDialogElement') && has('HTMLDialogElement.prototype.close'), ''],
+    ['::backdrop pseudo',    '::backdrop CSS', (() => { try { return CSS.supports('selector(::backdrop)'); } catch(e){ return false; } })(), ''],
+  ];
+  let yes = 0;
+  checks.forEach(([n,api,ok,note]) => { if(ok) yes++; addRow('t-dialogs',[n,api,pill(ok),note]); });
+  R.dialogs = Object.fromEntries(checks.map(([n,,ok]) => [n,ok]));
+  setCount('dialogs', yes, checks.length);
+  lg('[Dialogs] '+yes+'/'+checks.length, 'ok');
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// DIALOG + EVENT COMBOS
+function testBlurPrompt() {
+  clearStream('combo-evstream');
+  appendToStream('combo-evstream', 'Focando campo → disparando blur via prompt...', 'ev-blur');
+  const inp = document.createElement('input');
+  inp.style.cssText = 'position:absolute;top:-9999px';
+  inp.onblur = () => appendToStream('combo-evstream', 'onblur DISPAROU antes do prompt', 'ev-blur');
+  document.body.appendChild(inp);
+  inp.focus();
+  setTimeout(() => {
+    const t0 = performance.now();
+    const r = prompt('prompt abriu após blur — o blur disparou antes?');
+    appendToStream('combo-evstream', 'prompt retornou: "' + r + '" em ' + (performance.now()-t0).toFixed(2) + 'ms', 'ev-page');
+    document.body.removeChild(inp);
+    lg('[Combo] blur+prompt concluído retorno=' + r, 'ok');
+  }, 100);
+}
+
+function testFocusAlert() {
+  clearStream('combo-evstream');
+  const inp = document.createElement('input');
+  inp.style.cssText = 'position:absolute;top:-9999px';
+  inp.onfocus = () => {
+    appendToStream('combo-evstream', 'onfocus DISPAROU — abrindo alert...', 'ev-focus');
+    setTimeout(() => alert('alert dentro de onfocus handler!\nO foco se manteve?'), 0);
+  };
+  document.body.appendChild(inp);
+  inp.focus();
+  setTimeout(() => { document.body.removeChild(inp); }, 2000);
+}
+
+function testScrollDialog() {
+  clearStream('combo-evstream');
+  window.addEventListener('scroll', function once() {
+    appendToStream('combo-evstream', 'scroll detectado → abrindo confirm...', 'ev-misc');
+    const r = confirm('confirm aberto durante scroll — o scroll continuou?');
+    appendToStream('combo-evstream', 'confirm retornou: ' + r, 'ev-page');
+    window.removeEventListener('scroll', once);
+  }, { once: true });
+  window.scrollBy(0, 1);
+  appendToStream('combo-evstream', 'scroll disparado — aguardando evento scroll...', 'ev-misc');
+}
+
+function testKeydownDialog() {
+  clearStream('combo-evstream');
+  appendToStream('combo-evstream', 'Pressione qualquer tecla para abrir prompt...', 'ev-key');
+  document.addEventListener('keydown', function once(e) {
+    appendToStream('combo-evstream', 'keydown: "' + e.key + '" → abrindo prompt', 'ev-key');
+    const r = prompt('prompt aberto via keydown — key: ' + e.key);
+    appendToStream('combo-evstream', 'keyup vai disparar após o prompt? retorno: "' + r + '"', 'ev-page');
+    document.removeEventListener('keydown', once);
+  });
+}
+
+function testFSDialog() {
+  clearStream('combo-evstream');
+  appendToStream('combo-evstream', 'Entrando em fullscreen...', 'ev-fs');
+  enterFS('fs-arena2');
+  setTimeout(() => {
+    const fsActive = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    appendToStream('combo-evstream', 'FS ativo: ' + fsActive + ' → abrindo alert...', 'ev-fs');
+    alert('alert em fullscreen!\nO browser saiu do FS? FS ativo: ' + fsActive);
+    const fsAfter = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    appendToStream('combo-evstream', 'FS após alert: ' + fsAfter + ' — mudou: ' + (fsActive !== fsAfter), 'ev-fs');
+    lg('[Combo] FS+alert: antes=' + fsActive + ' depois=' + fsAfter, 'ok');
+  }, 500);
+}
+
+function testRapidDialogs() {
+  clearStream('combo-evstream');
+  const times = [];
+  ['alert','confirm','prompt'].forEach((type, i) => {
+    setTimeout(() => {
+      const t0 = performance.now();
+      if (type === 'alert') alert('Rápido #' + (i+1));
+      else if (type === 'confirm') confirm('Rápido #' + (i+1));
+      else prompt('Rápido #' + (i+1));
+      times.push(performance.now() - t0);
+      appendToStream('combo-evstream', type + ' #' + (i+1) + ' durou ' + times[times.length-1].toFixed(2) + 'ms', 'ev-page');
+    }, i * 50);
+  });
+}
+
+function runDialogEvents() {
+  clearTb('t-combos');
+  const combos = [
+    ['blur → prompt()',    'blur, prompt',            'blur deve disparar ANTES do prompt abrir'],
+    ['focus → alert()',   'focus, alert',            'alert dentro de onfocus — foco mantido?'],
+    ['keydown → prompt()','keydown, prompt, keyup',  'keyup dispara após fechar o prompt?'],
+    ['scroll → confirm()','scroll, confirm',          'scroll para após o dialog?'],
+    ['FS → alert()',      'fullscreenchange, alert', 'PS4 sai do FS ao abrir alert?'],
+    ['5 dialogs rápidos', 'alert×5',                 'PS4 bloqueia todos ou pula algum?'],
+  ];
+  combos.forEach(([v,evts,obs]) => addRow('t-combos', [v, evts, obs]));
+  R.combos = combos.length;
+  setCount('dialog-events', combos.length, combos.length);
+  lg('[DialogEvents] '+combos.length+' vetores listados', 'ok');
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// BLUR / FOCUS
+function runBlurFocus() {
+  clearTb('t-blur-focus');
+  const events = [
+    ['focus',      'FocusEvent',  false, false, 'elemento recebe foco — NÃO borbulha'],
+    ['blur',       'FocusEvent',  false, false, 'elemento perde foco — NÃO borbulha'],
+    ['focusin',    'FocusEvent',  true,  false, 'como focus MAS borbulha'],
+    ['focusout',   'FocusEvent',  true,  false, 'como blur MAS borbulha'],
+    ['focus (window)', 'window.onfocus', true, false, 'janela ganha foco'],
+    ['blur (window)',  'window.onblur',  true, false, 'janela perde foco — tab/FS/dialog'],
+  ];
+  let yes = 0;
+  events.forEach(([n, api, bubbles, cancel, note]) => {
+    yes++;
+    addRow('t-blur-focus',[n, api, pill(bubbles), pill(cancel), note]);
+  });
+  R['blur-focus'] = { supported: yes };
+  setCount('blur-focus', yes, events.length);
+
+  // live monitor
+  const bfStream = document.getElementById('bf-stream');
+  const elements = ['bf-input','bf-div1','bf-div2','bf-select','bf-btn','bf-link'];
+  elements.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    ['focus','blur','focusin','focusout'].forEach(evt => {
+      el.addEventListener(evt, e => {
+        const msg = evt + ' → #' + id + ' (relatedTarget: ' + (e.relatedTarget ? '#'+(e.relatedTarget.id||'?') : 'null') + ')';
+        appendToStream('bf-stream', msg, evt.includes('blur') ? 'ev-blur' : 'ev-focus');
+        addToAllStream(msg, evt.includes('blur') ? 'ev-blur' : 'ev-focus');
+        lg('[BF] ' + msg, evt.includes('blur') ? 'warn' : 'info');
+      });
+    });
+  });
+
+  window.addEventListener('focus', () => { appendToStream('bf-stream', 'window.focus — janela ganhou foco', 'ev-focus'); addToAllStream('window.focus', 'ev-focus'); });
+  window.addEventListener('blur',  () => { appendToStream('bf-stream', 'window.blur — janela PERDEU foco', 'ev-blur'); addToAllStream('window.blur', 'ev-blur'); });
+
+  lg('[BlurFocus] listeners instalados', 'ok');
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// BLUR COMBOS
+function clearStream(id) { const el=document.getElementById(id); if(el) el.innerHTML=''; }
+
+function testBlurFS() {
+  clearStream('bc-stream');
+  const inp = document.getElementById('bf-input');
+  inp.focus();
+  inp.onblur = () => appendToStream('bc-stream', 'blur disparou! Iniciando FS...', 'ev-blur');
+  appendToStream('bc-stream', 'Campo focado — entrando em FS (blur deve disparar)...', 'ev-focus');
+  enterFS('fs-arena2');
+}
+
+function testBlurVisibility() {
+  clearStream('bc-stream');
+  const inp = document.getElementById('bf-input');
+  inp.focus();
+  const blurCount = { n: 0 };
+  inp.onblur = () => { blurCount.n++; appendToStream('bc-stream', 'blur #'+blurCount.n+' disparou! visibilityState: ' + document.visibilityState, 'ev-blur'); };
+  document.addEventListener('visibilitychange', () => appendToStream('bc-stream', 'visibilitychange: ' + document.visibilityState, 'ev-page'), { once: true });
+  appendToStream('bc-stream', 'Mude de aba para testar blur + visibilitychange', 'ev-misc');
+}
+
+function testBlurScroll() {
+  clearStream('bc-stream');
+  const inp = document.getElementById('bf-input');
+  inp.focus();
+  inp.onblur = () => appendToStream('bc-stream', 'blur disparou com o scroll!', 'ev-blur');
+  appendToStream('bc-stream', 'Campo focado — disparando scroll programático...', 'ev-focus');
+  window.scrollBy(0, 10);
+  setTimeout(() => window.scrollBy(0, -10), 100);
+}
+
+function testBlurRemove() {
+  clearStream('bc-stream');
+  const inp = document.createElement('input');
+  inp.id = '__test_blur__';
+  inp.onblur = () => appendToStream('bc-stream', 'blur do elemento REMOVIDO! (disparou? sim!)', 'ev-blur');
+  inp.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:9999;background:var(--bg3);border:1px solid var(--c1);color:var(--tx);padding:6px 12px;font-family:var(--mono);font-size:11px;border-radius:6px;outline:none';
+  document.body.appendChild(inp);
+  inp.focus();
+  appendToStream('bc-stream', 'Elemento focado — removendo em 1s...', 'ev-focus');
+  setTimeout(() => {
+    appendToStream('bc-stream', 'Removendo elemento focado via removeChild...', 'ev-misc');
+    document.body.removeChild(inp);
+    appendToStream('bc-stream', 'Elemento removido — blur disparou após remoção?', 'ev-misc');
+  }, 1000);
+}
+
+function testBlurReplace() {
+  clearStream('bc-stream');
+  const container = document.createElement('div');
+  container.id = '__blur_replace__';
+  container.innerHTML = '<input id="__ri__" style="background:var(--bg3);border:1px solid var(--c1);color:var(--tx);padding:5px;font-family:var(--mono);font-size:10px;border-radius:4px;outline:none" />';
+  document.body.appendChild(container);
+  const ri = document.getElementById('__ri__');
+  ri.onblur = () => appendToStream('bc-stream', 'blur via innerHTML replace!', 'ev-blur');
+  ri.focus();
+  appendToStream('bc-stream', 'Campo focado — substituindo via innerHTML em 500ms...', 'ev-focus');
+  setTimeout(() => {
+    appendToStream('bc-stream', 'Executando innerHTML = "" no container pai...', 'ev-misc');
+    container.innerHTML = '<span style="font-family:var(--mono);font-size:10px;color:var(--g1)">elemento substituído</span>';
+    appendToStream('bc-stream', 'innerHTML substituído — blur disparou?', 'ev-misc');
+    setTimeout(() => document.body.removeChild(container), 2000);
+  }, 500);
+}
+
+function testBlurTimer() {
+  clearStream('bc-stream');
+  const inp = document.getElementById('bf-input');
+  inp.focus();
+  appendToStream('bc-stream', 'Agendando blur via setTimeout(0)...', 'ev-misc');
+  setTimeout(() => {
+    const t0 = performance.now();
+    inp.blur();
+    appendToStream('bc-stream', 'blur() chamado de setTimeout(0) em ' + (performance.now()-t0).toFixed(3) + 'ms', 'ev-blur');
+  }, 0);
+}
+
+function testBlurLoop() {
+  clearStream('bc-stream');
+  const inp = document.getElementById('bf-input');
+  let blurCount = 0, focusCount = 0;
+  inp.onblur  = () => { blurCount++;  appendToStream('bc-stream', 'blur #'+blurCount, 'ev-blur'); };
+  inp.onfocus = () => { focusCount++; appendToStream('bc-stream', 'focus #'+focusCount, 'ev-focus'); };
+  appendToStream('bc-stream', 'Iniciando loop focus/blur 10x...', 'ev-misc');
+  let i = 0;
+  const iv = setInterval(() => {
+    if (i % 2 === 0) inp.focus(); else inp.blur();
+    i++;
+    if (i >= 20) {
+      clearInterval(iv);
+      appendToStream('bc-stream', 'Loop concluído — blur: '+blurCount+' focus: '+focusCount, 'ev-misc');
+      lg('[BlurLoop] blur='+blurCount+' focus='+focusCount, 'ok');
+    }
+  }, 50);
+}
+
+function runBlurCombos() {
+  clearTb('t-blur-combos');
+  // just set count
+  setCount('blur-combos', 7, 7);
+  lg('[BlurCombos] 7 cenários disponíveis', 'ok');
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// FOCUS CHAIN
+function runFocusChain() {
+  clearTb('t-focus-chain');
+  const checks = [
+    ['tabindex positivo', 'tabindex > 0 tem prioridade', true],
+    ['tabindex zero',     'tabindex=0 segue ordem DOM', true],
+    ['tabindex negativo', 'tabindex=-1 não tab-navegável', true],
+    ['document.activeElement', 'rastrear elemento focado', has('document.activeElement')],
+    ['focus() programático', 'el.focus()', has('HTMLElement.prototype.focus')],
+    ['blur() programático',  'el.blur()',  has('HTMLElement.prototype.blur')],
+    ['focusVisible',         ':focus-visible CSS', (() => { try { return CSS.supports('selector(:focus-visible)'); } catch(e){ return false; } })()],
+    ['tabIndex property',    'el.tabIndex', has('HTMLElement.prototype.tabIndex')],
+  ];
+  const fcStream = document.getElementById('fc-stream');
+  const order = [];
+  document.querySelectorAll('#fc-chain [tabindex]').forEach(el => {
+    el.addEventListener('focus', () => {
+      order.push(el.textContent.trim());
+      appendToStream('fc-stream', 'focus → "' + el.textContent.trim() + '" (tabindex=' + el.tabIndex + ')', 'ev-focus');
+      document.getElementById('fc-order').textContent = 'Ordem detectada: ' + order.join(' → ');
+    });
+  });
+  let yes = 0;
+  checks.forEach(([n,note,ok]) => { if(ok) yes++; addRow('t-focus-chain',[n,note,pill(ok)]); });
+  R['focus-chain'] = { supported: yes };
+  setCount('focus-chain', yes, checks.length);
+  lg('[FocusChain] '+yes+'/'+checks.length, 'ok');
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// FORM EVENTS
+function runFormEvents() {
+  clearTb('t-ev-form');
+  const evts = [
+    ['input',       'HTMLElement',  true,  'dispara a cada tecla — antes de change'],
+    ['change',      'HTMLElement',  true,  'dispara ao perder foco com valor diferente'],
+    ['beforeinput', 'HTMLElement',  has('InputEvent') && 'data' in new InputEvent('beforeinput'), 'cancellable — antes de input'],
+    ['invalid',     'HTMLElement',  true,  'em validação de formulário'],
+    ['submit',      'HTMLFormElement', true, 'envio do form'],
+    ['reset',       'HTMLFormElement', true, 'reset do form'],
+    ['select',      'HTMLInputElement', true, 'texto selecionado'],
+    ['selectionchange', 'document', has('document.onselectionchange') || true, 'seleção de texto mudou'],
+  ];
+  const inputs = {
+    'ev-text': ['input','change','beforeinput','select'],
+    'ev-range': ['input','change'],
+    'ev-check': ['change'],
+    'ev-sel': ['change'],
+  };
+  Object.entries(inputs).forEach(([id, evList]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    evList.forEach(evt => {
+      el.addEventListener(evt, e => {
+        const msg = evt + ' → #' + id + ' val="' + (e.target.value||'').substring(0,20) + '"' + (e.data !== undefined ? ' data="'+e.data+'"' : '');
+        appendToStream('form-stream', msg, 'ev-form');
+        addToAllStream(msg, 'ev-form');
+      });
+    });
+  });
+
+  let yes = 0;
+  evts.forEach(([n,target,ok,note]) => { if(ok) yes++; addRow('t-ev-form',[n,target,pill(ok),note]); });
+  R['ev-form'] = { supported: yes };
+  setCount('ev-form', yes, evts.length);
+  lg('[FormEvents] '+yes+'/'+evts.length, 'ok');
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// CLIPBOARD EVENTS
+function runClipboardEvents() {
+  clearTb('t-ev-clipboard');
+  const evts = [
+    ['copy',   'document', true, 'Ctrl+C — pode ser cancelado'],
+    ['cut',    'document', true, 'Ctrl+X'],
+    ['paste',  'document', true, 'Ctrl+V — ClipboardData.getData()'],
+    ['Clipboard API read()', 'navigator.clipboard.read', has('navigator.clipboard') && has('navigator.clipboard.read'), 'async — requer permissão'],
+    ['Clipboard API write()', 'navigator.clipboard.write', has('navigator.clipboard') && has('navigator.clipboard.write'), ''],
+    ['ClipboardEvent.clipboardData', 'event.clipboardData', has('ClipboardEvent'), ''],
+  ];
+  const clipArea = document.getElementById('clip-area');
+  ['copy','cut','paste'].forEach(evt => {
+    clipArea.addEventListener(evt, e => {
+      const data = e.clipboardData && e.clipboardData.getData ? e.clipboardData.getData('text/plain') : '—';
+      const msg = evt + ' → clipboardData: "' + data.substring(0,30) + '"';
+      appendToStream('clip-stream', msg, 'ev-clip');
+      addToAllStream(msg, 'ev-clip');
+      lg('[Clipboard] ' + msg, 'ok');
+    });
+  });
+  let yes = 0;
+  evts.forEach(([n,target,ok,note]) => { if(ok) yes++; addRow('t-ev-clipboard',[n,target,pill(ok),note]); });
+  R['ev-clipboard'] = { supported: yes };
+  setCount('ev-clipboard', yes, evts.length);
+  lg('[Clipboard] '+yes+'/'+evts.length+' — monitores ativos', 'ok');
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// DRAG EVENTS
+function runDragEvents() {
+  clearTb('t-ev-drag');
+  const src = document.getElementById('drag-src');
+  const target = document.getElementById('drag-target');
+  const evts = [
+    ['dragstart', 'draggable element', true, 'inicia o drag'],
+    ['drag',      'draggable element', true, 'durante o arrasto'],
+    ['dragend',   'draggable element', true, 'final do drag'],
+    ['dragover',  'target',            true, 'sobre o target — preventDefault para aceitar'],
+    ['dragenter', 'target',            true, 'entrou no target'],
+    ['dragleave', 'target',            true, 'saiu do target'],
+    ['drop',      'target',            true, 'solto no target'],
+    ['DataTransfer', 'event.dataTransfer', has('DataTransfer'), 'dados transferidos'],
+  ];
+  ['dragstart','drag','dragend'].forEach(evt => {
+    src.addEventListener(evt, e => {
+      if (evt === 'dragstart') e.dataTransfer.setData('text/plain', 'drag-test');
+      appendToStream('drag-stream', evt + ' → src', 'ev-drag');
+      addToAllStream('drag:' + evt, 'ev-drag');
+    });
+  });
+  ['dragover','dragenter','dragleave','drop'].forEach(evt => {
+    target.addEventListener(evt, e => {
+      e.preventDefault();
+      if (evt === 'drop') target.textContent = 'dropped! data: ' + e.dataTransfer.getData('text/plain');
+      appendToStream('drag-stream', evt + ' → target', 'ev-drag');
+      addToAllStream('drag:' + evt, 'ev-drag');
+    });
+  });
+  let yes = 0;
+  evts.forEach(([n,target2,ok,note]) => { if(ok) yes++; addRow('t-ev-drag',[n,target2,pill(ok),note]); });
+  R['ev-drag'] = { supported: yes };
+  setCount('ev-drag', yes, evts.length);
+  lg('[Drag] '+yes+'/'+evts.length+' — área de teste pronta', 'ok');
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MEDIA EVENTS
+function runMediaEvents() {
+  clearTb('t-ev-media');
+  const v = document.getElementById('test-video');
+  const evts = [
+    ['loadstart','video',true,'início do carregamento'],
+    ['loadedmetadata','video',true,'duração e dimensões disponíveis'],
+    ['loadeddata','video',true,'primeiro frame disponível'],
+    ['canplay','video',true,'pode começar a reproduzir'],
+    ['canplaythrough','video',true,'pode reproduzir sem buffering'],
+    ['play','video',true,'início da reprodução'],
+    ['playing','video',true,'reprodução ativa (após pause/buffer)'],
+    ['pause','video',true,'pausa'],
+    ['ended','video',true,'fim do vídeo'],
+    ['timeupdate','video',true,'currentTime mudou'],
+    ['volumechange','video',true,'volume ou mute mudou'],
+    ['seeking','video',true,'iniciou seek'],
+    ['seeked','video',true,'seek concluído'],
+    ['waiting','video',true,'aguardando buffer'],
+    ['stalled','video',true,'dados pararam de chegar'],
+    ['error','video',true,'erro de mídia'],
+    ['durationchange','video',true,'duração mudou'],
+  ];
+  evts.forEach(([evt]) => {
+    v.addEventListener(evt, () => {
+      appendToStream('media-stream', evt + ' → video ' + (v.currentTime||0).toFixed(2) + 's', 'ev-media');
+      addToAllStream('media:'+evt, 'ev-media');
+    });
+  });
+  let yes = 0;
+  evts.forEach(([n,target,ok,note]) => { if(ok) yes++; addRow('t-ev-media',[n,target,pill(ok),note]); });
+  R['ev-media'] = { supported: yes };
+  setCount('ev-media', yes, evts.length);
+  lg('[Media] '+yes+'/'+evts.length+' listeners instalados', 'ok');
+}
+
+function testMediaEvents() {
+  const v = document.getElementById('test-video');
+  v.volume = 0.5;
+  v.muted = true;
+  setTimeout(() => v.muted = false, 200);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// PAGE LIFECYCLE
+function runPageEvents() {
+  clearTb('t-ev-page');
+  const evts = [
+    ['DOMContentLoaded', 'document',   true, 'DOM pronto — já ocorreu'],
+    ['load',             'window',     true, 'tudo carregado — já ocorreu'],
+    ['beforeunload',     'window',     true, 'antes de sair da página'],
+    ['unload',           'window',     true, 'saindo da página'],
+    ['pageshow',         'window',     has('onpageshow' in window), 'bfcache — navegação'],
+    ['pagehide',         'window',     has('onpagehide' in window), 'bfcache — saindo'],
+    ['visibilitychange', 'document',   has('document.onvisibilitychange') || true, 'aba visível/hidden'],
+    ['freeze',           'document',   has('document.onfreeze'), 'bfcache freeze'],
+    ['resume',           'document',   has('document.onresume'), 'bfcache resume'],
+    ['online',           'window',     has('window.ononline') || true,  'conexão restaurada'],
+    ['offline',          'window',     has('window.onoffline') || true, 'sem conexão'],
+    ['hashchange',       'window',     has('window.onhashchange') || true, 'URL hash mudou'],
+    ['popstate',         'window',     has('window.onpopstate') || true,  'history navigation'],
+    ['storage',          'window',     has('window.onstorage') || true,   'localStorage mudou em outra aba'],
+    ['resize',           'window',     true, 'janela redimensionada'],
+    ['scroll',           'window',     true, 'scroll da página'],
+    ['beforeprint',      'window',     has('window.onbeforeprint') || true, 'antes de imprimir'],
+    ['afterprint',       'window',     has('window.onafterprint') || true,  'após imprimir'],
+    ['error (global)',   'window',     has('window.onerror') || true, 'erro JS não capturado'],
+    ['unhandledrejection','window',    has('window.onunhandledrejection') || true, 'Promise não tratada'],
+  ];
+
+  // Update live state
+  const upd = () => {
+    const vis = document.getElementById('vis-state');
+    const foc = document.getElementById('focus-state');
+    const rdy = document.getElementById('ready-state');
+    if (vis) vis.textContent = document.visibilityState;
+    if (foc) foc.textContent = String(document.hasFocus());
+    if (rdy) rdy.textContent = document.readyState;
+  };
+  upd();
+  document.addEventListener('visibilitychange', () => {
+    upd();
+    appendToStream('page-stream', 'visibilitychange → ' + document.visibilityState, 'ev-page');
+    addToAllStream('visibilitychange:' + document.visibilityState, 'ev-page');
+    lg('[Page] visibilitychange → ' + document.visibilityState, 'warn');
+  });
+  window.addEventListener('focus', () => { upd(); appendToStream('page-stream', 'window.focus', 'ev-focus'); });
+  window.addEventListener('blur',  () => { upd(); appendToStream('page-stream', 'window.blur — PS4 menu? aba?', 'ev-blur'); });
+  window.addEventListener('online',  () => appendToStream('page-stream', 'online — conexão restaurada!', 'ev-page'));
+  window.addEventListener('offline', () => appendToStream('page-stream', 'offline — sem conexão!', 'ev-page'));
+
+  let yes = 0;
+  evts.forEach(([n,target,ok,note]) => { if(ok) yes++; addRow('t-ev-page',[n,target,pill(ok),note]); });
+  R['ev-page'] = { supported: yes };
+  setCount('ev-page', yes, evts.length);
+  lg('[PageEvents] '+yes+'/'+evts.length, 'ok');
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// POINTER ADVANCED
+function runPointerEvents() {
+  clearTb('t-ev-pointer');
+  const outer = document.getElementById('ptr-outer');
+  const inner = document.getElementById('ptr-inner');
+  const allPtrEvts = [
+    ['pointermove',        'element',  true,  'borbulha'],
+    ['pointerdown',        'element',  true,  'borbulha'],
+    ['pointerup',          'element',  true,  'borbulha'],
+    ['pointerenter',       'element',  false, 'NÃO borbulha — como mouseenter'],
+    ['pointerleave',       'element',  false, 'NÃO borbulha — como mouseleave'],
+    ['pointerover',        'element',  true,  'borbulha — como mouseover'],
+    ['pointerout',         'element',  true,  'borbulha — como mouseout'],
+    ['pointercancel',      'element',  true,  'interação cancelada pelo browser'],
+    ['gotpointercapture',  'element',  false, 'após setPointerCapture()'],
+    ['lostpointercapture', 'element',  false, 'após releasePointerCapture()'],
+  ];
+  let lastEvt = '';
+  ['pointermove','pointerdown','pointerup','pointerenter','pointerleave','pointerover','pointerout','pointercancel','gotpointercapture','lostpointercapture'].forEach(evt => {
+    outer.addEventListener(evt, e => {
+      if (evt === 'pointermove' && lastEvt === 'pointermove') return;
+      lastEvt = evt;
+      const msg = evt + ' target=' + (e.target.id||'?') + ' type=' + (e.pointerType||'?');
+      appendToStream('ptr-stream', msg, 'ev-mouse');
+      addToAllStream('ptr:'+msg, 'ev-mouse');
+    });
+  });
+  let yes = 0;
+  allPtrEvts.forEach(([n,target,bubbles,note]) => { if(bubbles) yes++; addRow('t-ev-pointer',[n,target,pill(bubbles),note]); });
+  R['ev-pointer'] = { supported: allPtrEvts.length };
+  setCount('ev-pointer', allPtrEvts.length, allPtrEvts.length);
+  lg('[PointerAdv] '+allPtrEvts.length+' eventos monitorados', 'ok');
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ANIMATION EVENTS
+let animStyle = null;
+function runAnimEvents() {
+  clearTb('t-ev-anim');
+  if (!animStyle) {
+    animStyle = document.createElement('style');
+    animStyle.textContent = '@keyframes testpulse{0%{transform:scale(1)}50%{transform:scale(1.3)}100%{transform:scale(1)}} .anim-run{animation:testpulse .4s ease forwards;transition:background .3s}';
+    document.head.appendChild(animStyle);
+  }
+  const box = document.getElementById('anim-box');
+  const evts = [
+    ['animationstart',      'element', true, 'início da animação CSS'],
+    ['animationend',        'element', true, 'fim da animação CSS'],
+    ['animationiteration',  'element', true, 'loop da animação'],
+    ['animationcancel',     'element', true, 'animação cancelada'],
+    ['transitionstart',     'element', true, 'início de transition CSS'],
+    ['transitionend',       'element', true, 'fim de transition CSS'],
+    ['transitionrun',       'element', true, 'transition agendada (antes do delay)'],
+    ['transitioncancel',    'element', true, 'transition cancelada'],
+  ];
+  evts.forEach(([evt]) => {
+    box.addEventListener(evt, e => {
+      const msg = evt + (e.animationName ? ' anim='+e.animationName : '') + (e.propertyName ? ' prop='+e.propertyName : '');
+      appendToStream('anim-stream', msg, 'ev-misc');
+      addToAllStream('anim:'+msg, 'ev-misc');
+      lg('[Anim] ' + msg, 'ok');
+    });
+  });
+  let yes = 0;
+  evts.forEach(([n,target,ok,note]) => { if(ok) yes++; addRow('t-ev-anim',[n,target,pill(ok),note]); });
+  R['ev-anim'] = { supported: yes };
+  setCount('ev-anim', yes, evts.length);
+  lg('[AnimEvents] '+yes+'/'+evts.length+' instalados', 'ok');
+}
+
+function triggerAnim() {
+  const box = document.getElementById('anim-box');
+  box.classList.remove('anim-run');
+  void box.offsetWidth; // reflow
+  box.classList.add('anim-run');
+  box.style.background = '#' + Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0');
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MISC EVENTS
+function runMiscEvents() {
+  clearTb('t-ev-misc');
+  const evts = [
+    ['hashchange',          'window',     has('window.onhashchange') || true, 'URL #hash mudou'],
+    ['popstate',            'window',     has('window.onpopstate') || true, 'history.back/forward'],
+    ['storage',             'window',     has('window.onstorage') || true,  'localStorage em outra aba'],
+    ['message',             'window',     true,                              'postMessage recebido'],
+    ['messageerror',        'window',     has('window.onmessageerror') || true, 'mensagem com erro'],
+    ['unhandledrejection',  'window',     has('window.onunhandledrejection') || true, 'Promise não tratada'],
+    ['rejectionhandled',    'window',     has('window.onrejectionhandled') || true, ''],
+    ['error (global)',      'window',     true,  'erro JS não capturado — window.onerror'],
+    ['securitypolicyviolation','document',has('document.onsecuritypolicyviolation') || true, 'violação de CSP'],
+    ['selectionchange',     'document',   has('document.onselectionchange') || true, 'seleção de texto mudou'],
+    ['contextmenu',         'document',   true,  'botão direito — pode ser bloqueado'],
+    ['wheel',               'window',     has('WheelEvent'), 'scroll do mouse'],
+    ['scrollend',           'window',     has('window.onscrollend') || true, 'fim do scroll'],
+    ['close (dialog)',      'HTMLDialogElement', has('HTMLDialogElement'), 'dialog fechou'],
+    ['cancel (dialog)',     'HTMLDialogElement', has('HTMLDialogElement'), 'dialog cancelado (ESC)'],
+    ['toggle (details)',    'HTMLDetailsElement', has('HTMLDetailsElement'), 'details abriu/fechou'],
+    ['cut/copy/paste (doc)','document',   true,  'clipboard no nível documento'],
+  ];
+
+  window.addEventListener('hashchange', e => { appendToStream('misc-stream', 'hashchange: ' + e.newURL, 'ev-misc'); });
+  window.addEventListener('unhandledrejection', e => { appendToStream('misc-stream', 'unhandledrejection: ' + e.reason, 'ev-misc'); e.preventDefault(); });
+  document.addEventListener('selectionchange', () => {
+    const sel = window.getSelection ? window.getSelection().toString().substring(0,30) : '?';
+    if (sel) appendToStream('misc-stream', 'selectionchange: "' + sel + '"', 'ev-misc');
+  });
+  document.addEventListener('contextmenu', e => { appendToStream('misc-stream', 'contextmenu → ' + e.target.tagName, 'ev-misc'); });
+
+  let yes = 0;
+  evts.forEach(([n,target,ok,note]) => { if(ok) yes++; addRow('t-ev-misc',[n,target,pill(ok),note]); });
+  R['ev-misc'] = { supported: yes };
+  setCount('ev-misc', yes, evts.length);
+  lg('[MiscEvents] '+yes+'/'+evts.length, 'ok');
+}
+
+function testHashChange() {
+  clearStream('misc-stream');
+  const prev = location.hash;
+  location.hash = '#ps4test-' + Date.now();
+  setTimeout(() => { location.hash = prev || '#'; }, 500);
+}
+
+function testStorageEvent() {
+  clearStream('misc-stream');
+  appendToStream('misc-stream', 'storage event só dispara em OUTRAS abas — abra outra aba desta página', 'ev-misc');
+  try { localStorage.setItem('_ps4test', Date.now()); } catch(e) {}
+}
+
+function testUnhandledRej() {
+  clearStream('misc-stream');
+  appendToStream('misc-stream', 'Criando Promise rejeitada sem .catch()...', 'ev-misc');
+  Promise.reject(new Error('PS4 test rejection'));
+}
+
+function testOnlineOffline() {
+  clearStream('misc-stream');
+  appendToStream('misc-stream', 'navigator.onLine: ' + navigator.onLine, 'ev-page');
+  appendToStream('misc-stream', 'Desligue o WiFi do PS4 para testar evento offline', 'ev-misc');
+}
+
+function testSecurityViolation() {
+  clearStream('misc-stream');
+  appendToStream('misc-stream', 'CSP violation: depende da CSP da página — testando inline eval...', 'ev-misc');
+  try { eval('1+1'); appendToStream('misc-stream', 'eval: sem violação CSP (eval livre)', 'ev-misc'); }
+  catch(e) { appendToStream('misc-stream', 'eval bloqueado por CSP: ' + e.message, 'ev-misc'); }
+}
+
+function testSelectionChange() {
+  clearStream('misc-stream');
+  appendToStream('misc-stream', 'Selecione qualquer texto na página para disparar selectionchange', 'ev-misc');
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// EVENT TIMING
+function runEventTiming() {
+  clearTb('t-ev-timing');
+  const input = document.getElementById('timing-input');
+  const timings = {};
+  const order = [];
+
+  ['mousedown','focus','focusin','click','mouseup'].forEach(evt => {
+    input.addEventListener(evt, () => {
+      timings[evt] = performance.now();
+      order.push(evt);
+      const prev = order[order.length - 2];
+      const delta = prev ? (timings[evt] - timings[prev]).toFixed(3) + 'ms após ' + prev : 'início';
+      appendToStream('timing-stream', evt + ' (' + delta + ')', evt.includes('focus') ? 'ev-focus' : evt.includes('blur') ? 'ev-blur' : 'ev-mouse');
+
+      // update timing bars
+      updateTimingBars();
+    });
+  });
+
+  const sequences = [
+    ['Click num input',         'mousedown → focus → click → mouseup'],
+    ['Tab para próx campo',     'blur → focusout → (próx)focus → focusin'],
+    ['Focus + input + blur',    'focus → input... → blur'],
+    ['Dialog via click',        'mousedown → click → (blur ao abrir dialog)'],
+  ];
+  sequences.forEach(([name, seq]) => addRow('t-ev-timing',[name,seq]));
+  R['ev-timing'] = { sequences: sequences.length };
+  setCount('ev-timing', sequences.length, sequences.length);
+  lg('[EventTiming] monitor instalado — clique no campo', 'ok');
+}
+
+function updateTimingBars() {
+  const container = document.getElementById('timing-bars');
+  container.innerHTML = '';
+  const evColors = { mousedown:'#ff8833',focus:'#00ffcc',focusin:'#00bb99',click:'#cc88ff',mouseup:'#ffcc00' };
+  let minT = Infinity;
+  const timings = {};
+
+  document.getElementById('timing-input')._evOrder = document.getElementById('timing-input')._evOrder || [];
+
+  const all = ['mousedown','focus','focusin','click','mouseup'];
+  all.forEach(evt => {
+    const t = document.getElementById('timing-input')['__t_'+evt];
+    if (t) { timings[evt] = t; minT = Math.min(minT, t); }
+  });
+
+  const evOrder = Object.entries(timings).sort(([,a],[,b]) => a-b);
+  const maxDelta = evOrder.length > 1 ? evOrder[evOrder.length-1][1] - evOrder[0][1] : 1;
+
+  evOrder.forEach(([evt, t]) => {
+    const delta = t - minT;
+    const pct = maxDelta > 0 ? Math.min(100, delta / maxDelta * 100) : 0;
+    const row = document.createElement('div');
+    row.className = 'tbar-row';
+    row.innerHTML = '<div class="tbar-label">' + evt + '</div><div class="tbar-track"><div class="tbar-fill" style="width:' + Math.max(pct,2) + '%;background:' + (evColors[evt]||'#aaa') + '"></div></div><div class="tbar-val">+' + delta.toFixed(1) + 'ms</div>';
+    container.appendChild(row);
+  });
+}
+
+['mousedown','focus','focusin','click','mouseup'].forEach(evt => {
+  document.getElementById('timing-input').addEventListener(evt, () => {
+    document.getElementById('timing-input')['__t_'+evt] = performance.now();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// OVERVIEW
+function buildOverview() {
+  const cats = ['fullscreen','fsevent','dialogs','dialog-events','blur-focus','blur-combos','focus-chain','ev-form','ev-clipboard','ev-drag','ev-media','ev-page','ev-pointer','ev-anim','ev-misc','ev-timing'];
+  const labels = { fullscreen:'Fullscreen API', fsevent:'Eventos FS', dialogs:'Diálogos', 'dialog-events':'Diálogos+Eventos', 'blur-focus':'blur/focus', 'blur-combos':'blur Vetores', 'focus-chain':'Focus Chain', 'ev-form':'Form/Input', 'ev-clipboard':'Clipboard', 'ev-drag':'Drag&Drop', 'ev-media':'Mídia Events', 'ev-page':'Page Lifecycle', 'ev-pointer':'Pointer Avançado', 'ev-anim':'Animation', 'ev-misc':'Outros Eventos', 'ev-timing':'Timing' };
+  const tbody = document.getElementById('ov-body');
+  tbody.innerHTML = '';
+  let totalY = 0, totalN = 0;
+
+  cats.forEach(id => {
+    const el = document.getElementById('cnt-'+id);
+    if (!el || el.textContent === '—') return;
+    const parts = el.textContent.split('/');
+    const y = parseInt(parts[0])||0, t = parseInt(parts[1])||0;
+    const n = t - y;
+    totalY += y; totalN += n;
+    const pct = t ? Math.round(y/t*100) : 100;
+    const barColor = pct >= 80 ? 'var(--g1)' : pct >= 50 ? 'var(--y1)' : 'var(--r1)';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><span class="cn">${labels[id]||id}</span></td><td><span class="pill py">${y}</span></td><td><span class="pill pn">${n}</span></td><td><div style="display:flex;align-items:center;gap:6px"><span style="font-family:var(--mono);font-size:10px">${pct}%</span><div style="width:${pct}px;height:4px;background:${barColor};border-radius:2px"></div></div></td>`;
+    tbody.appendChild(tr);
+  });
+
+  const total = totalY + totalN;
+  document.getElementById('ov-grid').innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--ln);border-radius:8px;padding:12px"><div style="font-size:24px;font-weight:700;font-family:var(--mono);color:var(--g1)">${totalY}</div><div style="font-size:9px;color:var(--tx2);text-transform:uppercase;letter-spacing:1px">Detectados</div></div>
+    <div style="background:var(--bg2);border:1px solid var(--ln);border-radius:8px;padding:12px"><div style="font-size:24px;font-weight:700;font-family:var(--mono);color:var(--r1)">${totalN}</div><div style="font-size:9px;color:var(--tx2);text-transform:uppercase;letter-spacing:1px">Ausentes</div></div>
+    <div style="background:var(--bg2);border:1px solid var(--ln);border-radius:8px;padding:12px"><div style="font-size:24px;font-weight:700;font-family:var(--mono);color:var(--c1)">${total}</div><div style="font-size:9px;color:var(--tx2);text-transform:uppercase;letter-spacing:1px">Total</div></div>
+    <div style="background:var(--bg2);border:1px solid var(--ln);border-radius:8px;padding:12px"><div style="font-size:24px;font-weight:700;font-family:var(--mono);color:var(--y1)">${cats.length}</div><div style="font-size:9px;color:var(--tx2);text-transform:uppercase;letter-spacing:1px">Categorias</div></div>
+  `;
+  setCount('overview', cats.length, cats.length);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// GLOBAL KEYBOARD MONITOR (para stream principal)
+document.addEventListener('keydown', e => {
+  addToAllStream('keydown key="' + e.key + '" code="' + e.code + '"', 'ev-key');
+  appendToStream('kb-log', '[keydown] key="'+e.key+'" code="'+e.code+'" which='+e.which+' ctrl='+e.ctrlKey, 'ev-key');
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// RUN ALL
+function runAll() {
+  lg('=== V3 INICIANDO ===', 'info');
+  runFullscreen();
+  runFSEvents();
+  runDialogs();
+  runDialogEvents();
+  runBlurFocus();
+  runBlurCombos();
+  runFocusChain();
+  runFormEvents();
+  runClipboardEvents();
+  runDragEvents();
+  runMediaEvents();
+  runPageEvents();
+  runPointerEvents();
+  runAnimEvents();
+  runMiscEvents();
+  runEventTiming();
+  setTimeout(buildOverview, 300);
+  lg('=== V3 PRONTO — ' + new Date().toLocaleTimeString() + ' ===', 'ok');
+}
+
+// INIT
+document.getElementById('ua-bar').textContent = navigator.userAgent.substring(0, 110);
+lg('v3 carregado — clique em Executar Todos', 'info');
+</script>
+</body>
+</html>

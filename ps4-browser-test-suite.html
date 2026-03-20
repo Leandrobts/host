@@ -1,0 +1,1364 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1280">
+<title>PS4 Browser — Bug Bounty Test Suite</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@400;500;600;700&display=swap');
+
+  :root {
+    --bg: #0a0c10;
+    --bg2: #111318;
+    --bg3: #181c24;
+    --border: #1e2530;
+    --border2: #2a3040;
+    --accent: #00c8ff;
+    --accent2: #0077ff;
+    --green: #00e676;
+    --red: #ff3d57;
+    --yellow: #ffd600;
+    --orange: #ff6d00;
+    --text: #d0d8e8;
+    --text2: #7a8899;
+    --mono: 'Share Tech Mono', monospace;
+    --sans: 'Barlow', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* HEADER */
+  header {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo {
+    font-family: var(--mono);
+    font-size: 15px;
+    color: var(--accent);
+    letter-spacing: 2px;
+  }
+  .logo span { color: var(--text2); }
+  .ua-display {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text2);
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 10px;
+    max-width: 400px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green);
+    display: inline-block;
+    margin-right: 6px;
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* LAYOUT */
+  .container { display: flex; height: calc(100vh - 57px); }
+
+  /* SIDEBAR */
+  nav {
+    width: 220px;
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    padding: 16px 0;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+  .nav-section {
+    padding: 6px 16px 4px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--text2);
+    text-transform: uppercase;
+    margin-top: 12px;
+  }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text2);
+    border-left: 2px solid transparent;
+    transition: all .15s;
+    user-select: none;
+  }
+  .nav-item:hover { background: var(--bg3); color: var(--text); }
+  .nav-item.active { color: var(--accent); border-left-color: var(--accent); background: rgba(0,200,255,.05); }
+  .nav-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border2); flex-shrink: 0; }
+  .nav-item.active .nav-dot { background: var(--accent); }
+
+  /* MAIN */
+  main { flex: 1; overflow-y: auto; padding: 24px; }
+
+  /* PANEL */
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .panel-header {
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 4px;
+  }
+  .panel-desc { color: var(--text2); font-size: 13px; max-width: 640px; }
+
+  /* SYSINFO */
+  .sysinfo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .sysinfo-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .sysinfo-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: var(--text2);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .sysinfo-value {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    word-break: break-all;
+  }
+
+  /* TEST CARDS */
+  .test-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 12px;
+  }
+  .test-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    transition: border-color .2s;
+  }
+  .test-card:hover { border-color: var(--border2); }
+  .test-card-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .test-card-title { font-size: 13px; font-weight: 600; color: #fff; }
+  .badge {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    text-transform: uppercase;
+  }
+  .badge-crash { background: rgba(255,61,87,.15); color: var(--red); border: 1px solid rgba(255,61,87,.3); }
+  .badge-info  { background: rgba(0,200,255,.1); color: var(--accent); border: 1px solid rgba(0,200,255,.2); }
+  .badge-media { background: rgba(255,109,0,.15); color: var(--orange); border: 1px solid rgba(255,109,0,.3); }
+  .badge-js    { background: rgba(255,214,0,.1); color: var(--yellow); border: 1px solid rgba(255,214,0,.2); }
+  .badge-css   { background: rgba(0,230,118,.1); color: var(--green); border: 1px solid rgba(0,230,118,.2); }
+
+  .test-card-body { padding: 12px 16px; }
+  .test-desc { font-size: 12px; color: var(--text2); margin-bottom: 12px; line-height: 1.5; }
+
+  .run-btn {
+    width: 100%;
+    padding: 8px 0;
+    background: transparent;
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .15s;
+    letter-spacing: .5px;
+  }
+  .run-btn:hover { background: var(--bg3); border-color: var(--accent); color: var(--accent); }
+  .run-btn:active { transform: scale(.98); }
+
+  .result-box {
+    margin-top: 10px;
+    padding: 8px 12px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text2);
+    min-height: 32px;
+    display: none;
+    word-break: break-all;
+    white-space: pre-wrap;
+  }
+  .result-box.show { display: block; }
+  .result-ok   { color: var(--green); border-color: rgba(0,230,118,.3); }
+  .result-warn { color: var(--yellow); border-color: rgba(255,214,0,.3); }
+  .result-err  { color: var(--red); border-color: rgba(255,61,87,.3); }
+
+  /* LOG */
+  .log-panel {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .log-header {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .log-title { font-size: 12px; font-weight: 700; letter-spacing: 1px; color: var(--text2); text-transform: uppercase; }
+  .clear-btn {
+    font-size: 11px; color: var(--text2); background: none; border: none; cursor: pointer; font-family: var(--sans);
+  }
+  .clear-btn:hover { color: var(--red); }
+  #log-output {
+    padding: 12px 16px;
+    font-family: var(--mono);
+    font-size: 11px;
+    min-height: 120px;
+    max-height: 240px;
+    overflow-y: auto;
+    color: var(--text2);
+  }
+  .log-line { margin-bottom: 3px; }
+  .log-line.ok   { color: var(--green); }
+  .log-line.warn { color: var(--yellow); }
+  .log-line.err  { color: var(--red); }
+  .log-line.info { color: var(--accent); }
+
+  /* REPORT */
+  .report-area {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    margin-top: 16px;
+  }
+  .report-field { margin-bottom: 14px; }
+  .report-label { font-size: 11px; font-weight: 700; letter-spacing: 1px; color: var(--text2); text-transform: uppercase; margin-bottom: 6px; }
+  .report-input, .report-textarea {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    outline: none;
+    transition: border-color .15s;
+    resize: vertical;
+  }
+  .report-input:focus, .report-textarea:focus { border-color: var(--accent); }
+  .report-textarea { min-height: 80px; }
+  .copy-btn {
+    background: var(--accent2);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 20px;
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  .copy-btn:hover { opacity: .85; }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">PS4 <span>//</span> BROWSER TEST SUITE <span>// v1.0</span></div>
+  <div class="ua-display"><span class="status-dot"></span><span id="ua-short">carregando...</span></div>
+</header>
+
+<div class="container">
+  <nav>
+    <div class="nav-section">Geral</div>
+    <div class="nav-item active" onclick="show('sysinfo')"><div class="nav-dot"></div>Informações do Sistema</div>
+    <div class="nav-section">Testes</div>
+    <div class="nav-item" onclick="show('crash')"><div class="nav-dot"></div>Crash / DoS</div>
+    <div class="nav-item" onclick="show('media')"><div class="nav-dot"></div>Media Parsing</div>
+    <div class="nav-item" onclick="show('js')"><div class="nav-dot"></div>JavaScript Engine</div>
+    <div class="nav-item" onclick="show('css')"><div class="nav-dot"></div>CSS Rendering</div>
+    <div class="nav-item" onclick="show('storage')"><div class="nav-dot"></div>Storage / Limits</div>
+    <div class="nav-item" onclick="show('network')"><div class="nav-dot"></div>Network Behavior</div>
+    <div class="nav-section">Output</div>
+    <div class="nav-item" onclick="show('report')"><div class="nav-dot"></div>Gerar Relatório</div>
+  </nav>
+
+  <main>
+
+    <!-- LOG sempre visível no topo do main -->
+    <div class="log-panel" style="margin-bottom:20px">
+      <div class="log-header">
+        <div class="log-title">&#9654; Log de Resultados</div>
+        <button class="clear-btn" onclick="clearLog()">limpar</button>
+      </div>
+      <div id="log-output"><div class="log-line info">// aguardando testes...</div></div>
+    </div>
+
+    <!-- SYSINFO -->
+    <div class="panel active" id="panel-sysinfo">
+      <div class="panel-header">
+        <div class="panel-title">Informações do Sistema</div>
+        <div class="panel-desc">Dados coletados automaticamente do navegador. Compare os valores entre o Chrome desktop e o PS4 — diferenças indicam que o servidor pode tratar os dois de forma diferente.</div>
+      </div>
+      <div class="sysinfo-grid" id="sysinfo-grid"></div>
+      <button class="run-btn" style="max-width:200px;margin-top:8px" onclick="collectSysInfo()">Atualizar dados</button>
+    </div>
+
+    <!-- CRASH -->
+    <div class="panel" id="panel-crash">
+      <div class="panel-header">
+        <div class="panel-title">Crash / DoS</div>
+        <div class="panel-desc">Testa comportamentos que podem causar travamento, congelamento ou fechamento forçado do browser. No PS4, o WebKit antigo é mais suscetível a edge cases de parsing.</div>
+      </div>
+      <div class="test-grid">
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">CSS — Valores extremos</div>
+            <span class="badge badge-crash">crash</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Injeta elemento com dimensões absurdas. Versões antigas do WebKit podem travar ao tentar calcular o layout.</div>
+            <button class="run-btn" onclick="runTest('css-extreme')">Executar teste</button>
+            <div class="result-box" id="res-css-extreme"></div>
+          </div>
+        </div>
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">DOM — Aninhamento profundo</div>
+            <span class="badge badge-crash">crash</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Cria 5000 elementos aninhados recursivamente. Pode estourar a pilha de recursão do motor de renderização.</div>
+            <button class="run-btn" onclick="runTest('deep-dom')">Executar teste</button>
+            <div class="result-box" id="res-deep-dom"></div>
+          </div>
+        </div>
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">SVG — Recursão via &lt;use&gt;</div>
+            <span class="badge badge-crash">crash</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Referência circular em SVG com &lt;use href="#self"&gt;. Pode causar loop infinito no parser de SVG do WebKit.</div>
+            <button class="run-btn" onclick="runTest('svg-recursive')">Executar teste</button>
+            <div class="result-box" id="res-svg-recursive"></div>
+          </div>
+        </div>
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">Table — Aninhamento excessivo</div>
+            <span class="badge badge-crash">crash</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Tabelas HTML com 200 níveis de aninhamento. O algoritmo de layout de tabelas do WebKit pode exceder limites internos.</div>
+            <button class="run-btn" onclick="runTest('deep-table')">Executar teste</button>
+            <div class="result-box" id="res-deep-table"></div>
+          </div>
+        </div>
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">String — Atributo gigante</div>
+            <span class="badge badge-crash">crash</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Cria elemento com atributo de 500.000 caracteres. Testa o limite de tamanho de strings do DOM.</div>
+            <button class="run-btn" onclick="runTest('giant-attr')">Executar teste</button>
+            <div class="result-box" id="res-giant-attr"></div>
+          </div>
+        </div>
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">Canvas — Dimensões extremas</div>
+            <span class="badge badge-crash">crash</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Canvas com width/height máximo (32767px). Testa o limite de alocação de memória para buffers gráficos.</div>
+            <button class="run-btn" onclick="runTest('canvas-extreme')">Executar teste</button>
+            <div class="result-box" id="res-canvas-extreme"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- MEDIA -->
+    <div class="panel" id="panel-media">
+      <div class="panel-header">
+        <div class="panel-title">Media Parsing</div>
+        <div class="panel-desc">Testa o comportamento do browser ao lidar com mídia malformada, formatos não suportados e URLs de mídia incomuns.</div>
+      </div>
+      <div class="test-grid">
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">Video — Src malformado</div>
+            <span class="badge badge-media">media</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Elemento &lt;video&gt; com src vazio, nulo e com caracteres especiais. Registra eventos de erro e como o browser os trata.</div>
+            <button class="run-btn" onclick="runTest('video-broken')">Executar teste</button>
+            <div class="result-box" id="res-video-broken"></div>
+          </div>
+        </div>
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">Audio — Múltiplos formatos</div>
+            <span class="badge badge-media">media</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Verifica quais codecs de áudio o browser suporta via canPlayType(). Revela informações da versão do WebKit.</div>
+            <button class="run-btn" onclick="runTest('audio-codecs')">Executar teste</button>
+            <div class="result-box" id="res-audio-codecs"></div>
+          </div>
+        </div>
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">Video — Múltiplos formatos</div>
+            <span class="badge badge-media">media</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Mesma verificação para vídeo: H.264, VP8, VP9, AV1, HEVC. Diferenças entre PS4 e Chrome desktop indicam código de servidor diferente.</div>
+            <button class="run-btn" onclick="runTest('video-codecs')">Executar teste</button>
+            <div class="result-box" id="res-video-codecs"></div>
+          </div>
+        </div>
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">Image — Formatos incomuns</div>
+            <span class="badge badge-media">media</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Tenta carregar imagens em WebP, AVIF e APNG. Registra quais formatos são suportados e como o browser trata os não suportados.</div>
+            <button class="run-btn" onclick="runTest('image-formats')">Executar teste</button>
+            <div class="result-box" id="res-image-formats"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- JS -->
+    <div class="panel" id="panel-js">
+      <div class="panel-header">
+        <div class="panel-title">JavaScript Engine</div>
+        <div class="panel-desc">Testa limites, APIs ausentes e comportamentos específicos do motor JavaScript do PS4. O motor é baseado no JavaScriptCore (JSC) em versão antiga.</div>
+      </div>
+      <div class="test-grid">
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">APIs — Suporte geral</div>
+            <span class="badge badge-js">JS</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Verifica presença de APIs modernas: Fetch, Promise, WebSocket, WebRTC, ServiceWorker, etc. APIs ausentes revelam a versão do motor.</div>
+            <button class="run-btn" onclick="runTest('api-support')">Executar teste</button>
+            <div class="result-box" id="res-api-support"></div>
+          </div>
+        </div>
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">TypedArray — Limites de memória</div>
+            <span class="badge badge-js">JS</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Tenta alocar ArrayBuffers de tamanhos crescentes até encontrar o limite. Revela a memória disponível para JS no console.</div>
+            <button class="run-btn" onclick="runTest('typed-array')">Executar teste</button>
+            <div class="result-box" id="res-typed-array"></div>
+          </div>
+        </div>
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">Regex — ReDoS timing</div>
+            <span class="badge badge-js">JS</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Testa regex com backtracking catastrófico. Mede o tempo de execução — diferenças grandes indicam versões do motor com comportamento distinto.</div>
+            <button class="run-btn" onclick="runTest('regex-redos')">Executar teste</button>
+            <div class="result-box" id="res-regex-redos"></div>
+          </div>
+        </div>
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">Error — Stack trace format</div>
+            <span class="badge badge-info">info</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Captura o formato de stack trace de erros. O formato varia entre versões do JSC e pode revelar informações sobre a versão interna do engine.</div>
+            <button class="run-btn" onclick="runTest('error-stack')">Executar teste</button>
+            <div class="result-box" id="res-error-stack"></div>
+          </div>
+        </div>
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">Date — Timezone e locale</div>
+            <span class="badge badge-info">info</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Coleta timezone configurado no console, locale do sistema e formato de datas. Pode ser usado para fingerprinting do dispositivo.</div>
+            <button class="run-btn" onclick="runTest('date-info')">Executar teste</button>
+            <div class="result-box" id="res-date-info"></div>
+          </div>
+        </div>
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">WebDatabase — openDatabase</div>
+            <span class="badge badge-js">JS</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">O PS4 suporta a Web SQL Database API (removida do Chrome). Testa se a API existe e qual o limite de storage permitido.</div>
+            <button class="run-btn" onclick="runTest('webdb')">Executar teste</button>
+            <div class="result-box" id="res-webdb"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- CSS -->
+    <div class="panel" id="panel-css">
+      <div class="panel-header">
+        <div class="panel-title">CSS Rendering</div>
+        <div class="panel-desc">Testa propriedades CSS modernas e edge cases de renderização. O WebKit antigo do PS4 não suporta várias propriedades introduzidas após 2016.</div>
+      </div>
+      <div class="test-grid">
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">CSS Grid / Flexbox</div>
+            <span class="badge badge-css">CSS</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Verifica suporte a CSS Grid, Flexbox gap, subgrid. Diferenças revelam a versão do motor de layout.</div>
+            <button class="run-btn" onclick="runTest('css-grid')">Executar teste</button>
+            <div class="result-box" id="res-css-grid"></div>
+          </div>
+        </div>
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">CSS Filter / Transform</div>
+            <span class="badge badge-css">CSS</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Testa filter com valores inválidos e transform com matrizes contendo NaN. Comportamentos inesperados indicam bugs no compositor.</div>
+            <button class="run-btn" onclick="runTest('css-filter')">Executar teste</button>
+            <div class="result-box" id="res-css-filter"></div>
+          </div>
+        </div>
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">CSS Variables (custom props)</div>
+            <span class="badge badge-css">CSS</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">CSS Custom Properties foram adicionadas ao WebKit em 2016. Se não suportadas, revela firmware bem antigo — potencial para mais bugs.</div>
+            <button class="run-btn" onclick="runTest('css-vars')">Executar teste</button>
+            <div class="result-box" id="res-css-vars"></div>
+          </div>
+        </div>
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">CSS — Seletor gigante</div>
+            <span class="badge badge-crash">crash</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Injeta uma regra CSS com seletor de 10.000 classes encadeadas. Pode causar lentidão extrema ou crash no parser de CSS.</div>
+            <button class="run-btn" onclick="runTest('css-giant-selector')">Executar teste</button>
+            <div class="result-box" id="res-css-giant-selector"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- STORAGE -->
+    <div class="panel" id="panel-storage">
+      <div class="panel-header">
+        <div class="panel-title">Storage / Limits</div>
+        <div class="panel-desc">Descobre os limites exatos de armazenamento do browser do PS4. Limites diferentes do padrão podem indicar implementação customizada.</div>
+      </div>
+      <div class="test-grid">
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">localStorage — Limite de tamanho</div>
+            <span class="badge badge-info">info</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Descobre o limite exato do localStorage no PS4 por busca binária. O padrão é 5MB mas implementações customizadas variam.</div>
+            <button class="run-btn" onclick="runTest('ls-limit')">Executar teste</button>
+            <div class="result-box" id="res-ls-limit"></div>
+          </div>
+        </div>
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">Cookie — Limites e flags</div>
+            <span class="badge badge-info">info</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Testa quantos cookies podem ser criados, tamanho máximo por cookie e comportamento de flags SameSite/Secure.</div>
+            <button class="run-btn" onclick="runTest('cookie-limits')">Executar teste</button>
+            <div class="result-box" id="res-cookie-limits"></div>
+          </div>
+        </div>
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">IndexedDB — Suporte e limites</div>
+            <span class="badge badge-info">info</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Verifica se IndexedDB é suportado e funcional. Algumas versões do PS4 WebKit têm suporte parcial com bugs conhecidos.</div>
+            <button class="run-btn" onclick="runTest('indexeddb')">Executar teste</button>
+            <div class="result-box" id="res-indexeddb"></div>
+          </div>
+        </div>
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">sessionStorage — Persistência</div>
+            <span class="badge badge-info">info</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Testa comportamento do sessionStorage — tamanho máximo e se persiste entre navegações (comportamento diferente do esperado no PS4).</div>
+            <button class="run-btn" onclick="runTest('sessionstorage')">Executar teste</button>
+            <div class="result-box" id="res-sessionstorage"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- NETWORK -->
+    <div class="panel" id="panel-network">
+      <div class="panel-header">
+        <div class="panel-title">Network Behavior</div>
+        <div class="panel-desc">Testa como o browser do PS4 lida com requisições HTTP, CORS, redirecionamentos e protocolos.</div>
+      </div>
+      <div class="test-grid">
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">Fetch — Suporte e headers</div>
+            <span class="badge badge-info">info</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Verifica se Fetch API existe, quais headers são enviados por padrão e como o browser lida com respostas CORS.</div>
+            <button class="run-btn" onclick="runTest('fetch-support')">Executar teste</button>
+            <div class="result-box" id="res-fetch-support"></div>
+          </div>
+        </div>
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">WebSocket — Suporte</div>
+            <span class="badge badge-info">info</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Testa presença e versão do WebSocket. Implementações antigas têm comportamentos diferentes em relação a reconexão e erro.</div>
+            <button class="run-btn" onclick="runTest('websocket')">Executar teste</button>
+            <div class="result-box" id="res-websocket"></div>
+          </div>
+        </div>
+
+        <div class="test-card">
+          <div class="test-card-header">
+            <div class="test-card-title">Performance — Timing API</div>
+            <span class="badge badge-info">info</span>
+          </div>
+          <div class="test-card-body">
+            <div class="test-desc">Mede precisão do performance.now() e navigation timing. Diferenças de precisão podem ser usadas para side-channel attacks.</div>
+            <button class="run-btn" onclick="runTest('perf-timing')">Executar teste</button>
+            <div class="result-box" id="res-perf-timing"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- REPORT -->
+    <div class="panel" id="panel-report">
+      <div class="panel-header">
+        <div class="panel-title">Gerar Relatório</div>
+        <div class="panel-desc">Compile os resultados dos testes e gere um relatório estruturado pronto para o HackerOne.</div>
+      </div>
+      <div class="report-area">
+        <div class="report-field">
+          <div class="report-label">Firmware do PS4</div>
+          <input class="report-input" id="rpt-firmware" placeholder="ex: 11.00" />
+        </div>
+        <div class="report-field">
+          <div class="report-label">Teste que produziu o comportamento inesperado</div>
+          <input class="report-input" id="rpt-test" placeholder="ex: CSS — Seletor gigante" />
+        </div>
+        <div class="report-field">
+          <div class="report-label">Comportamento observado no PS4</div>
+          <textarea class="report-textarea" id="rpt-behavior" placeholder="ex: O browser travou e fechou após 3 segundos ao carregar a página com o seletor de 10.000 classes..."></textarea>
+        </div>
+        <div class="report-field">
+          <div class="report-label">Reproduzível?</div>
+          <input class="report-input" id="rpt-repro" placeholder="ex: Sim — 10 de 10 tentativas" />
+        </div>
+        <div class="report-field">
+          <div class="report-label">Comportamento no Chrome desktop (diferença)</div>
+          <textarea class="report-textarea" id="rpt-chrome" placeholder="ex: No Chrome 120 a página carregou normalmente sem travamento..."></textarea>
+        </div>
+        <div class="report-field">
+          <div class="report-label">Log coletado (cole os resultados relevantes)</div>
+          <textarea class="report-textarea" id="rpt-log" style="min-height:120px" placeholder="Cole aqui os resultados do log de resultados acima..."></textarea>
+        </div>
+        <button class="copy-btn" onclick="generateReport()">Copiar relatório formatado</button>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// ── NAVEGAÇÃO ──────────────────────────────────────────────────────────────
+function show(id) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('panel-' + id).classList.add('active');
+  event.currentTarget.classList.add('active');
+}
+
+// ── LOG ───────────────────────────────────────────────────────────────────
+const logEl = document.getElementById('log-output');
+function log(msg, type = 'info') {
+  const ts = new Date().toLocaleTimeString('pt-BR');
+  const line = document.createElement('div');
+  line.className = 'log-line ' + type;
+  line.textContent = '[' + ts + '] ' + msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function clearLog() {
+  logEl.innerHTML = '<div class="log-line info">// log limpo</div>';
+}
+function setResult(id, msg, type = 'ok') {
+  const el = document.getElementById('res-' + id);
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'result-box show result-' + type;
+}
+
+// ── SYSINFO ───────────────────────────────────────────────────────────────
+function collectSysInfo() {
+  const grid = document.getElementById('sysinfo-grid');
+  grid.innerHTML = '';
+  const fields = [
+    ['User-Agent', navigator.userAgent],
+    ['Plataforma', navigator.platform],
+    ['Idioma', navigator.language],
+    ['Idiomas', (navigator.languages || []).join(', ')],
+    ['Cookies habilitados', String(navigator.cookieEnabled)],
+    ['Núcleos de CPU', String(navigator.hardwareConcurrency || 'N/A')],
+    ['Memória do dispositivo', (navigator.deviceMemory || 'N/A') + ' GB'],
+    ['Conexão', (navigator.connection && navigator.connection.effectiveType) || 'N/A'],
+    ['Touch points', String(navigator.maxTouchPoints || 0)],
+    ['Resolução da tela', screen.width + 'x' + screen.height],
+    ['Profundidade de cor', screen.colorDepth + ' bits'],
+    ['Pixel ratio', String(window.devicePixelRatio)],
+    ['Viewport', window.innerWidth + 'x' + window.innerHeight],
+    ['Timezone', Intl && Intl.DateTimeFormat ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'N/A'],
+    ['WebGL renderer', getWebGLInfo()],
+    ['Java habilitado', String(navigator.javaEnabled ? navigator.javaEnabled() : false)],
+    ['Do Not Track', navigator.doNotTrack || 'N/A'],
+    ['ServiceWorker', 'serviceWorker' in navigator ? 'suportado' : 'ausente'],
+    ['WebRTC', 'RTCPeerConnection' in window ? 'suportado' : 'ausente'],
+    ['Fetch API', 'fetch' in window ? 'suportado' : 'ausente'],
+  ];
+  fields.forEach(([label, value]) => {
+    const card = document.createElement('div');
+    card.className = 'sysinfo-card';
+    card.innerHTML = '<div class="sysinfo-label">' + label + '</div><div class="sysinfo-value">' + (value || 'N/A') + '</div>';
+    grid.appendChild(card);
+  });
+  document.getElementById('ua-short').textContent = navigator.userAgent.substring(0, 80) + '...';
+  log('Informações do sistema coletadas — ' + fields.length + ' campos', 'ok');
+}
+
+function getWebGLInfo() {
+  try {
+    const c = document.createElement('canvas');
+    const gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+    if (!gl) return 'não suportado';
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    if (dbg) return gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL);
+    return 'suportado (renderer oculto)';
+  } catch(e) { return 'erro: ' + e.message; }
+}
+
+// ── TESTES ────────────────────────────────────────────────────────────────
+function runTest(id) {
+  log('Iniciando teste: ' + id, 'info');
+  try {
+    const fn = tests[id];
+    if (fn) fn();
+    else { log('Teste não encontrado: ' + id, 'err'); setResult(id, 'Teste não implementado', 'warn'); }
+  } catch(e) {
+    log('ERRO em ' + id + ': ' + e.message, 'err');
+    setResult(id, 'Erro: ' + e.message, 'err');
+  }
+}
+
+const tests = {
+
+  'css-extreme': function() {
+    const div = document.createElement('div');
+    div.style.cssText = 'width:99999999999px;height:99999999999px;position:absolute;top:-999999px';
+    document.body.appendChild(div);
+    const cs = window.getComputedStyle(div);
+    const w = cs.width;
+    document.body.removeChild(div);
+    const msg = 'width computado: ' + w;
+    setResult('css-extreme', msg, w === '99999999999px' ? 'warn' : 'ok');
+    log('[css-extreme] ' + msg, 'ok');
+  },
+
+  'deep-dom': function() {
+    const t0 = performance.now();
+    let el = document.createElement('div');
+    const root = el;
+    for (let i = 0; i < 5000; i++) {
+      const child = document.createElement('div');
+      el.appendChild(child);
+      el = child;
+    }
+    document.body.appendChild(root);
+    const t1 = performance.now();
+    document.body.removeChild(root);
+    const ms = (t1 - t0).toFixed(2);
+    setResult('deep-dom', '5000 níveis criados em ' + ms + 'ms', parseFloat(ms) > 500 ? 'warn' : 'ok');
+    log('[deep-dom] criou 5000 níveis em ' + ms + 'ms', parseFloat(ms) > 500 ? 'warn' : 'ok');
+  },
+
+  'svg-recursive': function() {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.style.cssText = 'position:absolute;top:-9999px;width:1px;height:1px';
+    svg.innerHTML = '<symbol id="rec-x"><use href="#rec-x"/></symbol><use href="#rec-x"/>';
+    document.body.appendChild(svg);
+    setTimeout(() => {
+      try { document.body.removeChild(svg); } catch(e){}
+      setResult('svg-recursive', 'SVG recursivo inserido — browser não travou (ok)', 'ok');
+      log('[svg-recursive] sem crash', 'ok');
+    }, 1000);
+    setResult('svg-recursive', 'aguardando 1s para detectar freeze...', 'warn');
+  },
+
+  'deep-table': function() {
+    const t0 = performance.now();
+    let html = '';
+    for (let i = 0; i < 200; i++) html += '<table><tr><td>';
+    html += 'deep';
+    for (let i = 0; i < 200; i++) html += '</td></tr></table>';
+    const div = document.createElement('div');
+    div.style.cssText = 'position:absolute;top:-9999px';
+    div.innerHTML = html;
+    document.body.appendChild(div);
+    const t1 = performance.now();
+    document.body.removeChild(div);
+    const ms = (t1 - t0).toFixed(2);
+    setResult('deep-table', '200 tabelas aninhadas em ' + ms + 'ms', parseFloat(ms) > 200 ? 'warn' : 'ok');
+    log('[deep-table] ' + ms + 'ms', parseFloat(ms) > 200 ? 'warn' : 'ok');
+  },
+
+  'giant-attr': function() {
+    try {
+      const div = document.createElement('div');
+      const big = 'A'.repeat(500000);
+      div.setAttribute('data-test', big);
+      document.body.appendChild(div);
+      const got = div.getAttribute('data-test').length;
+      document.body.removeChild(div);
+      setResult('giant-attr', 'Atributo de 500k chars: comprimento lido = ' + got, got === 500000 ? 'ok' : 'warn');
+      log('[giant-attr] comprimento = ' + got, 'ok');
+    } catch(e) {
+      setResult('giant-attr', 'Erro ao criar atributo: ' + e.message, 'err');
+      log('[giant-attr] ERRO: ' + e.message, 'err');
+    }
+  },
+
+  'canvas-extreme': function() {
+    try {
+      const c = document.createElement('canvas');
+      c.width = 32767; c.height = 32767;
+      const ctx = c.getContext('2d');
+      const ok = ctx !== null;
+      const msg = ok ? 'Canvas 32767x32767 criado — contexto 2D disponível' : 'Canvas criado mas contexto 2D retornou null';
+      setResult('canvas-extreme', msg, ok ? 'warn' : 'err');
+      log('[canvas-extreme] ' + msg, ok ? 'warn' : 'err');
+    } catch(e) {
+      setResult('canvas-extreme', 'Erro: ' + e.message, 'err');
+      log('[canvas-extreme] ERRO: ' + e.message, 'err');
+    }
+  },
+
+  'video-broken': function() {
+    const results = [];
+    const srcs = ['', null, 'data:video/mp4,INVALID', 'javascript:void(0)', '\x00\x01\x02'];
+    let done = 0;
+    srcs.forEach((src, i) => {
+      const v = document.createElement('video');
+      v.style.cssText = 'position:absolute;top:-9999px;width:1px;height:1px';
+      v.onerror = (e) => { results.push('src[' + i + ']: error ' + (v.error ? v.error.code : '?')); check(); };
+      v.onloadeddata = () => { results.push('src[' + i + ']: LOADED'); check(); };
+      try { if (src !== null) v.src = src; } catch(e) { results.push('src[' + i + ']: exception ' + e.message); check(); return; }
+      document.body.appendChild(v);
+      setTimeout(() => { try { document.body.removeChild(v); } catch(e){} results.push('src[' + i + ']: timeout'); check(); }, 2000);
+    });
+    function check() {
+      done++;
+      if (done >= srcs.length) {
+        setResult('video-broken', results.join('\n'), 'ok');
+        log('[video-broken] ' + results.join(' | '), 'ok');
+      }
+    }
+    setResult('video-broken', 'testando 5 srcs inválidos...', 'warn');
+  },
+
+  'audio-codecs': function() {
+    const a = document.createElement('audio');
+    const codecs = [
+      ['MP3', 'audio/mpeg'],
+      ['AAC', 'audio/aac'],
+      ['OGG Vorbis', 'audio/ogg; codecs=vorbis'],
+      ['OGG Opus', 'audio/ogg; codecs=opus'],
+      ['WAV', 'audio/wav'],
+      ['FLAC', 'audio/flac'],
+      ['WebM Opus', 'audio/webm; codecs=opus'],
+    ];
+    const results = codecs.map(([name, type]) => name + ': ' + (a.canPlayType(type) || 'no'));
+    setResult('audio-codecs', results.join('\n'), 'ok');
+    log('[audio-codecs] ' + results.join(' | '), 'ok');
+  },
+
+  'video-codecs': function() {
+    const v = document.createElement('video');
+    const codecs = [
+      ['H.264 Baseline', 'video/mp4; codecs="avc1.42E01E"'],
+      ['H.264 High', 'video/mp4; codecs="avc1.640028"'],
+      ['H.265/HEVC', 'video/mp4; codecs="hev1.1.6.L93.B0"'],
+      ['VP8', 'video/webm; codecs=vp8'],
+      ['VP9', 'video/webm; codecs=vp9'],
+      ['AV1', 'video/webm; codecs=av01.0.05M.08'],
+    ];
+    const results = codecs.map(([name, type]) => name + ': ' + (v.canPlayType(type) || 'no'));
+    setResult('video-codecs', results.join('\n'), 'ok');
+    log('[video-codecs] ' + results.join(' | '), 'ok');
+  },
+
+  'image-formats': function() {
+    const formats = [
+      ['WebP', 'data:image/webp;base64,UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAgA0JZACdAEO/gHOAAA='],
+      ['AVIF', 'data:image/avif;base64,AAAAIGZ0eXBhdmlmAAAAAGF2aWZtaWYxbWlhZk1BMUIAAADybWV0YQ=='],
+      ['PNG', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='],
+    ];
+    const results = [];
+    let done = 0;
+    formats.forEach(([name, src]) => {
+      const img = new Image();
+      img.onload = () => { results.push(name + ': suportado'); finish(); };
+      img.onerror = () => { results.push(name + ': NÃO suportado'); finish(); };
+      img.src = src;
+    });
+    function finish() {
+      done++;
+      if (done === formats.length) {
+        setResult('image-formats', results.join('\n'), 'ok');
+        log('[image-formats] ' + results.join(' | '), 'ok');
+      }
+    }
+    setResult('image-formats', 'testando formatos...', 'warn');
+  },
+
+  'api-support': function() {
+    const apis = [
+      ['Fetch', 'fetch' in window],
+      ['Promise', 'Promise' in window],
+      ['WebSocket', 'WebSocket' in window],
+      ['WebRTC', 'RTCPeerConnection' in window],
+      ['ServiceWorker', 'serviceWorker' in navigator],
+      ['WebWorker', 'Worker' in window],
+      ['WebGL', 'WebGLRenderingContext' in window],
+      ['WebGL2', 'WebGL2RenderingContext' in window],
+      ['WebCrypto', 'crypto' in window && 'subtle' in (window.crypto||{})],
+      ['Notification', 'Notification' in window],
+      ['Geolocation', 'geolocation' in navigator],
+      ['Gamepad', 'getGamepads' in navigator],
+      ['PointerEvents', 'PointerEvent' in window],
+      ['MutationObserver', 'MutationObserver' in window],
+      ['IntersectionObserver', 'IntersectionObserver' in window],
+      ['ResizeObserver', 'ResizeObserver' in window],
+      ['CustomElements', 'customElements' in window],
+      ['ShadowDOM', 'attachShadow' in Element.prototype],
+    ];
+    const results = apis.map(([name, ok]) => (ok ? '✓' : '✗') + ' ' + name);
+    setResult('api-support', results.join('\n'), 'ok');
+    log('[api-support] coletado ' + apis.length + ' APIs', 'ok');
+  },
+
+  'typed-array': function() {
+    const sizes = [1, 4, 16, 64, 256, 512, 1024];
+    const results = [];
+    sizes.forEach(mb => {
+      try {
+        const buf = new ArrayBuffer(mb * 1024 * 1024);
+        results.push(mb + 'MB: OK');
+      } catch(e) {
+        results.push(mb + 'MB: FALHOU (' + e.message + ')');
+      }
+    });
+    setResult('typed-array', results.join('\n'), 'ok');
+    log('[typed-array] ' + results.join(' | '), 'ok');
+  },
+
+  'regex-redos': function() {
+    const inputs = ['a'.repeat(20) + '!', 'a'.repeat(25) + '!', 'a'.repeat(30) + '!'];
+    const results = inputs.map(input => {
+      const t0 = performance.now();
+      try { /^(a+)+$/.test(input); } catch(e) {}
+      const ms = (performance.now() - t0).toFixed(3);
+      return 'len=' + input.length + ': ' + ms + 'ms';
+    });
+    setResult('regex-redos', results.join('\n'), 'ok');
+    log('[regex-redos] ' + results.join(' | '), 'ok');
+  },
+
+  'error-stack': function() {
+    try {
+      (function inner() { throw new Error('test'); })();
+    } catch(e) {
+      const stack = e.stack || 'stack não disponível';
+      setResult('error-stack', stack, 'ok');
+      log('[error-stack] stack: ' + stack.substring(0, 100), 'ok');
+    }
+  },
+
+  'date-info': function() {
+    const d = new Date();
+    const tz = Intl && Intl.DateTimeFormat ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'N/A';
+    const locale = navigator.language;
+    const fmt = d.toLocaleString();
+    const utc = d.toISOString();
+    const offset = d.getTimezoneOffset();
+    const info = [
+      'Timezone: ' + tz,
+      'Locale: ' + locale,
+      'Data local: ' + fmt,
+      'UTC: ' + utc,
+      'Offset (min): ' + offset,
+    ].join('\n');
+    setResult('date-info', info, 'ok');
+    log('[date-info] TZ=' + tz + ' offset=' + offset, 'ok');
+  },
+
+  'webdb': function() {
+    if (typeof openDatabase === 'undefined') {
+      setResult('webdb', 'openDatabase: NÃO disponível (padrão no Chrome moderno)\nNo PS4 pode estar disponível — testar no console!', 'warn');
+      log('[webdb] openDatabase ausente neste browser', 'warn');
+      return;
+    }
+    try {
+      const db = openDatabase('bbtest', '1.0', 'Bug Bounty Test', 1024 * 1024 * 5);
+      setResult('webdb', 'openDatabase: DISPONÍVEL\nDB criado: ' + db.version, 'warn');
+      log('[webdb] Web SQL Database disponível!', 'warn');
+    } catch(e) {
+      setResult('webdb', 'openDatabase existe mas erro: ' + e.message, 'err');
+      log('[webdb] erro: ' + e.message, 'err');
+    }
+  },
+
+  'css-grid': function() {
+    const el = document.createElement('div');
+    el.style.cssText = 'position:absolute;top:-9999px;display:grid;gap:10px';
+    document.body.appendChild(el);
+    const cs = window.getComputedStyle(el);
+    const results = [
+      'display:grid = ' + cs.display,
+      'gap = ' + (cs.gap || cs.gridGap || 'N/A'),
+      'CSS.supports grid = ' + (CSS && CSS.supports ? CSS.supports('display', 'grid') : 'N/A'),
+      'CSS.supports subgrid = ' + (CSS && CSS.supports ? CSS.supports('grid-template-rows', 'subgrid') : 'N/A'),
+    ];
+    document.body.removeChild(el);
+    setResult('css-grid', results.join('\n'), 'ok');
+    log('[css-grid] ' + results.join(' | '), 'ok');
+  },
+
+  'css-filter': function() {
+    const el = document.createElement('div');
+    el.style.cssText = 'position:absolute;top:-9999px;filter:blur(-1px) brightness(999) contrast(-1)';
+    document.body.appendChild(el);
+    const cs = window.getComputedStyle(el);
+    const filter = cs.filter || cs.webkitFilter || 'N/A';
+    document.body.removeChild(el);
+
+    const el2 = document.createElement('div');
+    el2.style.cssText = 'position:absolute;top:-9999px;transform:matrix3d(NaN,0,0,0,0,NaN,0,0,0,0,NaN,0,0,0,0,NaN)';
+    document.body.appendChild(el2);
+    const transform = window.getComputedStyle(el2).transform || 'N/A';
+    document.body.removeChild(el2);
+
+    setResult('css-filter', 'filter inválido: ' + filter + '\ntransform NaN: ' + transform, 'ok');
+    log('[css-filter] filter=' + filter.substring(0,40), 'ok');
+  },
+
+  'css-vars': function() {
+    const el = document.createElement('div');
+    el.style.setProperty('--test-var', 'blue');
+    document.body.appendChild(el);
+    const val = window.getComputedStyle(el).getPropertyValue('--test-var');
+    document.body.removeChild(el);
+    const supported = val.trim() !== '';
+    setResult('css-vars', 'CSS Custom Properties: ' + (supported ? 'SUPORTADO — valor: ' + val.trim() : 'NÃO SUPORTADO (firmware antigo!)'), supported ? 'ok' : 'warn');
+    log('[css-vars] suportado=' + supported, supported ? 'ok' : 'warn');
+  },
+
+  'css-giant-selector': function() {
+    const t0 = performance.now();
+    const sel = Array.from({length: 5000}, (_, i) => '.cls-' + i).join('.');
+    const style = document.createElement('style');
+    style.textContent = sel + ' { color: red; }';
+    document.head.appendChild(style);
+    const t1 = performance.now();
+    document.head.removeChild(style);
+    const ms = (t1 - t0).toFixed(2);
+    setResult('css-giant-selector', 'Seletor com 5000 classes em ' + ms + 'ms', parseFloat(ms) > 300 ? 'warn' : 'ok');
+    log('[css-giant-selector] ' + ms + 'ms', parseFloat(ms) > 300 ? 'warn' : 'ok');
+  },
+
+  'ls-limit': function() {
+    localStorage.clear();
+    let lo = 0, hi = 10 * 1024 * 1024, limit = 0;
+    while (lo <= hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      try {
+        localStorage.setItem('__test__', 'x'.repeat(mid));
+        limit = mid; lo = mid + 1;
+      } catch(e) { hi = mid - 1; }
+    }
+    localStorage.removeItem('__test__');
+    const kb = (limit / 1024).toFixed(1);
+    setResult('ls-limit', 'Limite do localStorage: ~' + kb + ' KB (' + limit + ' bytes)', 'ok');
+    log('[ls-limit] limite=' + kb + 'KB', 'ok');
+  },
+
+  'cookie-limits': function() {
+    let count = 0;
+    for (let i = 0; i < 100; i++) {
+      document.cookie = 'bbtest' + i + '=1; path=/';
+      if (document.cookie.includes('bbtest' + i)) count++;
+      else break;
+    }
+    for (let i = 0; i < 100; i++) {
+      document.cookie = 'bbtest' + i + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+    }
+    const samesite = '; SameSite=None; Secure';
+    document.cookie = 'bbsamesite=1' + samesite + '; path=/';
+    const sameSiteOk = document.cookie.includes('bbsamesite');
+    document.cookie = 'bbsamesite=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+    setResult('cookie-limits', 'Cookies simultâneos: ~' + count + '\nSameSite=None: ' + (sameSiteOk ? 'suportado' : 'bloqueado'), 'ok');
+    log('[cookie-limits] count=' + count + ' samesite=' + sameSiteOk, 'ok');
+  },
+
+  'indexeddb': function() {
+    if (!('indexedDB' in window)) {
+      setResult('indexeddb', 'IndexedDB: NÃO disponível', 'warn');
+      log('[indexeddb] ausente', 'warn'); return;
+    }
+    const req = indexedDB.open('bbtest', 1);
+    req.onsuccess = (e) => {
+      e.target.result.close();
+      indexedDB.deleteDatabase('bbtest');
+      setResult('indexeddb', 'IndexedDB: DISPONÍVEL e funcional', 'ok');
+      log('[indexeddb] disponível', 'ok');
+    };
+    req.onerror = (e) => {
+      setResult('indexeddb', 'IndexedDB existe mas erro: ' + e.target.errorCode, 'err');
+      log('[indexeddb] erro: ' + e.target.errorCode, 'err');
+    };
+    setResult('indexeddb', 'abrindo banco...', 'warn');
+  },
+
+  'sessionstorage': function() {
+    try {
+      sessionStorage.setItem('bbtest', 'hello');
+      const val = sessionStorage.getItem('bbtest');
+      sessionStorage.removeItem('bbtest');
+      let lo = 0, hi = 10 * 1024 * 1024, limit = 0;
+      while (lo <= hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        try { sessionStorage.setItem('__t__', 'x'.repeat(mid)); limit = mid; lo = mid + 1; }
+        catch(e) { hi = mid - 1; }
+      }
+      sessionStorage.removeItem('__t__');
+      setResult('sessionstorage', 'Funcional: ' + (val === 'hello') + '\nLimite: ~' + (limit/1024).toFixed(1) + 'KB', 'ok');
+      log('[sessionstorage] funcional=' + (val==='hello') + ' limite=' + (limit/1024).toFixed(1) + 'KB', 'ok');
+    } catch(e) {
+      setResult('sessionstorage', 'Erro: ' + e.message, 'err');
+    }
+  },
+
+  'fetch-support': function() {
+    const results = [
+      'fetch: ' + ('fetch' in window ? 'disponível' : 'AUSENTE'),
+      'Headers: ' + ('Headers' in window ? 'disponível' : 'AUSENTE'),
+      'Request: ' + ('Request' in window ? 'disponível' : 'AUSENTE'),
+      'Response: ' + ('Response' in window ? 'disponível' : 'AUSENTE'),
+      'AbortController: ' + ('AbortController' in window ? 'disponível' : 'AUSENTE'),
+    ];
+    setResult('fetch-support', results.join('\n'), 'ok');
+    log('[fetch-support] ' + results.join(' | '), 'ok');
+  },
+
+  'websocket': function() {
+    const results = [
+      'WebSocket: ' + ('WebSocket' in window ? 'disponível' : 'AUSENTE'),
+      'WebSocket.CONNECTING: ' + (window.WebSocket ? WebSocket.CONNECTING : 'N/A'),
+      'Protocolo: ' + (window.WebSocket ? 'suportado' : 'não suportado'),
+    ];
+    setResult('websocket', results.join('\n'), 'ok');
+    log('[websocket] ' + results[0], 'ok');
+  },
+
+  'perf-timing': function() {
+    const samples = [];
+    for (let i = 0; i < 10; i++) {
+      const t = performance.now();
+      samples.push(t);
+    }
+    const diffs = samples.slice(1).map((v, i) => (v - samples[i]).toFixed(6));
+    const precision = Math.min(...diffs.map(parseFloat));
+    setResult('perf-timing', 'Precisão mínima: ' + precision.toFixed(6) + 'ms\nNavigation start: ' + (performance.timeOrigin || 'N/A') + '\nAmostras: ' + diffs.slice(0,5).join(', '), 'ok');
+    log('[perf-timing] precisão=' + precision.toFixed(6) + 'ms', 'ok');
+  },
+
+};
+
+// ── REPORT ────────────────────────────────────────────────────────────────
+function generateReport() {
+  const firmware = document.getElementById('rpt-firmware').value || '[não informado]';
+  const test     = document.getElementById('rpt-test').value || '[não informado]';
+  const behavior = document.getElementById('rpt-behavior').value || '[não informado]';
+  const repro    = document.getElementById('rpt-repro').value || '[não informado]';
+  const chrome   = document.getElementById('rpt-chrome').value || '[não informado]';
+  const logData  = document.getElementById('rpt-log').value || '[sem log]';
+  const ua       = navigator.userAgent;
+
+  const report = [
+    '=== RELATÓRIO DE BUG — PS4 BROWSER ===',
+    'Data: ' + new Date().toLocaleString('pt-BR'),
+    '',
+    '[ DISPOSITIVO ]',
+    'User-Agent: ' + ua,
+    'Firmware PS4: ' + firmware,
+    '',
+    '[ VULNERABILIDADE ]',
+    'Teste: ' + test,
+    '',
+    '[ COMPORTAMENTO OBSERVADO NO PS4 ]',
+    behavior,
+    '',
+    '[ REPRODUZIBILIDADE ]',
+    repro,
+    '',
+    '[ DIFERENÇA NO CHROME DESKTOP ]',
+    chrome,
+    '',
+    '[ LOG DE RESULTADOS ]',
+    logData,
+    '',
+    '[ PRÓXIMOS PASSOS ]',
+    '1. Gravar vídeo do comportamento no PS4',
+    '2. Capturar screenshots da diferença PS4 vs Chrome',
+    '3. Submeter via hackerone.com/playstation',
+  ].join('\n');
+
+  navigator.clipboard.writeText(report).then(() => {
+    log('Relatório copiado para a área de transferência!', 'ok');
+    alert('Relatório copiado! Cole no HackerOne.');
+  }).catch(() => {
+    prompt('Copie o relatório abaixo:', report);
+  });
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────
+collectSysInfo();
+</script>
+</body>
+</html>
