@@ -3,6 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <title>PS4 Binary Suite - Triage V2</title>
+    <style>
+        .gpu-layer {
+            width: 100px; height: 100px;
+            transform: translate3d(0, 0, 0); /* Força a criação de uma camada de hardware nativa */
+            will-change: transform;
+        }
+        @keyframes hw-accel {
+            0% { transform: translate3d(0, 0, 0); }
+            100% { transform: translate3d(1000px, 0, 0); }
+        }
+        .animate-gpu {
+            width: 50px; height: 50px; background: red;
+            animation: hw-accel 1s infinite linear;
+            will-change: transform;
+        }
+    </style>
 </head>
 <body>
 
@@ -108,8 +124,59 @@
     <button onclick="runXHRFormDataSocketAbort()">98. XHR FormData Multipart Socket Abort</button>
     <button onclick="runFontFaceOSParserTeardown()">99. FontFace OS Parser mmap Teardown</button>
     <button onclick="runWebRTCOsNetworkPollingDeath()">100. WebRTC getStats() OS Interface Polling Death</button>
+    <button onclick="runJITExecutableMemoryRace()">101. JSC JIT Executable mmap Teardown</button>
+    <button onclick="runHTTP2MultiplexingTeardown()">102. HTTP/2 Native TCP Multiplexing RST Race</button>
+    <button onclick="runWeakRefVnodeGarbageCollection()">103. WeakRef Vnode Asynchronous GC Race</button>
+    <button onclick="runSVGHardwareFilterRace()">104. SVG feConvolveMatrix Hardware Teardown</button>
+    <button onclick="runVsyncInterruptStress()">105. Hardware Vsync Interrupt Teardown</button>
+    <button onclick="runLLVMJITCompilationTeardown()">106. LLVM Background JIT Compilation Teardown</button>
+    <button onclick="runAppCacheSQLiteVFSDeath()">107. HTML5 AppCache Offline SQLite VFS Death</button>
+    <button onclick="runWebRTCECDSAKeygenRace()">108. WebRTC ECDSA /dev/random OS Race</button>
+    <button onclick="runFontMeasureTextOSRace()">109. Font FreeType OS Bounding Box Race</button>
+    <button onclick="runPeriodicWaveDSPTeardown()">110. Audio PeriodicWave Fourier Table DSP Death</button>
+    <button onclick="runSpeechSynthesisDaemonRace()">111. OS Speech Daemon IPC Cancel Race</button>
+    <button onclick="runGLSLCompilerDriverTeardown()">112. GPU Driver GLSL Compilation Teardown</button>
+    <button onclick="runSyncXHRThreadBlockDeath()">113. Sync XHR Worker Pthread Blocking Death</button>
+    <button onclick="runMutationObserverMicrotaskPanic()">114. C++ Microtask Queue Frame Teardown</button>
+    <button onclick="runWebVTTNativeParserTeardown()">115. WebVTT C++ String Parser Teardown</button>
+    <button onclick="runCompositorThreadTeardown()">116. CSS 3D Hardware Compositor Teardown</button>
+    <button onclick="runTextDecoderICUNativeRace()">117. TextDecoder ICU Library Buffer Detach</button>
+    <button onclick="runHistoryPushStateSerializationPanic()">118. History API State Serialization Panic</button>
+    <button onclick="runWebCryptoRSASignatureRace()">119. WebCrypto RSA-PSS Background Signature Race</button>
+    <button onclick="runGamepadHIDEventRoutingTeardown()">120. Gamepad HID Event Routing Teardown</button>
+    <button onclick="runWorkerFileReaderIOAbort()">121. Worker FileReader I/O Syscall Abort Race</button>
+    <button onclick="runAudioBufferNodeKthreadTeardown()">122. AudioBufferSource kthread Teardown</button>
+    <button onclick="runIDBCursorDeleteDatabaseRace()">123. SQLite POSIX Lock Cursor Delete Race</button>
+    <button onclick="runMediaVnodeDrawImageRace()">124. Media Vnode Canvas DMA Steal Race</button>
+    <button onclick="runMassiveBlobIPCRoutingDeath()">125. Massive Blob IPC VFS Routing Death</button>
+    <button onclick="runSCTPDataChannelIDCollision()">126. WebRTC SCTP DataChannel ID Collision Race</button>
+    <button onclick="runWebCryptoPBKDF2Teardown()">127. WebCrypto PBKDF2 Pthread Teardown</button>
+    <button onclick="runBlobNavigationVnodeRevocation()">128. Iframe Blob URL Navigation Vnode Revocation</button>
+    <button onclick="runCSSAnimationCompositorTeardown()">129. CSS Animation GPU Compositor Teardown</button>
+    <button onclick="runAudioMediaStreamDestinationRace()">130. Audio MediaStreamDestination Routing Race</button>
+    <button onclick="runXHRChunkedParserTCPDeath()">131. XHR Chunked Transfer HTTP Parser TCP Death</button>
+    <button onclick="runPath2DNativeGeometryTeardown()">132. Path2D Native Graphics Geometry Teardown</button>
+    <button onclick="runCustomElementTreeIteratorPanic()">133. Custom Element Synchronous Tree Iterator Panic</button>
+    <button onclick="runWAAPIVsyncTimelineTeardown()">134. Web Animations API (WAAPI) Vsync Teardown</button>
+    <button onclick="runFontFaceSetPromiseVnodeRace()">135. FontFaceSet Promise OS Font Parser Race</button>
+    <button onclick="runSendBeaconOSQueueTeardown()">136. Background sendBeacon OS Queue Teardown</button>
+    <button onclick="runBatteryManagerDaemonRace()">137. OS Power Management Daemon (Battery) Race</button>
+    <button onclick="runWebRTCUDPPortAllocatorPanic()">138. FreeBSD Ephemeral UDP Port Allocator Panic</button>
+    <button onclick="runReadableStreamReaderCancelRace()">139. ReadableStream C++ Chunk Reader Cancel Race</button>
+    <button onclick="runSpeechSynthesisQueueDaemonTeardown()">140. OS TTS Daemon Queue Flush Teardown</button>
+    <button onclick="runWebSocketControlFrameRace()">141. WebSocket Internal Control Frame Race</button>
+    <button onclick="runWebCryptoAESGCMTagTeardown()">142. WebCrypto AES-GCM Auth Tag Validation Race</button>
+    <button onclick="runXHRResponseBufferDetachRace()">143. XHR Response ArrayBuffer Detach Death</button>
+    <button onclick="runSVGFEDisplacementMapTeardown()">144. SVG feDisplacementMap GPU Raster Teardown</button>
+    <button onclick="runMediaSourceAppendRemoveRace()">145. MSE Append/Remove Buffer Native Race</button>
+    <button onclick="runImageDecodePthreadTeardown()">146. Image.decode() Background Pthread Teardown</button>
+    <button onclick="runDragAndDropOSDaemonRace()">147. OS Drag & Drop IPC Daemon Race</button>
+    <button onclick="runWebRTCHardwareTrackClonePanic()">148. WebRTC Hardware Track Clone Native Panic</button>
+    <button onclick="runBlobPromiseVFSTeardown()">149. Blob.arrayBuffer() Promise VFS Teardown</button>
+    <button onclick="runGamepadHIDPollingDisconnect()">150. Gamepad HID Agressive Polling Disconnect</button>
 
     <pre id="log"></pre>
+    <div id="gpu-container"></div>
 
     <script>
      function log(msg){
@@ -3031,6 +3098,1401 @@
             } catch(e) {
                 log("[Net/OS] Erro: " + e.message);
             }
+        }
+// --- 101. JSC JIT Executable mmap Teardown ---
+        // Alvo: O alocador de memória do JavaScriptCore.
+        // O JIT compila JS para código de máquina e pede ao kernel páginas com permissão 
+        // RWX (Read-Write-Execute) ou usa Aliased Memory no PS4.
+        function runJITExecutableMemoryRace() {
+            log("[JIT/VMM] Iniciando JIT Executable Memory Race...");
+            
+            let workerCode = `
+                onmessage = function() {
+                    // Força a engine JIT a compilar furiosamente milhares de funções únicas,
+                    // obrigando o kernel a mapear páginas de memória executável física.
+                    let funcs = [];
+                    for(let i=0; i<5000; i++) {
+                        funcs.push(new Function("return " + i + " + Math.random();"));
+                    }
+                    // Executa para forçar o Tier-up (Otimização JIT)
+                    funcs.forEach(f => f()); 
+                };
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            w.postMessage("start");
+            
+            // Corrida: A thread em background do compilador JIT está escrevendo código de máquina
+            // nas páginas físicas. Matamos o worker para forçar um munmap() nativo.
+            setTimeout(() => {
+                w.terminate();
+                log("[JIT/VMM] Worker destruído durante a alocação de páginas executáveis RWX.");
+            }, 10);
+        }
+
+        // --- 102. HTTP/2 Native TCP Multiplexing RST Race ---
+        // Alvo: Pilha HTTP/2 da biblioteca de rede nativa do console.
+        // O HTTP/2 envia múltiplos "streams" dentro de um único socket TCP.
+        function runHTTP2MultiplexingTeardown() {
+            log("[Net/HTTP2] Iniciando Multiplexing RST Race...");
+            
+            let abortController = new AbortController();
+            let promises = [];
+            
+            // Dispara 50 requisições simultâneas para um servidor HTTP/2 (como os do Google)
+            // Isso força o C++ a criar 50 frames no mesmo buffer do socket TCP do FreeBSD.
+            for(let i=0; i<50; i++) {
+                promises.push(fetch('https://www.google.com/favicon.ico?' + i, { signal: abortController.signal }).catch(()=>{}));
+            }
+            
+            // Corrida: Antes do handshake TLS e da multiplexação HTTP/2 terminarem de se organizar
+            // no nível do sistema operacional, enviamos um sinal de aborto global.
+            // O C++ tentará disparar 50 pacotes RST_STREAM num socket que também está sendo fechado.
+            setTimeout(() => {
+                abortController.abort();
+                log("[Net/HTTP2] 50 Streams HTTP/2 abortados simultaneamente no TCP nativo.");
+            }, 3);
+        }
+
+        // --- 103. WeakRef Vnode Asynchronous GC Race ---
+        // Alvo: O Coletor de Lixo em camadas profundas do VFS.
+        // Usar WeakRef permite que o GC do C++ destrua o objeto silenciosamente em background.
+        function runWeakRefVnodeGarbageCollection() {
+            log("[WebCore/GC] Iniciando WeakRef Vnode Asynchronous Race...");
+            if (typeof WeakRef === 'undefined') return log("[GC] WeakRef não suportado.");
+
+            let dummyData = new Uint8Array(1024 * 1024 * 5).fill(0x33);
+            let blob = new Blob([dummyData]);
+            let url = URL.createObjectURL(blob);
+            
+            // Escopo isolado para garantir que não há referências fortes
+            let weakAudio;
+            (() => {
+                let audio = new Audio(url);
+                weakAudio = new WeakRef(audio);
+                audio.play().catch(()=>{}); // Liga o descritor nativo ao VFS
+            })();
+            
+            // Revoga a URL mestre do VFS
+            URL.revokeObjectURL(url);
+            
+            // Cria forte pressão de memória para forçar o Garbage Collector do C++ a acordar
+            // e limpar o objeto Audio (que internamente tem um ponteiro para um vnode fechado).
+            let pressure = [];
+            for(let i=0; i<10000; i++) pressure.push(new ArrayBuffer(1024 * 500));
+            
+            log("[WebCore/GC] Pressão de memória aplicada sobre WeakRef ligado ao VFS.");
+        }
+
+        // --- 104. SVG feConvolveMatrix Hardware Teardown ---
+        // Alvo: Aceleração de hardware de filtros SVG.
+        // Filtros complexos como o feConvolveMatrix obrigam o WebKit a transferir a matriz 
+        // matemática para a GPU processar a imagem.
+        function runSVGHardwareFilterRace() {
+            log("[GPU/SVG] Iniciando SVG Hardware Filter Race...");
+            
+            let div = document.createElement('div');
+            div.innerHTML = `
+                <svg width="0" height="0">
+                    <filter id="exploitFilter">
+                        <feConvolveMatrix order="3" kernelMatrix="1 2 1 2 4 2 1 2 1" preserveAlpha="true" />
+                    </filter>
+                </svg>
+                <div id="target" style="width:500px; height:500px; background:red; filter:url(#exploitFilter); will-change: filter;"></div>
+            `;
+            document.body.appendChild(div);
+            
+            // Força um reflow síncrono para o C++ enviar a matriz para os drivers de hardware
+            div.getBoundingClientRect();
+            
+            // Corrida: A placa de vídeo está aplicando o kernel convolucional.
+            // Destruímos a árvore do DOM (invalidando os ponteiros do renderizador) 
+            // antes do frame ser desenhado na tela.
+            setTimeout(() => {
+                document.body.removeChild(div);
+                log("[GPU/SVG] Nó de filtro SVG destruído durante cálculo acelerado por hardware.");
+            }, 1);
+        }
+
+        // --- 105. Hardware Vsync Interrupt Teardown ---
+        // Alvo: O tratador de interrupções de Vsync do núcleo gráfico do sistema.
+        // requestAnimationFrame (rAF) é amarrado fisicamente ao sinal de sincronização vertical da TV/Monitor.
+        function runVsyncInterruptStress() {
+            log("[OS/Vsync] Iniciando Hardware Vsync Teardown...");
+            
+            let workerCode = `
+                onmessage = function() {
+                    // Prepara um bloqueio pesado, mas finito
+                    let start = Date.now();
+                    while(Date.now() - start < 50) { /* Spinlock síncrono */ }
+                };
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            // Registra um callback para o próximo pulso de hardware da tela
+            requestAnimationFrame(() => {
+                // No exato momento em que o kernel envia o sinal de Vsync para o WebKit,
+                // nós enviamos uma tarefa bloqueante para a thread paralela e a exterminamos.
+                w.postMessage("block");
+                w.terminate();
+                log("[OS/Vsync] Pulso de hardware interceptado e Worker destruído.");
+            });
+            
+            // Tenta forçar o navegador a recalcular o pipeline gráfico instantaneamente
+            document.body.style.transform = "translateZ(1px)";
+        }
+// --- 106. LLVM Background JIT Compilation Teardown ---
+        // Alvo: Pthreads do compilador LLVM (FTL JIT).
+        // Forçar uma função a ficar "quente" (hot code) para despoletar a otimização pesada 
+        // do LLVM no background e destruir o ambiente de execução antes de o binário ficar pronto.
+        function runLLVMJITCompilationTeardown() {
+            log("[JIT/LLVM] A iniciar LLVM Compilation Teardown...");
+            
+            let workerCode = `
+                onmessage = function() {
+                    // Função complexa com operações de ponto flutuante e branches
+                    function llvmTarget(a, b) {
+                        let c = Math.sin(a) * Math.cos(b);
+                        if (c > 0.5) return c * Math.random();
+                        return c / (Math.random() + 0.1);
+                    }
+                    
+                    // Executa milhares de vezes para forçar o Tier-up para LLVM
+                    let sum = 0;
+                    for(let i = 0; i < 50000; i++) {
+                        sum += llvmTarget(i, i+1);
+                    }
+                    postMessage(sum);
+                };
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            w.postMessage("start");
+            
+            // Corrida letal: A thread de compilação LLVM em C++ está a otimizar a função.
+            // Exterminamos o Worker, forçando a desalocação do ExecutablePool, 
+            // enquanto o LLVM tenta escrever o código de máquina gerado.
+            setTimeout(() => {
+                w.terminate();
+                log("[JIT/LLVM] Worker exterminado. LLVM pthread orfanada no FreeBSD.");
+            }, 5);
+        }
+
+        // --- 107. HTML5 AppCache Offline SQLite VFS Death ---
+        // Alvo: O VFS do FreeBSD via API obsoleta (mas presente) ApplicationCache.
+        // O AppCache usa agressivamente o SQLite no disco para gerir ficheiros offline.
+        function runAppCacheSQLiteVFSDeath() {
+            log("[VFS/SQLite] A iniciar AppCache VFS Death...");
+            
+            // Criar um iframe que tenta registar um manifesto offline inexistente,
+            // forçando o C++ a abrir o banco de dados do AppCache no disco (SQLite).
+            let iframe = document.createElement('iframe');
+            
+            // Um HTML falso que aciona o atributo manifest
+            let html = `<html manifest="fake.appcache"><body>AppCache Test</body></html>`;
+            let blob = new Blob([html], {type: 'text/html'});
+            iframe.src = URL.createObjectURL(blob);
+            
+            document.body.appendChild(iframe);
+            
+            // O WebKit está a inicializar as estruturas do ApplicationCacheGroup em C++
+            // e a abrir os ficheiros (vnodes) no FreeBSD. Removemos o iframe abruptamente.
+            setTimeout(() => {
+                document.body.removeChild(iframe);
+                log("[VFS/SQLite] Iframe destruído durante a inicialização do ApplicationCache no disco.");
+            }, 3);
+        }
+
+        // --- 108. WebRTC ECDSA /dev/random OS Race ---
+        // Alvo: Gerador de números aleatórios do SO (entropia) e Crypto Pthreads.
+        // Gerar uma chave ECDSA P-521 é criptograficamente intenso e exige chamadas nativas pesadas.
+        function runWebRTCECDSAKeygenRace() {
+            log("[Crypto/OS] A iniciar ECDSA Entropia Race...");
+            if (!window.RTCPeerConnection || !RTCPeerConnection.generateCertificate) return log("Não suportado.");
+
+            // Pede ao BoringSSL/OpenSSL subjacente para gerar uma chave assimétrica brutalmente pesada
+            let promise = RTCPeerConnection.generateCertificate({
+                name: "ECDSA",
+                namedCurve: "P-521"
+            });
+            
+            promise.then(() => log("[Crypto/OS] Chave gerada (Anomalia: promessa deveria estar morta)."))
+                   .catch(() => log("[Crypto/OS] Promessa rejeitada."));
+                   
+            // Removemos a promessa do alcance do Garbage Collector JS.
+            // O C++ tentará concluir a geração e alocar a chave em estruturas que 
+            // já não têm representação na máquina virtual.
+            promise = null;
+            
+            log("[Crypto/OS] Pedido de chave ECDSA delegado ao SO. Referência JS aniquilada.");
+        }
+
+        // --- 109. Font FreeType OS Bounding Box Race ---
+        // Alvo: Motor de renderização de tipos de letra nativo (FreeType) e cálculo de limites.
+        function runFontMeasureTextOSRace() {
+            log("[OS/Graphics] A iniciar Font FreeType Measure Race...");
+            
+            let canvas = document.createElement('canvas');
+            let ctx = canvas.getContext('2d');
+            
+            let fakeFontBuffer = new Uint8Array(1024 * 1024 * 5).fill(0x22); // 5MB lixo
+            let blob = new Blob([fakeFontBuffer], {type: "font/ttf"});
+            let url = URL.createObjectURL(blob);
+            
+            let font = new FontFace("CrashFont", "url(" + url + ")");
+            font.load().catch(()=>{});
+            document.fonts.add(font);
+            
+            ctx.font = "50px CrashFont";
+            
+            // Obriga o motor nativo do FreeBSD/C++ a descer ao ficheiro da fonte para 
+            // calcular a geometria exata da string.
+            try { ctx.measureText("AAAAAAAAAAAAAAAAAAAA"); } catch(e){}
+            
+            // Enquanto o C++ processa a geometria via biblioteca nativa, 
+            // cortamos o acesso ao descritor do ficheiro virtual.
+            URL.revokeObjectURL(url);
+            document.fonts.delete(font);
+            
+            log("[OS/Graphics] Vnode de tipo de letra revogado durante o cálculo de métricas FreeType.");
+        }
+
+        // --- 110. Audio PeriodicWave Fourier Table DSP Death ---
+        // Alvo: O motor C++ que gera tabelas Wave (Cálculos de Fourier) para o DSP.
+        // O PeriodicWave recebe arrays de cosseno/seno e o C++ constrói a forma de onda nativa.
+        function runPeriodicWaveDSPTeardown() {
+            log("[CPU/DSP] A iniciar PeriodicWave Fourier Teardown...");
+            try {
+                let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Arrays Float32 massivos para obrigar o C++ a gastar muito tempo a alocar 
+                // e a calcular a transformada de Fourier inversa.
+                let real = new Float32Array(8192).fill(0.5);
+                let imag = new Float32Array(8192).fill(0.5);
+                
+                // O WebKit delega a criação para rotinas nativas de matemática
+                let wave = audioCtx.createPeriodicWave(real, imag);
+                
+                let osc = audioCtx.createOscillator();
+                osc.setPeriodicWave(wave);
+                osc.start();
+                
+                // Destrói brutalmente o contexto e a forma de onda enquanto os núcleos da CPU
+                // processam a interpolação.
+                audioCtx.close();
+                wave = null;
+                osc = null;
+                
+                log("[CPU/DSP] Estrutura Fourier destruída durante o processamento de matemática nativa.");
+            } catch(e) {
+                log("[CPU/DSP] Erro: " + e.message);
+            }
+        }
+ // --- 111. OS Speech Daemon IPC Cancel Race ---
+        // Alvo: O serviço nativo de Text-to-Speech (TTS) do FreeBSD/SO.
+        // O WebKit envia a string via IPC para um daemon do sistema operativo falar.
+        function runSpeechSynthesisDaemonRace() {
+            log("[OS/Daemon] A iniciar Speech Daemon Cancel Race...");
+            if (!window.speechSynthesis) return log("[OS] SpeechSynthesis não suportado.");
+
+            // String massiva para obrigar o daemon do SO a alocar buffers grandes de áudio
+            let heavyText = "Exploit ".repeat(50000);
+            let utterance = new SpeechSynthesisUtterance(heavyText);
+            
+            // Dispara o envio IPC para o processo de voz do sistema
+            speechSynthesis.speak(utterance);
+            
+            // Corrida: O daemon nativo está a fazer o parsing do texto e a alocar o buffer ALSA/OSS.
+            // Mandamos um sinal de cancelamento imediato e removemos a referência da memória JS.
+            setTimeout(() => {
+                speechSynthesis.cancel();
+                utterance = null;
+                log("[OS/Daemon] Sinal de cancelamento enviado ao daemon TTS durante a alocação.");
+            }, 2);
+        }
+
+        // --- 112. GPU Driver GLSL Compilation Teardown ---
+        // Alvo: O compilador de shaders embutido no driver da placa gráfica (AMD no caso do PS4).
+        function runGLSLCompilerDriverTeardown() {
+            log("[GPU/Driver] A iniciar GLSL Compilation Teardown...");
+            let canvas = document.createElement('canvas');
+            let gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            if (!gl) return log("[GPU] WebGL não suportado.");
+
+            // Criamos um fragment shader ridiculamente complexo (unrolls e loops matemáticos)
+            // para atrasar o compilador GLSL do driver nativo.
+            let heavyShaderCode = `
+                precision mediump float;
+                void main() {
+                    float val = 0.0;
+                    for(int i=0; i<9999; i++) {
+                        val += sin(float(i)) * cos(float(i));
+                    }
+                    gl_FragColor = vec4(val, val, val, 1.0);
+                }
+            `;
+            
+            let shader = gl.createShader(gl.FRAGMENT_SHADER);
+            gl.shaderSource(shader, heavyShaderCode);
+            
+            // O WebKit delega a compilação ao driver de hardware
+            gl.compileShader(shader);
+            
+            // Destruímos o objeto C++ de controlo do shader enquanto a thread do driver 
+            // ainda está a analisar a árvore de sintaxe do código GLSL.
+            gl.deleteShader(shader);
+            
+            log("[GPU/Driver] Shader C++ apagado durante a compilação do driver gráfico nativo.");
+        }
+
+        // --- 113. Sync XHR Worker Pthread Blocking Death ---
+        // Alvo: Bloqueio síncrono de Pthreads e chamadas de rede nativas (FreeBSD Sockets).
+        function runSyncXHRThreadBlockDeath() {
+            log("[Net/Pthread] A iniciar Sync XHR Pthread Death...");
+            
+            let workerCode = `
+                onmessage = function() {
+                    let xhr = new XMLHttpRequest();
+                    // O 3º parâmetro 'false' obriga a chamada a ser SÍNCRONA.
+                    // A pthread do worker fica bloqueada no kernel até o socket TCP retornar.
+                    xhr.open('GET', 'http://10.255.255.1:81', false); 
+                    try { xhr.send(); } catch(e) {}
+                };
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            w.postMessage("start");
+            
+            // Corrida: A thread nativa do C++ está presa numa syscall de rede bloqueante.
+            // Disparamos o terminate(), obrigando o WebKit a tentar matar uma thread 
+            // que não pode responder a sinais até ao timeout do FreeBSD.
+            setTimeout(() => {
+                w.terminate();
+                log("[Net/Pthread] Worker aniquilado enquanto estava bloqueado numa syscall TCP síncrona.");
+            }, 10);
+        }
+
+        // --- 114. C++ Microtask Queue Frame Teardown ---
+        // Alvo: O escalonador de Microtarefas do WebCore (C++) e gestão de Iframes.
+        function runMutationObserverMicrotaskPanic() {
+            log("[WebCore/C++] A iniciar Microtask Queue Teardown...");
+            
+            let iframe = document.createElement('iframe');
+            document.body.appendChild(iframe);
+            
+            let doc = iframe.contentDocument;
+            let target = doc.createElement('div');
+            doc.body.appendChild(target);
+            
+            // Regista um observer que será empurrado para a fila de microtarefas do C++
+            let observer = new iframe.contentWindow.MutationObserver(() => {
+                // Callback fantasma
+            });
+            observer.observe(target, { attributes: true });
+            
+            // Altera milhares de atributos. O C++ não processa imediatamente; 
+            // ele enfileira milhares de microtarefas na memória.
+            for(let i=0; i<5000; i++) {
+                target.setAttribute('data-exploit', i);
+            }
+            
+            // Removemos o Iframe, o que destrói o contexto de execução (Realm).
+            // O escalonador de microtarefas em C++ entra em pânico se tentar despachar 
+            // as tarefas pendentes para um contexto que já foi libertado.
+            document.body.removeChild(iframe);
+            observer.disconnect();
+            
+            log("[WebCore/C++] Contexto destruído com milhares de microtarefas C++ pendentes.");
+        }
+
+        // --- 115. WebVTT C++ String Parser Teardown ---
+        // Alvo: O Parser de legendas VTT embutido no pipeline de vídeo do C++.
+        function runWebVTTNativeParserTeardown() {
+            log("[Media/Parser] A iniciar WebVTT Native Parser Teardown...");
+            
+            let video = document.createElement('video');
+            // Cria uma faixa de legendas na memória
+            let track = video.addTextTrack("subtitles", "ExploitTrack", "en");
+            track.mode = "showing";
+            
+            // Adiciona um volume massivo de blocos textuais (Cues) para o parser processar
+            for(let i=0; i<10000; i++) {
+                let cue = new VTTCue(i, i+1, "Exploit Memory Block " + i);
+                track.addCue(cue);
+            }
+            
+            // O C++ tenta renderizar e organizar a árvore de nós destas legendas 
+            // por trás dos panos. Removemos a faixa de forma abrupta.
+            setTimeout(() => {
+                // Forçamos a limpeza das estruturas de VTT no motor de media
+                track.mode = "disabled";
+                
+                // Em motores mais antigos de WebKit, isto não limpa os ponteiros internos de rendering
+                if (video.textTracks && video.textTracks.length > 0) {
+                    // Remover do elemento se possível (depende da implementação)
+                }
+                video = null;
+                track = null;
+                
+                log("[Media/Parser] Faixa de legendas WebVTT destruída durante a tokenização.");
+            }, 5);
+        }
+// --- 116. CSS 3D Hardware Compositor Teardown ---
+        // Alvo: A thread do Compositor Gráfico (C++) interagindo com a VRAM.
+        // O WebKit cria threads dedicadas para gerenciar camadas CSS 3D diretamente na GPU.
+        function runCompositorThreadTeardown() {
+            log("[GPU/Compositor] A iniciar Compositor Thread Teardown...");
+            
+            let container = document.getElementById('render-target');
+            
+            // Força a alocação de milhares de texturas nativas na VRAM
+            for(let i=0; i<5000; i++) {
+                let div = document.createElement('div');
+                div.className = 'gpu-layer';
+                container.appendChild(div);
+            }
+            
+            // Obriga o motor a calcular o layout e enviar as ordens (Display Lists) para o Compositor C++
+            container.getBoundingClientRect();
+            
+            // Corrida letal: Destruímos os elementos do DOM exatamente no milissegundo em que
+            // a thread do Compositor está a comunicar com os drivers da AMD para alocar a memória de vídeo.
+            setTimeout(() => {
+                container.innerHTML = '';
+                log("[GPU/Compositor] Camadas 3D nativas aniquiladas durante o commit de hardware.");
+            }, 5);
+        }
+
+        // --- 117. TextDecoder ICU Library Buffer Detach ---
+        // Alvo: A biblioteca nativa ICU (International Components for Unicode) escrita em C/C++.
+        // TextDecoder usa chamadas diretas a esta biblioteca para converter bytes em strings UTF-8.
+        function runTextDecoderICUNativeRace() {
+            log("[WebCore/ICU] A iniciar TextDecoder ICU Buffer Detach...");
+            
+            let mc = new MessageChannel();
+            // Payload de 50MB para garantir que a conversão na biblioteca C leva tempo
+            let buffer = new ArrayBuffer(1024 * 1024 * 50); 
+            let view = new Uint8Array(buffer);
+            view.fill(0x41); // Preenche com 'A'
+            
+            let decoder = new TextDecoder("utf-8");
+            
+            // Dispara a decodificação de forma síncrona
+            // Em motores vulneráveis, a chamada desce para o C++ e itera sobre a memória física.
+            try {
+                // Ao mesmo tempo que a biblioteca tenta ler, passamos o ownership da memória via IPC
+                // Se a desanexação (detach) do buffer ocorrer mais rápido que a leitura, o parser nativo crasha.
+                mc.port1.postMessage(buffer, [buffer]);
+                let str = decoder.decode(view);
+                log("[WebCore/ICU] Decodificação concluída sem Segmentation Fault.");
+            } catch(e) {
+                log("[WebCore/ICU] Erro ou desanexação bloqueada: " + e.message);
+            }
+        }
+
+        // --- 118. History API State Serialization Panic ---
+        // Alvo: O motor de serialização C++ e o SQLite de persistência de sessão.
+        // O pushState guarda objetos complexos na memória do navegador e no disco do FreeBSD.
+        function runHistoryPushStateSerializationPanic() {
+            log("[WebCore/History] A iniciar PushState Serialization Panic...");
+            
+            // Criamos um objeto colossal e profundamente aninhado
+            let stateObj = { data: new ArrayBuffer(1024 * 1024 * 10) }; // 10MB
+            for(let i=0; i<100; i++) stateObj["level_"+i] = { ref: stateObj.data };
+            
+            let iframe = document.createElement('iframe');
+            document.body.appendChild(iframe);
+            
+            // Forçamos o Iframe a injetar o estado massivo no controlador de histórico nativo
+            iframe.contentWindow.history.pushState(stateObj, "Exploit", "?payload");
+            
+            // Corrida: O C++ está ativamente a tentar clonar o objeto e gravar os ponteiros
+            // de estado de sessão. Destruímos o contexto (Iframe) no meio desta operação.
+            setTimeout(() => {
+                document.body.removeChild(iframe);
+                log("[WebCore/History] Iframe removido durante serialização profunda do histórico C++.");
+            }, 2);
+        }
+
+        // --- 119. WebCrypto RSA-PSS Background Signature Race ---
+        // Alvo: Pthreads de criptografia (BoringSSL/OpenSSL) e buffer neutering.
+        function runWebCryptoRSASignatureRace() {
+            log("[Crypto/Thread] A iniciar RSA-PSS Signature Race...");
+            if (!window.crypto || !window.crypto.subtle) return log("[Crypto] WebCrypto não suportado.");
+
+            // Gera um par de chaves rapidamente
+            crypto.subtle.generateKey({ name: "RSA-PSS", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, false, ["sign", "verify"])
+            .then(keyPair => {
+                let mc = new MessageChannel();
+                let buffer = new ArrayBuffer(1024 * 1024 * 20); // 20MB payload para assinar
+                
+                // Dispara a assinatura na pthread nativa
+                crypto.subtle.sign({ name: "RSA-PSS", saltLength: 32 }, keyPair.privateKey, buffer)
+                .catch(() => {});
+                
+                // Exatamente após o C++ enviar a ordem de assinatura para o SO,
+                // arrancamos a memória subjacente via IPC (ownership transfer).
+                mc.port1.postMessage(buffer, [buffer]);
+                mc.port1.close();
+                
+                log("[Crypto/Thread] ArrayBuffer transferido enquanto a pthread de Crypto calculava a assinatura RSA.");
+            });
+        }
+
+        // --- 120. Gamepad HID Event Routing Teardown ---
+        // Alvo: O subsistema de eventos de hardware do FreeBSD entregando inputs ao C++.
+        function runGamepadHIDEventRoutingTeardown() {
+            log("[Hardware/HID] A iniciar Gamepad Event Routing Teardown...");
+            
+            let iframe = document.createElement('iframe');
+            document.body.appendChild(iframe);
+            
+            // Regista um ouvinte para botões físicos do hardware
+            // Isto obriga o kernel a criar uma rota direta de interrupção para a janela atual.
+            iframe.contentWindow.addEventListener('gamepadconnected', (e) => {});
+            iframe.contentWindow.addEventListener('gamepaddisconnected', (e) => {});
+            
+            // Inicia um polling agressivo que pede o estado físico do hardware continuamente
+            let interval = iframe.contentWindow.setInterval(() => {
+                if (iframe.contentWindow.navigator.getGamepads) iframe.contentWindow.navigator.getGamepads();
+            }, 1); // A cada 1 milissegundo
+            
+            // Corrida letal: Destruímos a janela receptora no meio de uma tempestade
+            // de polling de hardware. O C++ tem de desvincular o descritor HID do FreeBSD instantaneamente.
+            setTimeout(() => {
+                iframe.contentWindow.clearInterval(interval);
+                document.body.removeChild(iframe);
+                log("[Hardware/HID] Contexto do Iframe destruído durante polling HID agressivo.");
+            }, 20);
+        }
+// --- 121. Worker FileReader I/O Syscall Abort Race ---
+        // Alvo: Interrupção de chamadas de sistema (syscalls) bloqueantes no kernel.
+        // Um Worker inicia uma leitura pesada de ficheiro, travando a pthread numa syscall de read().
+        // Matamos o worker instantaneamente para corromper a pilha de sinais do TCB.
+        function runWorkerFileReaderIOAbort() {
+            log("[FreeBSD/TCB] A iniciar FileReader I/O Abort Race...");
+            
+            // Blob massivo para garantir que a leitura desce para o VFS e leva tempo
+            let blob = new Blob([new Uint8Array(1024 * 1024 * 60).fill(0x55)]); // 60MB
+            
+            let workerCode = `
+                onmessage = function(e) {
+                    let reader = new FileReaderSync();
+                    // Bloqueia a pthread no kernel a ler o ficheiro
+                    reader.readAsArrayBuffer(e.data); 
+                };
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            // Envia o ficheiro para o worker ler
+            w.postMessage(blob);
+            
+            // Corrida letal: A thread está em 'sleep' no kernel a aguardar os dados do disco/RAM.
+            // O terminate() envia um sinal de morte (SIGKILL interno) para a pthread.
+            setTimeout(() => {
+                w.terminate();
+                log("[FreeBSD/TCB] Worker exterminado durante syscall bloqueante de leitura.");
+            }, 5);
+        }
+
+        // --- 122. AudioBufferSource kthread Teardown ---
+        // Alvo: O escalonador de threads de tempo real do SO (kthreads).
+        // Mandamos o C++ enviar um buffer de áudio para o hardware e cancelamos no mesmo milissegundo.
+        function runAudioBufferNodeKthreadTeardown() {
+            log("[FreeBSD/kthread] A iniciar AudioBufferSource Teardown...");
+            try {
+                let ctx = new (window.AudioContext || window.webkitAudioContext)();
+                let buffer = ctx.createBuffer(2, ctx.sampleRate * 2, ctx.sampleRate); // 2s
+                
+                let source = ctx.createBufferSource();
+                source.buffer = buffer;
+                source.connect(ctx.destination);
+                
+                // Agenda o início e a paragem da reprodução na mesma janela de tempo
+                source.start(0);
+                source.stop(0.001); 
+                
+                // Suspendemos o contexto nativo enquanto a kthread tenta processar o agendamento
+                setTimeout(() => {
+                    ctx.suspend();
+                    source.disconnect();
+                    source.buffer = null;
+                    log("[FreeBSD/kthread] Sinal de hardware interrompido durante despacho de áudio.");
+                }, 1);
+            } catch(e) {
+                log("[FreeBSD/kthread] Erro: " + e.message);
+            }
+        }
+
+        // --- 123. SQLite POSIX Lock Cursor Delete Race ---
+        // Alvo: O gestor de bloqueios (locks) do sistema de ficheiros nativo.
+        // Iteramos sobre a base de dados via cursor (mantendo um lock de leitura POSIX ativo)
+        // e mandamos o WebKit apagar fisicamente os ficheiros da base de dados ao mesmo tempo.
+        function runIDBCursorDeleteDatabaseRace() {
+            log("[VFS/SQLite] A iniciar POSIX Lock Delete Race...");
+            let dbName = "ExploitDB_LockRace_" + Date.now();
+            let req = indexedDB.open(dbName, 1);
+            
+            req.onupgradeneeded = (e) => {
+                let db = e.target.result;
+                db.createObjectStore("store");
+            };
+            
+            req.onsuccess = (e) => {
+                let db = e.target.result;
+                let tx = db.transaction("store", "readwrite");
+                let store = tx.objectStore("store");
+                
+                // Enche o ficheiro para forçar paginação
+                for(let i=0; i<50; i++) store.put(new Blob([new Uint8Array(1024 * 500)]), i);
+                
+                let cursorReq = store.openCursor();
+                cursorReq.onsuccess = function(e) {
+                    let cursor = e.target.result;
+                    if (cursor) {
+                        // O C++ tem um ponteiro VFS aberto a ler a linha atual.
+                        // Mandamos o motor nativo apagar o ficheiro do disco.
+                        indexedDB.deleteDatabase(dbName);
+                        
+                        // Abortamos a transação para confundir o mecanismo de journal do SQLite
+                        tx.abort();
+                        db.close();
+                        log("[VFS/SQLite] Pedido de remoção de DB emitido com cursor e lock POSIX ativos.");
+                    }
+                };
+            };
+        }
+
+        // --- 124. Media Vnode Canvas DMA Steal Race ---
+        // Alvo: Decodificador nativo de mídia e acesso direto à memória gráfica (DMA).
+        function runMediaVnodeDrawImageRace() {
+            log("[GPU/VFS] A iniciar Media Vnode DMA Steal...");
+            
+            let canvas = document.createElement('canvas');
+            let ctx = canvas.getContext('2d');
+            
+            let video = document.createElement('video');
+            let blob = new Blob([new Uint8Array(1024 * 1024 * 5)], {type: 'video/mp4'});
+            let url = URL.createObjectURL(blob);
+            video.src = url;
+            
+            video.onplay = () => {
+                // O WebKit instrui o driver da GPU a puxar o frame do descritor de ficheiro
+                try { ctx.drawImage(video, 0, 0); } catch(e){}
+                
+                // Corrida: Revogamos o descritor nativo do ficheiro no FreeBSD (fdrop)
+                // enquanto o controlador DMA da placa gráfica está a tentar ler o frame.
+                URL.revokeObjectURL(url);
+                video.removeAttribute('src');
+                video = null;
+                
+                log("[GPU/VFS] Vnode de vídeo revogado durante transferência DMA para Canvas.");
+            };
+            
+            video.play().catch(()=>{});
+        }
+
+        // --- 125. Massive Blob IPC VFS Routing Death ---
+        // Alvo: Tabela de File Descriptors inter-processos.
+        // O envio de um Blob gigante via MessageChannel não passa dados, passa uma referência VFS.
+        function runMassiveBlobIPCRoutingDeath() {
+            log("[FreeBSD/IPC] A iniciar Massive Blob IPC Routing Death...");
+            
+            let mc = new MessageChannel();
+            let massiveBlob = new Blob([new Uint8Array(1024 * 1024 * 80).fill(0x42)]); // 80MB
+            
+            let workerCode = `onmessage = function(e) { /* Ficheiro recebido */ };`;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            // O kernel FreeBSD é notificado para mapear o descritor deste ficheiro para a thread do Worker
+            w.postMessage(massiveBlob, [mc.port2]);
+            
+            // Fechamos a porta de origem e exterminamos o destino instantaneamente,
+            // criando uma referência órfã na tabela de descritores de ficheiro em trânsito (flight FDs).
+            mc.port1.close();
+            w.terminate();
+            massiveBlob = null;
+            
+            log("[FreeBSD/IPC] Roteamento de Blob massivo abortado. VFS FD órfão gerado.");
+        }
+ // --- 126. WebRTC SCTP DataChannel ID Collision Race ---
+        // Alvo: O multiplexador SCTP no kernel do FreeBSD.
+        // Tenta forçar a criação de múltiplos canais com o MESMO ID de hardware na mesma associação SCTP.
+        function runSCTPDataChannelIDCollision() {
+            log("[Net/SCTP] A iniciar SCTP ID Collision Race...");
+            try {
+                let pc = new RTCPeerConnection({iceServers: []});
+                
+                // Dispara a criação concorrente de canais forçando o ID 99 manualmente
+                let dc1 = pc.createDataChannel("collision_1", {negotiated: true, id: 99, protocol: "tcp"});
+                let dc2 = pc.createDataChannel("collision_2", {negotiated: true, id: 99, protocol: "udp"});
+                
+                pc.createOffer().then(offer => {
+                    pc.setLocalDescription(offer);
+                    
+                    // O C++ tenta registar os streams no socket SCTP do FreeBSD.
+                    // Se o kernel não lidar bem com a colisão de IDs na alocação de mbufs,
+                    // fechar o PeerConnection abruptamente vai corromper a associação nativa.
+                    setTimeout(() => {
+                        dc1.close();
+                        dc2.close();
+                        pc.close();
+                        log("[Net/SCTP] Colisão de ID forçada e socket SCTP nativo abortado.");
+                    }, 2);
+                });
+            } catch(e) {
+                log("[Net/SCTP] Erro (Colisão mitigada no JS): " + e.message);
+            }
+        }
+
+        // --- 127. WebCrypto PBKDF2 Pthread Teardown ---
+        // Alvo: Pthreads de criptografia (BoringSSL/OpenSSL) em background.
+        // A derivação de chaves via PBKDF2 é projetada para ser intencionalmente lenta e devorar CPU.
+        function runWebCryptoPBKDF2Teardown() {
+            log("[Crypto/Thread] A iniciar PBKDF2 Pthread Teardown...");
+            if (!window.crypto || !window.crypto.subtle) return log("[Crypto] Não suportado.");
+
+            let password = new TextEncoder().encode("exploit_password_123");
+            
+            crypto.subtle.importKey("raw", password, {name: "PBKDF2"}, false, ["deriveBits"]).then(baseKey => {
+                // Pede ao C++ para executar 5 milhões de iterações de hash (trava a pthread nativa)
+                let promise = crypto.subtle.deriveBits(
+                    { name: "PBKDF2", salt: new Uint8Array(16), iterations: 5000000, hash: "SHA-256" },
+                    baseKey, 256
+                ).catch(()=>{});
+                
+                // A pthread nativa entrou num loop bloqueante intenso.
+                // Ao anularmos a promessa e forçarmos um Garbage Collection implícito via
+                // navegação ou destruição do Worker (neste caso simulado por remoção de referência),
+                // o C++ tenta matar a thread que está no meio das iterações de hardware.
+                promise = null;
+                baseKey = null;
+                
+                log("[Crypto/Thread] Tarefa massiva delegada ao SO. Referências C++ orfanadas.");
+            });
+        }
+
+        // --- 128. Iframe Blob URL Navigation Vnode Revocation ---
+        // Alvo: Subsistema de navegação de rede C++ cruzado com o Virtual File System (VFS).
+        // Navegar para um Blob obriga a thread de rede do WebKit a ler um vnode do disco/memória.
+        function runBlobNavigationVnodeRevocation() {
+            log("[Net/VFS] A iniciar Blob Navigation Revocation...");
+            
+            let data = new Uint8Array(1024 * 1024 * 20).fill(0x11); // 20MB payload
+            let blob = new Blob([data], {type: "text/html"});
+            let url = URL.createObjectURL(blob);
+            
+            let iframe = document.createElement('iframe');
+            document.body.appendChild(iframe);
+            
+            // Dispara o pedido de navegação no motor C++
+            iframe.src = url;
+            
+            // Corrida letal: O motor de rede está a fazer a ponte entre o Iframe e o vnode do ficheiro.
+            // Revogamos o URL (fdrop no FreeBSD) antes da navegação terminar de ler o buffer.
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+                document.body.removeChild(iframe);
+                log("[Net/VFS] Iframe de navegação destruído e Vnode revogado concorrentemente.");
+            }, 5);
+        }
+
+        // --- 129. CSS Animation GPU Compositor Teardown ---
+        // Alvo: O escalonador da GPU e a thread do Compositor Gráfico.
+        // Animações CSS com `transform` rodam inteiramente na GPU, fora da thread principal do JS.
+        function runCSSAnimationCompositorTeardown() {
+            log("[GPU/Compositor] A iniciar CSS Animation Teardown...");
+            
+            let container = document.getElementById('gpu-container');
+            let div = document.createElement('div');
+            div.className = 'animate-gpu';
+            container.appendChild(div);
+            
+            // Força o C++ a passar o elemento para a Thread do Compositor e enviar o comando de 
+            // animação para o driver da placa gráfica (AMD).
+            div.getBoundingClientRect();
+            
+            // Corrida: A placa de vídeo está ativamente a alterar as matrizes de memória a cada frame (60fps).
+            // Destruímos a árvore renderizada no C++ de forma violenta.
+            setTimeout(() => {
+                container.innerHTML = '';
+                log("[GPU/Compositor] Nó de animação GPU destruído durante processamento de hardware.");
+            }, 10); // Destrói pouco depois de a animação iniciar na GPU
+        }
+
+        // --- 130. Audio MediaStreamDestination Routing Race ---
+        // Alvo: Motor de roteamento C++ entre o DSP de Áudio e o pipeline WebRTC/MediaStream.
+        // Tenta enviar a saída de áudio nativa para um stream virtual e destruir a ponte no processo.
+        function runAudioMediaStreamDestinationRace() {
+            log("[Media/Routing] A iniciar MediaStreamDestination Race...");
+            try {
+                let ctx = new (window.AudioContext || window.webkitAudioContext)();
+                let osc = ctx.createOscillator();
+                
+                // Cria um nó que atua como ponte entre o hardware de áudio e a memória do WebRTC
+                let dest = ctx.createMediaStreamDestination();
+                
+                osc.connect(dest);
+                osc.start();
+                
+                // A stream nativa começou a receber pacotes de som do kernel
+                let stream = dest.stream;
+                
+                // Corrida: Desligamos o hardware de áudio enquanto os pacotes estão em trânsito
+                // para a estrutura da MediaStream.
+                setTimeout(() => {
+                    ctx.suspend();
+                    osc.disconnect();
+                    
+                    // Inválida os tracks do MediaStream no nível C++
+                    stream.getTracks().forEach(t => t.stop());
+                    
+                    ctx.close();
+                    log("[Media/Routing] Hardware suspenso durante roteamento nativo de MediaStream.");
+                }, 5);
+            } catch(e) {
+                log("[Media/Routing] Erro: " + e.message);
+            }
+        }
+// --- 131. XHR Chunked Transfer HTTP Parser TCP Death ---
+        // Alvo: O Parser HTTP em C++ do WebCore e o buffer TCP do FreeBSD.
+        // O parser tenta ler pedaços de rede à medida que chegam (Transfer-Encoding: chunked).
+        function runXHRChunkedParserTCPDeath() {
+            log("[Net/Parser] A iniciar HTTP Chunked Parser Death...");
+            
+            let xhr = new XMLHttpRequest();
+            // Acessa uma URL de descarte. Idealmente, num ambiente real, um servidor local
+            // enviaria o tamanho do chunk (ex: "FF\r\n") e pausaria o envio do resto.
+            xhr.open('GET', 'http://127.0.0.1:9999/chunked-mock', true);
+            
+            xhr.onprogress = function(e) {
+                // A rede nativa começou a entregar pacotes parciais ao parser C++.
+                // Abortamos brutalmente a conexão, forçando o destrutor do Socket TCP
+                // a lidar com a máquina de estados do HTTP parser que está a meio de um chunk.
+                xhr.abort();
+                log("[Net/Parser] Conexão TCP abortada durante análise de blocos HTTP.");
+            };
+            
+            try { xhr.send(); } catch(e) {}
+            
+            // Garantia de interrupção cega caso o onprogress não dispare
+            setTimeout(() => { xhr.abort(); }, 15);
+        }
+
+        // --- 132. Path2D Native Graphics Geometry Teardown ---
+        // Alvo: A biblioteca gráfica nativa subjacente (Cairo, Skia ou CoreGraphics).
+        // Path2D não é apenas JS; ele aloca estruturas de vetores diretamente na biblioteca C++.
+        function runPath2DNativeGeometryTeardown() {
+            log("[Graphics/Native] A iniciar Path2D Geometry Teardown...");
+            
+            let canvas = document.createElement('canvas');
+            let ctx = canvas.getContext('2d');
+            
+            // Cria um caminho geométrico absurdamente complexo para atrasar o rasterizador C++
+            let path = new Path2D();
+            for(let i=0; i<10000; i++) {
+                path.arc(Math.random()*100, Math.random()*100, 50, 0, Math.PI*2);
+            }
+            
+            // Pede à biblioteca nativa para preencher a geometria (cálculos pesados de CPU)
+            ctx.fill(path);
+            
+            // Ao reatribuir a variável e forçar a limpeza do Canvas, tentamos orfanar 
+            // a estrutura C++ de geometria enquanto as rotinas de desenho nativas estão ativas.
+            path = null;
+            canvas.width = 1; 
+            
+            log("[Graphics/Native] Objeto de geometria vetorial descartado durante rasterização.");
+        }
+
+        // --- 133. Custom Element Synchronous Tree Iterator Panic ---
+        // Alvo: Iteradores C++ de construção do DOM (DOM Tree Walkers).
+        // Callbacks de Custom Elements ocorrem sincronicamente durante o parsing do C++.
+        function runCustomElementTreeIteratorPanic() {
+            log("[WebCore/DOM] A iniciar Custom Element Iterator Panic...");
+            
+            class ExploitElement extends HTMLElement {
+                connectedCallback() {
+                    // O C++ WebCore está ativamente a iterar a árvore do DOM para inserir este elemento.
+                    // Nós removemo-lo da árvore DENTRO do seu próprio callback de inserção.
+                    // Isto frequentemente confunde os ponteiros dos iteradores (siblings/parents) no C++.
+                    this.parentNode.removeChild(this);
+                    
+                    // Adicionamos milhares de nós falsos à raiz antiga para forçar o realojamento de memória
+                    for(let i=0; i<500; i++) document.body.appendChild(document.createElement('div'));
+                }
+            }
+            
+            if (!customElements.get('x-exploit')) {
+                customElements.define('x-exploit', ExploitElement);
+            }
+            
+            let el = document.createElement('x-exploit');
+            document.body.appendChild(el);
+            
+            log("[WebCore/DOM] Elemento removido sincronicamente durante iteração de árvore C++.");
+        }
+
+        // --- 134. Web Animations API (WAAPI) Vsync Teardown ---
+        // Alvo: A linha do tempo nativa de animações e o interruptor Vsync do sistema.
+        // Diferente de CSS, WAAPI (element.animate) gera objetos de animação de hardware controláveis via JS.
+        function runWAAPIVsyncTimelineTeardown() {
+            log("[OS/Vsync] A iniciar WAAPI Timeline Teardown...");
+            if (!document.body.animate) return log("WAAPI não suportado.");
+
+            let div = document.createElement('div');
+            document.body.appendChild(div);
+            
+            // Envia a animação para o Compositor de Hardware
+            let animation = div.animate([
+                { transform: 'translate3d(0,0,0)' },
+                { transform: 'translate3d(100px,0,0)' }
+            ], { duration: 1000, iterations: Infinity });
+            
+            // Desestabiliza a máquina de estados C++ da animação revertendo-a e cancelando-a 
+            // numa fração de tempo incrivelmente curta.
+            setTimeout(() => {
+                animation.reverse();
+                animation.cancel();
+                document.body.removeChild(div);
+                animation = null;
+                log("[OS/Vsync] Linha do tempo de animação de hardware revertida e destruída.");
+            }, 5);
+        }
+
+        // --- 135. FontFaceSet Promise OS Font Parser Race ---
+        // Alvo: O motor OS de fontes (FreeType) e a Fila de Promessas global do WebKit.
+        // Usa a API de fontes para monitorizar a carga de um Blob via VFS.
+        function runFontFaceSetPromiseVnodeRace() {
+            log("[OS/Graphics] A iniciar FontFaceSet Promise Race...");
+            
+            let dummyData = new Uint8Array(1024 * 1024 * 10).fill(0x00); // 10MB
+            let blob = new Blob([dummyData], {type: "font/ttf"});
+            let url = URL.createObjectURL(blob);
+            
+            let font = new FontFace("PromiseFont", "url(" + url + ")");
+            document.fonts.add(font);
+            
+            // O FontFaceSet aguarda que o FreeBSD leia o ficheiro, faça o parse e devolva o status.
+            document.fonts.load("12px PromiseFont").then(() => {
+                log("[OS/Graphics] Anomalia: Fonte corrompida foi carregada.");
+            }).catch(() => {
+                log("[OS/Graphics] Rejeição de fonte processada pelo motor.");
+            });
+            
+            // No milissegundo em que a Promise nativa está em estado pendente, revogamos o Vnode
+            // e forçamos a limpeza do registo global de fontes.
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+                document.fonts.clear();
+                log("[OS/Graphics] FontFaceSet limpo e URL revogada durante validação OS.");
+            }, 3);
+        }
+// --- 136. Background sendBeacon OS Queue Teardown ---
+        // Alvo: O motor de rede C++ gerindo pedidos que sobrevivem ao fecho da página.
+        // O sendBeacon atira dados para a fila do sistema operativo para serem enviados mesmo 
+        // que o documento seja destruído.
+        function runSendBeaconOSQueueTeardown() {
+            log("[Net/OS] A iniciar sendBeacon Queue Teardown...");
+            
+            let iframe = document.createElement('iframe');
+            document.body.appendChild(iframe);
+            
+            // Um Blob gigantesco para forçar o WebKit a dividir a leitura do ficheiro
+            // temporário (vnode) no disco para a placa de rede.
+            let massiveBlob = new Blob([new Uint8Array(1024 * 1024 * 30).fill(0x99)]); 
+            
+            // O Iframe envia o beacon
+            iframe.contentWindow.navigator.sendBeacon("http://127.0.0.1:9999/log", massiveBlob);
+            
+            // Destruímos o Iframe instantaneamente. O C++ WebCore tem agora um pedido de rede
+            // "órfão" a correr em background que precisa de ler um Blob que acabou de perder 
+            // a sua referência no JavaScript.
+            setTimeout(() => {
+                document.body.removeChild(iframe);
+                log("[Net/OS] Iframe removido enquanto o SO processava o sendBeacon em background.");
+            }, 1);
+        }
+
+        // --- 137. OS Power Management Daemon (Battery) Race ---
+        // Alvo: O serviço de hardware do FreeBSD que monitoriza a energia (comandos IOKit/sysctl).
+        function runBatteryManagerDaemonRace() {
+            log("[Hardware/Daemon] A iniciar Power Management Race...");
+            if (!navigator.getBattery) return log("[Hardware] Battery API não suportada.");
+
+            let iframe = document.createElement('iframe');
+            document.body.appendChild(iframe);
+            
+            // Pede ao C++ para aceder ao driver do sistema operativo para ler o estado da bateria do comando/consola
+            let promise = iframe.contentWindow.navigator.getBattery();
+            
+            promise.then(battery => {
+                log("[Hardware/Daemon] Promessa resolvida anomalia (Iframe já não deveria existir).");
+            }).catch(() => {});
+            
+            // Corrida letal: No milissegundo em que a thread nativa está a falar com o daemon do SO,
+            // aniquilamos o contexto que aguarda a resposta.
+            setTimeout(() => {
+                document.body.removeChild(iframe);
+                promise = null;
+                log("[Hardware/Daemon] Iframe aniquilado durante consulta ao daemon de energia do SO.");
+            }, 2);
+        }
+
+        // --- 138. FreeBSD Ephemeral UDP Port Allocator Panic ---
+        // Alvo: O alocador de portos efémeros do FreeBSD (sockets bind).
+        // Criar e destruir dezenas de PeerConnections rapidamente força o kernel a abrir 
+        // e fechar portos UDP locais num espaço de tempo incrivelmente curto.
+        function runWebRTCUDPPortAllocatorPanic() {
+            log("[Net/UDP] A iniciar UDP Port Allocator Panic...");
+            
+            let connections = [];
+            // Força a alocação de 50 sockets UDP no FreeBSD simultaneamente
+            for(let i=0; i<50; i++) {
+                let pc = new RTCPeerConnection({iceServers: [{urls: "stun:127.0.0.1:19302"}]});
+                pc.createDataChannel("port_exhaust_" + i);
+                pc.createOffer().then(offer => pc.setLocalDescription(offer)).catch(()=>{});
+                connections.push(pc);
+            }
+            
+            // Corrida: O SO está no meio das syscalls bind() e socket() para os 50 pedidos.
+            // Executamos close() em todos eles num único ciclo de CPU. Se o C++ não bloquear
+            // a destruição corretamente, o kernel tentará libertar sockets que ainda estão a ser alocados.
+            setTimeout(() => {
+                connections.forEach(pc => pc.close());
+                connections = null;
+                log("[Net/UDP] 50 objetos PeerConnection destruídos durante alocação de portos UDP.");
+            }, 10);
+        }
+
+        // --- 139. ReadableStream C++ Chunk Reader Cancel Race ---
+        // Alvo: Controlador de Streams em C++ (ReadableStreamDefaultReader).
+        function runReadableStreamReaderCancelRace() {
+            log("[WebCore/Streams] A iniciar Stream Reader Cancel Race...");
+            
+            let dummyData = new Uint8Array(1024 * 1024 * 20).fill(0x01); // 20MB
+            let blob = new Blob([dummyData]);
+            let stream = blob.stream();
+            let reader = stream.getReader();
+            
+            // Pede ao C++ para ler o primeiro bloco de memória do VFS
+            reader.read().then(({done, value}) => {
+                log("[WebCore/Streams] Leitura concluída de forma inesperada.");
+            }).catch(()=>{});
+            
+            // No mesmo instante, forçamos o cancelamento da stream e a libertação do lock.
+            // O C++ tem de abortar o `read()` que já desceu para a camada do sistema de ficheiros.
+            setTimeout(() => {
+                reader.cancel();
+                reader.releaseLock();
+                log("[WebCore/Streams] Leitor nativo cancelado e lock libertado durante leitura do VFS.");
+            }, 1);
+        }
+
+        // --- 140. OS TTS Daemon Queue Flush Teardown ---
+        // Alvo: A fila de mensagens de interrupção do Sintetizador de Voz (TTS) do SO.
+        function runSpeechSynthesisQueueDaemonTeardown() {
+            log("[OS/Daemon] A iniciar TTS Queue Flush Teardown...");
+            if (!window.speechSynthesis) return log("[OS] SpeechSynthesis não suportado.");
+
+            let iframe = document.createElement('iframe');
+            document.body.appendChild(iframe);
+            
+            // Inunda o daemon do SO com milhares de pedidos, forçando-o a alocar uma fila 
+            // de memória encadeada no C++ e no sistema operativo.
+            for(let i=0; i<2000; i++) {
+                let utterance = new SpeechSynthesisUtterance("Exploit " + i);
+                iframe.contentWindow.speechSynthesis.speak(utterance);
+            }
+            
+            // O comando 'cancel' obriga o C++ a varrer a fila e enviar sinais de interrupção 
+            // ao daemon nativo para cada item. Removemos a janela base durante esse processo de limpeza (flush).
+            setTimeout(() => {
+                iframe.contentWindow.speechSynthesis.cancel();
+                document.body.removeChild(iframe);
+                log("[OS/Daemon] Fila massiva de TTS cancelada e Iframe destruído concorrentemente.");
+            }, 5);
+        }
+// --- 141. WebSocket Internal Control Frame Race ---
+        // Alvo: O motor C++ que processa frames de rede do FreeBSD.
+        // O WebKit tem de processar frames de controlo (Ping/Pong/Close) misturados com dados.
+        function runWebSocketControlFrameRace() {
+            log("[Net/TCP] A iniciar WebSocket Control Frame Race...");
+            try {
+                let ws = new WebSocket("ws://127.0.0.1:12345"); // Porta de descarte
+                
+                // Enchemos o buffer de envio com dados massivos para atrasar a camada de rede
+                let massivePayload = new ArrayBuffer(1024 * 1024 * 10); // 10MB
+                
+                ws.onerror = () => {};
+                
+                // Dispara o envio. O C++ começa a segmentar os 10MB em frames do WebSocket.
+                try { ws.send(massivePayload); } catch(e){}
+                
+                // Imediatamente emitimos o sinal de close com um código e razão específicos.
+                // Isto força o C++ a injetar um "Control Frame" no meio do fluxo de dados 
+                // que está a ser escrito no socket TCP do FreeBSD.
+                ws.close(1000, "Exploit");
+                ws = null;
+                
+                log("[Net/TCP] Control Frame injetado e socket destruído durante segmentação massiva.");
+            } catch(e) {
+                log("[Net/TCP] Erro: " + e.message);
+            }
+        }
+
+        // --- 142. WebCrypto AES-GCM Auth Tag Validation Race ---
+        // Alvo: A máquina de estados da biblioteca criptográfica (BoringSSL/OpenSSL).
+        // No AES-GCM, o C++ desencripta os dados, mas só os valida no último milissegundo 
+        // lendo a "Authentication Tag".
+        function runWebCryptoAESGCMTagTeardown() {
+            log("[Crypto/Thread] A iniciar AES-GCM Tag Validation Race...");
+            if (!window.crypto || !window.crypto.subtle) return log("Não suportado.");
+
+            // Gera uma chave AES rapidamente
+            crypto.subtle.generateKey({name: "AES-GCM", length: 256}, false, ["encrypt", "decrypt"]).then(key => {
+                let iv = new Uint8Array(12);
+                // Payload encriptado falso (lixo) de 20MB. O C++ vai tentar desencriptar e falhar na tag final.
+                let fakeEncryptedData = new ArrayBuffer(1024 * 1024 * 20); 
+                
+                // O WebKit atira isto para a pthread de background criptográfica
+                let promise = crypto.subtle.decrypt({name: "AES-GCM", iv: iv}, key, fakeEncryptedData);
+                
+                promise.catch(() => log("[Crypto/Thread] Erro de Tag processado (Anomalia se o C++ crashear antes)."));
+                
+                // Corrida letal: O C++ está a desencriptar a memória física.
+                // Removemos o recetor da promessa e forçamos a destruição do contexto
+                // no momento em que a biblioteca nativa tentar validar a Tag de Autenticação no final do buffer.
+                promise = null;
+                key = null;
+                
+                log("[Crypto/Thread] Desencriptação AES-GCM delegada. Aguardando falha nativa na validação da Tag.");
+            });
+        }
+
+        // --- 143. XHR Response ArrayBuffer Detach Death ---
+        // Alvo: O evento de transição de memória do kernel para a Userland (JS).
+        function runXHRResponseBufferDetachRace() {
+            log("[Net/Mem] A iniciar XHR Response Detach Race...");
+            
+            let xhr = new XMLHttpRequest();
+            // Acessa um ficheiro local/cache ou mock que retorne rapidamente
+            xhr.open('GET', 'http://127.0.0.1:9999/mock.bin', true);
+            xhr.responseType = 'arraybuffer';
+            
+            xhr.onload = function() {
+                // O kernel acabou de entregar o buffer físico ao C++, que o entregou ao JS.
+                let buffer = xhr.response;
+                
+                let mc = new MessageChannel();
+                // Desanexamos a memória brutalmente via IPC no exato frame em que o 
+                // WebCore está a limpar as estruturas nativas do XHR.
+                mc.port1.postMessage(buffer, [buffer]);
+                mc.port1.close();
+                
+                log("[Net/Mem] Memória do XHR desanexada e roteada no momento do dispatch do C++.");
+            };
+            
+            try { xhr.send(); } catch(e) {}
+            // Aborta se não houver resposta rápida para testar o teardown
+            setTimeout(() => { xhr.abort(); }, 20);
+        }
+
+        // --- 144. SVG feDisplacementMap GPU Raster Teardown ---
+        // Alvo: Aceleração por hardware e acesso direto a memória de texturas (VRAM).
+        // Este filtro SVG mapeia os pixels de uma imagem baseando-se noutra matriz de pixels,
+        // o que causa um processamento infernal no rasterizador C++ / GPU.
+        function runSVGFEDisplacementMapTeardown() {
+            log("[GPU/SVG] A iniciar feDisplacementMap Teardown...");
+            
+            let div = document.createElement('div');
+            div.innerHTML = `
+                <svg width="0" height="0">
+                    <filter id="displace">
+                        <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="5" result="noise" />
+                        <feDisplacementMap in="SourceGraphic" in2="noise" scale="50" xChannelSelector="R" yChannelSelector="G" />
+                    </filter>
+                </svg>
+                <div id="targetDisplace" style="width:1000px; height:1000px; background:blue; filter:url(#displace);"></div>
+            `;
+            document.body.appendChild(div);
+            
+            // Força o C++ a pedir ao driver de vídeo para gerar o mapa de deslocamento
+            div.getBoundingClientRect();
+            
+            // Destrói a árvore do DOM enquanto a placa gráfica (ou a biblioteca gráfica nativa)
+            // está a calcular o deslocamento pixel a pixel na memória.
+            setTimeout(() => {
+                document.body.removeChild(div);
+                log("[GPU/SVG] Filtro de deslocamento destruído durante cálculo intensivo de rasterização.");
+            }, 5);
+        }
+
+        // --- 145. MSE Append/Remove Buffer Native Race ---
+        // Alvo: O pipeline de MediaSource Extensions comunicando com os demuxers de mídia do SO.
+        function runMediaSourceAppendRemoveRace() {
+            log("[Media/SO] A iniciar MSE Append/Remove Race...");
+            if (!window.MediaSource) return log("[Media] MSE não suportado.");
+
+            let ms = new MediaSource();
+            let video = document.createElement('video');
+            video.src = URL.createObjectURL(ms);
+
+            ms.addEventListener('sourceopen', function() {
+                try {
+                    // O C++ liga isto aos decodificadores H.264 do hardware
+                    let sourceBuffer = ms.addSourceBuffer('video/mp4; codecs="avc1.42E01E"');
+                    
+                    let fakeChunk = new Uint8Array(1024 * 1024 * 2); // 2MB
+                    
+                    // Dispara a anexação (o demuxer nativo começa a mastigar o buffer)
+                    sourceBuffer.appendBuffer(fakeChunk);
+                    
+                    // Removemos a faixa de tempo imediatamente. O C++ tem de instruir o 
+                    // kernel/driver a abortar o parsing e deitar fora a memória alocada.
+                    sourceBuffer.remove(0, 10);
+                    
+                    log("[Media/SO] Buffer removido enquanto o demuxer do SO processava o chunk.");
+                } catch(e) {
+                    log("[Media/SO] Erro MSE: " + e.message);
+                }
+            });
+        }
+// --- 146. Image.decode() Background Pthread Teardown ---
+        // Alvo: Pthreads nativas de descodificação de imagem (libjpeg/libpng via SO).
+        // Diferente de carregar uma imagem no DOM, .decode() força a descodificação 
+        // assíncrona numa thread C++ separada antes de a atirar para a GPU.
+        function runImageDecodePthreadTeardown() {
+            log("[CPU/Image] A iniciar Image.decode() Pthread Teardown...");
+            
+            // Criamos uma imagem BMP massiva e malformada na memória para atrasar o parser nativo
+            let fakeBmp = new Uint8Array(1024 * 1024 * 30).fill(0x00); 
+            fakeBmp[0] = 0x42; fakeBmp[1] = 0x4D; // Header BMP falso
+            let blob = new Blob([fakeBmp], {type: "image/bmp"});
+            let img = new Image();
+            img.src = URL.createObjectURL(blob);
+            
+            // Atira a carga para a thread de descodificação em C++
+            let decodePromise = img.decode().catch(()=>{});
+            
+            // No exato momento em que o parser nativo tenta ler os bytes alocados,
+            // destruímos a referência da imagem e revogamos o descritor VFS.
+            setTimeout(() => {
+                URL.revokeObjectURL(img.src);
+                img.src = '';
+                img = null;
+                decodePromise = null;
+                log("[CPU/Image] Imagem aniquilada durante a descodificação nativa em background.");
+            }, 3);
+        }
+
+        // --- 147. OS Drag & Drop IPC Daemon Race ---
+        // Alvo: O daemon de área de transferência (Clipboard/Drag) do FreeBSD.
+        function runDragAndDropOSDaemonRace() {
+            log("[OS/Daemon] A iniciar Drag & Drop OS Daemon Race...");
+            
+            let div = document.createElement('div');
+            div.draggable = true;
+            document.body.appendChild(div);
+            
+            div.addEventListener('dragstart', (e) => {
+                // Injetamos um payload gigante no DataTransfer.
+                // O WebKit tem de serializar isto via IPC para o gestor de janelas/SO
+                // para que outras aplicações ou partes do sistema possam receber o "drop".
+                let massivePayload = "A".repeat(1024 * 1024 * 10); // 10MB
+                e.dataTransfer.setData('text/plain', massivePayload);
+                
+                // O C++ está ativamente a copiar os 10MB para a memória partilhada do SO.
+                // Destruímos o elemento instantaneamente.
+                document.body.removeChild(div);
+                log("[OS/Daemon] Nó de Drag & Drop destruído durante transferência IPC para o SO.");
+            });
+            
+            // Simula o início do drag (em alguns motores isto força a execução do evento)
+            let event = new DragEvent('dragstart');
+            try { div.dispatchEvent(event); } catch(err) {}
+            
+            // Limpeza caso o evento síncrono não funcione no ambiente restrito
+            if (div.parentNode) document.body.removeChild(div);
+        }
+
+        // --- 148. WebRTC Hardware Track Clone Native Panic ---
+        // Alvo: O grafo de objetos C++ e o roteamento de hardware de captura.
+        function runWebRTCHardwareTrackClonePanic() {
+            log("[Hardware/Media] A iniciar Hardware Track Clone Panic...");
+            
+            let canvas = document.createElement('canvas');
+            let stream = canvas.captureStream(60);
+            let track = stream.getVideoTracks()[0];
+            
+            // O C++ WebCore tem de criar um novo ponteiro nativo que escuta o mesmo
+            // descritor de hardware de origem.
+            let clonedTrack = track.clone();
+            
+            let pc = new RTCPeerConnection({iceServers: []});
+            pc.addTrack(clonedTrack, stream);
+            
+            pc.createOffer().then(offer => {
+                pc.setLocalDescription(offer);
+                
+                // Corrida: A rede está a tentar aceder ao clone.
+                // Nós matamos a track original (fechando a torneira do hardware) e 
+                // destruímos a conexão TCP/UDP simultaneamente.
+                track.stop();
+                pc.close();
+                clonedTrack = null;
+                
+                log("[Hardware/Media] Track original de hardware fechada enquanto a rede tentava ler o clone.");
+            });
+        }
+
+        // --- 149. Blob.arrayBuffer() Promise VFS Teardown ---
+        // Alvo: A API Promise moderna lidando com leituras assíncronas no disco (VFS).
+        function runBlobPromiseVFSTeardown() {
+            log("[WebCore/VFS] A iniciar Blob Promise VFS Teardown...");
+            
+            let massiveBlob = new Blob([new Uint8Array(1024 * 1024 * 50).fill(0x77)]); // 50MB
+            let url = URL.createObjectURL(massiveBlob);
+            
+            // Diferente do FileReader, o arrayBuffer() resolve diretamente numa Promise C++
+            let promise = massiveBlob.arrayBuffer();
+            
+            promise.then(buffer => {
+                log("[WebCore/VFS] Leitura assíncrona concluída anomalia.");
+            }).catch(() => {});
+            
+            // A thread de I/O desceu para o kernel e está a puxar os 50MB.
+            // Revogamos o URL que originou o Vnode e anulamos as referências JS
+            // na esperança de que o GC apague o resolvedor da promessa antes do kernel retornar.
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+                massiveBlob = null;
+                promise = null;
+                log("[WebCore/VFS] Blob e Promise anulados durante syscall assíncrona de I/O.");
+            }, 5);
+        }
+
+        // --- 150. Gamepad HID Agressive Polling Disconnect ---
+        // Alvo: O controlador de interrupções HID no núcleo do navegador.
+        function runGamepadHIDPollingDisconnect() {
+            log("[Hardware/HID] A iniciar HID Polling Disconnect...");
+            
+            let iframe = document.createElement('iframe');
+            document.body.appendChild(iframe);
+            
+            // Cria um loop infernal a pedir o estado físico do hardware de entrada
+            // Isto força o WebKit a comunicar constantemente com os drivers da consola.
+            let loopId = iframe.contentWindow.setInterval(() => {
+                if(iframe.contentWindow.navigator.getGamepads) {
+                    iframe.contentWindow.navigator.getGamepads();
+                }
+            }, 0); // Polling o mais rápido que a CPU permitir
+            
+            // Arrancamos a janela que regista este "ouvinte" da tabela de roteamento de 
+            // interrupções de hardware do C++.
+            setTimeout(() => {
+                iframe.contentWindow.clearInterval(loopId);
+                document.body.removeChild(iframe);
+                log("[Hardware/HID] Tabela de roteamento HID corrompida devido a polling massivo.");
+            }, 10);
         }
     </script>
 </body>
