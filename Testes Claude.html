@@ -1,18 +1,18 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>PS4 WebKit - Race Condition / FreeBSD Kernel Triage Tests</title>
+  <title>PS4 WebKit - Claude Tests / FreeBSD Kernel Triage Tests</title>
 </head>
 <body>
 
-<h1>PS4 WebKit - Race Condition Triage Tests</h1>
-<p>Foco: concorrencia C++ WebKit &lt;-&gt; kernel FreeBSD (pthread / signal / TCB)</p>
-<hr>
+<h1>PS4 WebKit - Claude Tests</h1>
+
+
 
 <pre id="log" style="height:200px;overflow:auto;border:1px solid black;padding:4px"></pre>
 <button onclick="document.getElementById('log').textContent=''">Limpar Log</button>
-<hr>
+
 
 <script>
 function log(msg) {
@@ -47,43 +47,64 @@ function run(name, fn) {
      buffer interno para estado de thread.
      ═══════════════════════════════════════════════ -->
 
-<h2>1. SharedArrayBuffer – Atomics Race (2 workers vs main)</h2>
+
 <button onclick="test01()">Executar Teste 01</button>
 <script>
 function test01() {
-  var sab = new SharedArrayBuffer(4);
-  var view = new Int32Array(sab);
-  var code = `
-    var v = new Int32Array(self._sab);
-    for(var i=0;i<100000;i++){
-      Atomics.add(v, 0, 1);
-    }
-    postMessage('done');
-  `;
-  var blob = new Blob([code], {type:'application/javascript'});
-  var url  = URL.createObjectURL(blob);
-  var w1 = new Worker(url);
-  var w2 = new Worker(url);
-  w1._sab = sab; w2._sab = sab;
-  /* injeta sab via postMessage pois blob nao tem acesso direto */
-  var code2 = `
-    var sab;
-    onmessage = function(e){
-      sab = e.data;
-      var v = new Int32Array(sab);
-      for(var i=0;i<100000;i++){ Atomics.add(v,0,1); }
-      postMessage('done');
-    };
-  `;
-  var b2 = new Blob([code2],{type:'application/javascript'});
-  var u2 = URL.createObjectURL(b2);
-  var wa = new Worker(u2);
-  var wb = new Worker(u2);
-  var done = 0;
-  function finish(){ if(++done===2){ log('T01 valor final='+view[0]+' esperado=200000 delta='+(200000-view[0])); } }
-  wa.onmessage = finish; wb.onmessage = finish;
-  wa.postMessage(sab,[sab]); // transfere – detecta se WebKit permite transferencia dupla
-  try { wb.postMessage(sab); } catch(e){ log('T01 transferencia dupla bloqueada: '+e); finish(); finish(); }
+  run('T01-SAB-Transfer-Race', function() {
+    return new Promise(function(resolve, reject) {
+      if (typeof SharedArrayBuffer === 'undefined') {
+        resolve('SharedArrayBuffer nao suportado (verifique COOP/COEP ou versao do motor)');
+        return;
+      }
+
+      var sab = new SharedArrayBuffer(4);
+      var view = new Int32Array(sab);
+
+      var code = `
+        onmessage = function(e){
+          var sab = e.data;
+          try {
+            var v = new Int32Array(sab);
+            for(var i=0; i<100000; i++){ Atomics.add(v,0,1); }
+            postMessage('done');
+          } catch(err) {
+            postMessage('erro: ' + err.message);
+          }
+        };
+      `;
+      var blob = new Blob([code], {type:'application/javascript'});
+      var url  = URL.createObjectURL(blob);
+      
+      var wa = new Worker(url);
+      var wb = new Worker(url);
+      var done = 0;
+
+      function finish() { 
+        if(++done === 2) { 
+          resolve('valor final=' + view[0] + ' esperado=200000 delta=' + (200000 - view[0])); 
+        } 
+      }
+
+      wa.onmessage = function(e){ if(e.data !== 'done') log('WA msg: ' + e.data); finish(); };
+      wb.onmessage = function(e){ if(e.data !== 'done') log('WB msg: ' + e.data); finish(); };
+
+      // Tenta transferir o SAB (ao inves de clonar) para testar o comportamento do WebKit
+      try { 
+        wa.postMessage(sab, [sab]); 
+      } catch(e) { 
+        log('T01 WA transfer exception: ' + e.name); 
+        wa.postMessage(sab); // fallback para o teste prosseguir
+      }
+
+      try { 
+        wb.postMessage(sab); 
+      } catch(e) { 
+        log('T01 WB clone exception: ' + e.name); 
+        finish(); // avanca para nao travar a promise
+      }
+    });
+  });
 }
 </script>
 
@@ -94,7 +115,7 @@ function test01() {
      → UAF no coletor de lixo do WebKit (C++)
      ═══════════════════════════════════════════════ -->
 
-<h2>2. WeakRef + GC Race (destruicao concorrente)</h2>
+
 <button onclick="test02()">Executar Teste 02</button>
 <script>
 function test02() {
@@ -123,7 +144,7 @@ function test02() {
      callback, temos UAF classico.
      ═══════════════════════════════════════════════ -->
 
-<h2>3. FinalizationRegistry – Callback UAF</h2>
+
 <button onclick="test03()">Executar Teste 03</button>
 <script>
 function test03() {
@@ -160,7 +181,7 @@ function test03() {
      → acesso a buffer "neutered" → crash C++
      ═══════════════════════════════════════════════ -->
 
-<h2>4. ArrayBuffer Detach / Neutering Race</h2>
+
 <button onclick="test04()">Executar Teste 04</button>
 <script>
 function test04() {
@@ -189,7 +210,7 @@ function test04() {
      objeto JSProxy no heap do WebKit
      ═══════════════════════════════════════════════ -->
 
-<h2>5. Proxy Trap – Acesso Concorrente</h2>
+
 <button onclick="test05()">Executar Teste 05</button>
 <script>
 function test05() {
@@ -233,7 +254,7 @@ function test05() {
      → estado interno do JSGenerator corrompido
      ═══════════════════════════════════════════════ -->
 
-<h2>6. Generator – Resume Concorrente via Microtasks</h2>
+
 <button onclick="test06()">Executar Teste 06</button>
 <script>
 function test06() {
@@ -265,7 +286,7 @@ function test06() {
      interno pode ser corrompido
      ═══════════════════════════════════════════════ -->
 
-<h2>7. Async Iterator – Multiplos Consumers</h2>
+
 <button onclick="test07()">Executar Teste 07</button>
 <script>
 function test07() {
@@ -304,7 +325,7 @@ function test07() {
      concorrente → possivel UAF em JSValue
      ═══════════════════════════════════════════════ -->
 
-<h2>8. Symbol.toPrimitive – Coercao Concorrente</h2>
+
 <button onclick="test08()">Executar Teste 08</button>
 <script>
 function test08() {
@@ -336,7 +357,7 @@ function test08() {
      (semelhante a bug historico V8 / JSC)
      ═══════════════════════════════════════════════ -->
 
-<h2>9. RegExp Shared State – lastIndex Race</h2>
+
 <button onclick="test09()">Executar Teste 09</button>
 <script>
 function test09() {
@@ -371,7 +392,7 @@ function test09() {
      corrupcao do stack trace buffer
      ═══════════════════════════════════════════════ -->
 
-<h2>10. Error.stack – Captura Concorrente</h2>
+
 <button onclick="test10()">Executar Teste 10</button>
 <script>
 function test10() {
@@ -404,7 +425,7 @@ function test10() {
      FreeBSD; pode deixar mutex/lock interno preso
      ═══════════════════════════════════════════════ -->
 
-<h2>11. Worker Terminate – Durante Execucao (pthread_cancel)</h2>
+
 <button onclick="test11()">Executar Teste 11</button>
 <script>
 function test11() {
@@ -437,7 +458,7 @@ function test11() {
      ser destruido antes do handler executar (UAF)
      ═══════════════════════════════════════════════ -->
 
-<h2>12. MessagePort Close – Durante Transferencia</h2>
+
 <button onclick="test12()">Executar Teste 12</button>
 <script>
 function test12() {
@@ -465,7 +486,7 @@ function test12() {
      dispatcher interno do WebKit pode ter race
      ═══════════════════════════════════════════════ -->
 
-<h2>13. BroadcastChannel – Flood Concorrente</h2>
+
 <button onclick="test13()">Executar Teste 13</button>
 <script>
 function test13() {
@@ -495,7 +516,7 @@ function test13() {
      pode ser destruido no C++ (UAF classico)
      ═══════════════════════════════════════════════ -->
 
-<h2>14. XHR Abort – Durante Response Handler</h2>
+
 <button onclick="test14()">Executar Teste 14</button>
 <script>
 function test14() {
@@ -528,7 +549,7 @@ function test14() {
      JSHistory / HistoryItem C++
      ═══════════════════════════════════════════════ -->
 
-<h2>15. history.pushState – Flood + GC Pressure</h2>
+
 <button onclick="test15()">Executar Teste 15</button>
 <script>
 function test15() {
@@ -561,7 +582,7 @@ function test15() {
      → race na lista de entradas de historico C++
      ═══════════════════════════════════════════════ -->
 
-<h2>16. history.pushState – Disparo Coordenado via SAB</h2>
+
 <button onclick="test16()">Executar Teste 16</button>
 <script>
 function test16() {
@@ -600,7 +621,7 @@ function test16() {
      carrega-la → UAF em BlobURL registry C++
      ═══════════════════════════════════════════════ -->
 
-<h2>17. Blob URL – Create / Revoke Race</h2>
+
 <button onclick="test17()">Executar Teste 17</button>
 <script>
 function test17() {
@@ -638,7 +659,7 @@ function test17() {
      possivel race em CanvasRenderingContext2D C++
      ═══════════════════════════════════════════════ -->
 
-<h2>18. Canvas – getImageData/putImageData Race</h2>
+
 <button onclick="test18()">Executar Teste 18</button>
 <script>
 function test18() {
@@ -675,7 +696,7 @@ function test18() {
      no WebKit DOM C++
      ═══════════════════════════════════════════════ -->
 
-<h2>19. DOM – Mutacao Concorrente de Filhos</h2>
+
 <button onclick="test19()">Executar Teste 19</button>
 <script>
 function test19() {
@@ -713,7 +734,7 @@ function test19() {
      pode acessar lista invalidada (UAF)
      ═══════════════════════════════════════════════ -->
 
-<h2>20. Event – Dispatch vs removeEventListener Race</h2>
+
 <button onclick="test20()">Executar Teste 20</button>
 <script>
 function test20() {
@@ -751,7 +772,7 @@ function test20() {
      ainda ha callbacks pendentes
      ═══════════════════════════════════════════════ -->
 
-<h2>21. Promise Chain – GC Durante Resolucao</h2>
+
 <button onclick="test21()">Executar Teste 21</button>
 <script>
 function test21() {
@@ -782,7 +803,7 @@ function test21() {
      do FreeBSD (kqueue) e causar overflow
      ═══════════════════════════════════════════════ -->
 
-<h2>22. setTimeout Flood + history.pushState</h2>
+
 <button onclick="test22()">Executar Teste 22</button>
 <script>
 function test22() {
@@ -816,7 +837,7 @@ function test22() {
      no motor JS pode ter race em modo JIT
      ═══════════════════════════════════════════════ -->
 
-<h2>23. Object.defineProperty – Shape Transition Race</h2>
+
 <button onclick="test23()">Executar Teste 23</button>
 <script>
 function test23() {
@@ -856,7 +877,7 @@ function test23() {
      com estado inconsistente
      ═══════════════════════════════════════════════ -->
 
-<h2>24. JSON.parse – Reviver com Side-Effect Concorrente</h2>
+
 <button onclick="test24()">Executar Teste 24</button>
 <script>
 function test24() {
@@ -890,7 +911,7 @@ function test24() {
      potencial escalada do finding HackerOne/Sony.
      ═══════════════════════════════════════════════ -->
 
-<h2>25. location.hash + history.pushState – Race Encadeado (Escalada)</h2>
+
 <button onclick="test25()">Executar Teste 25</button>
 <script>
 function test25() {

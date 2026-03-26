@@ -1,0 +1,1256 @@
+<!DOCTYPE html>
+<html>
+<body>
+
+<h2>Testes de Triagem (Chat GPT)</h2>
+
+<button onclick="run(test1)">Test 1 - MessageChannel Close Race</button>
+<button onclick="run(test2)">Test 2 - BroadcastChannel Storm</button>
+<button onclick="run(test3)">Test 3 - Worker Transfer Reuse Race</button>
+<button onclick="run(test4)">Test 4 - EventListener Remove Race</button>
+<button onclick="run(test5)">Test 5 - OffscreenCanvas Worker Race</button>
+<button onclick="run(test6)">Test 6 - ReadableStream Cancel Race</button>
+<button onclick="run(test7)">Test 7 - WebSocket Close Race</button>
+<button onclick="run(test8)">Test 8 - MutationObserver Disconnect Race</button>
+<button onclick="run(test9)">Test 9 - History PushState Reentrancy Race</button>
+<button onclick="run(test10)">Test 10 - AudioContext Close Race</button>
+<button onclick="run(test11)">Test 11 - Fetch Abort Race</button>
+<button onclick="run(test12)">Test 12 - MessagePort Transfer + Close Race</button>
+<button onclick="run(test13)">Test 13 - ResizeObserver Disconnect Race</button>
+<button onclick="run(test14)">Test 14 - setInterval Clear Race</button>
+<button onclick="run(test15)">Test 15 - IndexedDB Transaction Abort Race</button>
+<button onclick="run(test16)">Test 16 - Clipboard Write Race</button>
+<button onclick="run(test17)">Test 17 - Blob URL Revoke Race</button>
+<button onclick="run(test18)">Test 18 - iframe Navigation Race</button>
+<button onclick="run(test19)">Test 19 - Performance Observer Disconnect Race</button>
+<button onclick="run(test20)">Test 20 - Crypto Buffer Reuse Race</button>
+<button onclick="run(test21)">Test 21 - Range Detach Race</button>
+<button onclick="run(test22)">Test 22 - FileReader Abort Race</button>
+<button onclick="run(test23)">Test 23 - CSSStyleSheet Replace Race</button>
+<button onclick="run(test24)">Test 24 - Fullscreen Exit Race</button>
+<button onclick="run(test25)">Test 25 - sendBeacon Unload Race</button>
+<button onclick="run(test26)">Test 26 - DataTransfer Clear Race</button>
+<button onclick="run(test27)">Test 27 - Selection RemoveAllRanges Race</button>
+<button onclick="run(test28)">Test 28 - Cache API Delete Race</button>
+<button onclick="run(test29)">Test 29 - Video Element Remove Race</button>
+<button onclick="run(test30)">Test 30 - Geolocation ClearWatch Race</button>
+<button onclick="run(test31)">Test 31 - IntersectionObserver Disconnect Race</button>
+<button onclick="run(test32)">Test 32 - TextEncoder Stream Race</button>
+<button onclick="run(test33)">Test 33 - SVG Element Remove Race</button>
+<button onclick="run(test34)">Test 34 - requestAnimationFrame Cancel Race</button>
+<button onclick="run(test35)">Test 35 - MediaSource EndOfStream Race</button>
+<button onclick="run(test36)">Test 36 - Web Locks Release Race</button>
+<button onclick="run(test37)">Test 37 - CompressionStream Close Race</button>
+<button onclick="run(test38)">Test 38 - FormData Mutation Race</button>
+<button onclick="run(test39)">Test 39 - DOMParser Reuse Race</button>
+<button onclick="run(test40)">Test 40 - Notification Close Race</button>
+<button onclick="run(test41)">Test 41 - ShadowRoot Remove Race</button>
+<button onclick="run(test42)">Test 42 - CustomElement Disconnect Race</button>
+<button onclick="run(test43)">Test 43 - DecompressionStream Close Race</button>
+<button onclick="run(test44)">Test 44 - URL Mutation Race</button>
+<button onclick="run(test45)">Test 45 - Screen Orientation Change Race</button>
+<button onclick="run(test46)">Test 46 - Worker Terminate Storm Race</button>
+<button onclick="run(test47)">Test 47 - MessagePort Flood + Close Race</button>
+<button onclick="run(test48)">Test 48 - Multi-Worker Shared Buffer Race</button>
+<button onclick="run(test49)">Test 49 - Blob Worker Revoke Race</button>
+<button onclick="run(test50)">Test 50 - Promise Microtask + Destroy Race</button>
+
+
+<pre id="log"></pre>
+
+<script>
+function log(msg){
+  document.getElementById("log").textContent += msg + "\n";
+}
+
+function run(fn){
+  log("\n[RUN] " + fn.name);
+  try{
+    fn();
+    log("[DONE]");
+  }catch(e){
+    log("[EXCEPTION] " + e);
+  }
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 1 — MessageChannel race (FORTE)
+//////////////////////////////////////////////////
+function test1(){
+  let mc = new MessageChannel();
+
+  mc.port1.onmessage = () => {
+    // flood
+    for(let i=0;i<100;i++){
+      mc.port1.postMessage("ping");
+    }
+  };
+
+  mc.port2.postMessage("start");
+
+  // destruição enquanto ativo
+  setTimeout(()=>{
+    mc.port1.close();
+    mc.port2.close();
+    log("Ports fechadas");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 2 — BroadcastChannel storm
+//////////////////////////////////////////////////
+function test2(){
+  let bc = new BroadcastChannel("race");
+
+  bc.onmessage = () => {
+    bc.postMessage("loop");
+  };
+
+  bc.postMessage("start");
+
+  setTimeout(()=>{
+    bc.close();
+    log("BroadcastChannel fechado");
+  }, Math.random()*20);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 3 — Worker transfer + reuse
+//////////////////////////////////////////////////
+function test3(){
+  let worker = new Worker(URL.createObjectURL(new Blob([`
+    onmessage = e => {
+      let buf = e.data;
+      setInterval(()=>{
+        postMessage(buf, [buf]);
+      }, 1);
+    }
+  `])));
+
+  let ab = new ArrayBuffer(1024);
+
+  worker.postMessage(ab, [ab]);
+
+  setTimeout(()=>{
+    try{
+      let ta = new Uint8Array(ab);
+      ta[0] = 123; // uso após detach
+      log("Write após transfer");
+    }catch(e){
+      log("Erro esperado");
+    }
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 4 — EventListener race
+//////////////////////////////////////////////////
+function test4(){
+  let div = document.createElement("div");
+
+  function handler(){
+    div.removeEventListener("click", handler);
+    div.click(); // reentrancy
+  }
+
+  div.addEventListener("click", handler);
+
+  div.click();
+  log("Evento disparado");
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 5 — OffscreenCanvas race
+//////////////////////////////////////////////////
+function test5(){
+  try{
+    let canvas = document.createElement("canvas");
+    let off = canvas.transferControlToOffscreen();
+
+    let worker = new Worker(URL.createObjectURL(new Blob([`
+      onmessage = e => {
+        let ctx = e.data.getContext("2d");
+        setInterval(()=>{
+          ctx.fillRect(0,0,10,10);
+        },1);
+      }
+    `])));
+
+    worker.postMessage(off, [off]);
+
+    // destrói canvas enquanto worker usa
+    setTimeout(()=>{
+      canvas.remove();
+      log("Canvas removido");
+    }, Math.random()*10);
+
+  }catch(e){
+    log("Erro: " + e);
+  }
+}
+//////////////////////////////////////////////////
+// ?? TEST 6 — ReadableStream cancel race
+//////////////////////////////////////////////////
+function test6(){
+  let controllerRef;
+
+  let stream = new ReadableStream({
+    start(controller){
+      controllerRef = controller;
+
+      // atividade contínua
+      setInterval(()=>{
+        try{
+          controller.enqueue(new Uint8Array(100));
+        }catch(e){}
+      }, 1);
+    }
+  });
+
+  let reader = stream.getReader();
+
+  reader.read();
+
+  // invalida enquanto ativo
+  setTimeout(()=>{
+    reader.cancel();
+    log("Reader cancelado");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 7 — WebSocket close race
+//////////////////////////////////////////////////
+function test7(){
+  try{
+    let ws = new WebSocket("wss://echo.websocket.org");
+
+    ws.onopen = ()=>{
+      let interval = setInterval(()=>{
+        try{
+          ws.send("spam");
+        }catch(e){}
+      }, 1);
+
+      setTimeout(()=>{
+        ws.close();
+        clearInterval(interval);
+        log("WebSocket fechado");
+      }, Math.random()*20);
+    };
+
+  }catch(e){
+    log("Erro: " + e);
+  }
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 8 — MutationObserver race
+//////////////////////////////////////////////////
+function test8(){
+  let div = document.createElement("div");
+  document.body.appendChild(div);
+
+  let observer = new MutationObserver(()=>{
+    // atividade durante callback
+    div.appendChild(document.createElement("span"));
+  });
+
+  observer.observe(div, {childList:true});
+
+  div.appendChild(document.createElement("p"));
+
+  // invalida durante atividade
+  setTimeout(()=>{
+    observer.disconnect();
+    div.remove();
+    log("Observer desconectado e DOM removido");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 9 — History reentrancy race
+//////////////////////////////////////////////////
+function test9(){
+  function spam(){
+    history.pushState({}, "", "#"+Math.random());
+  }
+
+  for(let i=0;i<100;i++){
+    spam();
+  }
+
+  // reentrancy + mutation
+  setTimeout(()=>{
+    history.back();
+    history.forward();
+    log("History manipulado");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 10 — AudioContext race
+//////////////////////////////////////////////////
+function test10(){
+  try{
+    let ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+    let osc = ctx.createOscillator();
+    osc.connect(ctx.destination);
+    osc.start();
+
+    // atividade contínua
+    let interval = setInterval(()=>{
+      try{
+        osc.frequency.value = Math.random()*1000;
+      }catch(e){}
+    }, 1);
+
+    // invalida enquanto ativo
+    setTimeout(()=>{
+      ctx.close();
+      clearInterval(interval);
+      log("AudioContext fechado");
+    }, Math.random()*10);
+
+  }catch(e){
+    log("Erro: " + e);
+  }
+}
+//////////////////////////////////////////////////
+// ?? TEST 11 — Fetch + Abort race
+//////////////////////////////////////////////////
+function test11(){
+  let controller = new AbortController();
+
+  fetch("https://example.com", {signal: controller.signal})
+    .then(r => r.text())
+    .then(()=>{
+      log("Fetch concluído");
+    })
+    .catch(()=>{});
+
+  // abort enquanto ativo
+  setTimeout(()=>{
+    controller.abort();
+    log("Fetch abortado");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 12 — MessagePort transfer + close
+//////////////////////////////////////////////////
+function test12(){
+  let mc = new MessageChannel();
+
+  let worker = new Worker(URL.createObjectURL(new Blob([`
+    onmessage = e => {
+      let port = e.ports[0];
+      setInterval(()=>{
+        try{
+          port.postMessage("ping");
+        }catch(e){}
+      },1);
+    }
+  `])));
+
+  worker.postMessage("init", [mc.port2]);
+
+  // invalida enquanto ativo
+  setTimeout(()=>{
+    mc.port1.close();
+    log("Port fechada");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 13 — ResizeObserver race
+//////////////////////////////////////////////////
+function test13(){
+  let div = document.createElement("div");
+  document.body.appendChild(div);
+
+  let ro = new ResizeObserver(()=>{
+    div.style.width = Math.random()*100 + "px";
+  });
+
+  ro.observe(div);
+
+  // trigger mudanças
+  let interval = setInterval(()=>{
+    div.style.height = Math.random()*100 + "px";
+  },1);
+
+  // invalida durante atividade
+  setTimeout(()=>{
+    ro.disconnect();
+    clearInterval(interval);
+    div.remove();
+    log("ResizeObserver desconectado");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 14 — Timer clear race
+//////////////////////////////////////////////////
+function test14(){
+  let id = setInterval(()=>{
+    try{
+      let a = new ArrayBuffer(1024);
+    }catch(e){}
+  },1);
+
+  // invalida enquanto executa
+  setTimeout(()=>{
+    clearInterval(id);
+    log("Intervalo limpo");
+  }, Math.random()*5);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 15 — IndexedDB transaction race
+//////////////////////////////////////////////////
+function test15(){
+  let req = indexedDB.open("testdb", 1);
+
+  req.onupgradeneeded = function(){
+    req.result.createObjectStore("store");
+  };
+
+  req.onsuccess = function(){
+    let db = req.result;
+
+    let tx = db.transaction("store", "readwrite");
+    let store = tx.objectStore("store");
+
+    let interval = setInterval(()=>{
+      try{
+        store.put({data: Math.random()}, Math.random());
+      }catch(e){}
+    },1);
+
+    // invalida durante operação
+    setTimeout(()=>{
+      tx.abort();
+      clearInterval(interval);
+      log("Transaction abortada");
+    }, Math.random()*10);
+  };
+}
+//////////////////////////////////////////////////
+// ?? TEST 16 — Clipboard race
+//////////////////////////////////////////////////
+function test16(){
+  try{
+    let data = new Blob(["test data"]);
+
+    navigator.clipboard.write([
+      new ClipboardItem({ "text/plain": data })
+    ]).then(()=> log("Clipboard write ok"))
+      .catch(()=>{});
+
+    // invalida rapidamente
+    setTimeout(()=>{
+      data = null;
+      log("Blob invalidado");
+    }, Math.random()*10);
+
+  }catch(e){
+    log("Erro: " + e);
+  }
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 17 — Blob URL revoke race
+//////////////////////////////////////////////////
+function test17(){
+  let blob = new Blob(["A".repeat(100000)]);
+  let url = URL.createObjectURL(blob);
+
+  let img = document.createElement("img");
+  img.src = url;
+
+  document.body.appendChild(img);
+
+  // invalida enquanto em uso
+  setTimeout(()=>{
+    URL.revokeObjectURL(url);
+    log("URL revogada");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 18 — iframe navigation race
+//////////////////////////////////////////////////
+function test18(){
+  let iframe = document.createElement("iframe");
+  document.body.appendChild(iframe);
+
+  iframe.src = "about:blank";
+
+  let interval = setInterval(()=>{
+    try{
+      iframe.contentWindow.location.reload();
+    }catch(e){}
+  },1);
+
+  // invalida durante atividade
+  setTimeout(()=>{
+    iframe.remove();
+    clearInterval(interval);
+    log("iframe removido");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 19 — PerformanceObserver race
+//////////////////////////////////////////////////
+function test19(){
+  let observer = new PerformanceObserver((list)=>{
+    // atividade durante callback
+    performance.mark("test" + Math.random());
+  });
+
+  observer.observe({entryTypes:["mark"]});
+
+  performance.mark("start");
+
+  // invalida durante atividade
+  setTimeout(()=>{
+    observer.disconnect();
+    log("Observer desconectado");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 20 — Crypto buffer reuse
+//////////////////////////////////////////////////
+function test20(){
+  let buffer = new Uint8Array(1024);
+
+  crypto.subtle.digest("SHA-256", buffer).then(()=>{
+    log("Digest completo");
+  });
+
+  // modifica enquanto em uso
+  setTimeout(()=>{
+    for(let i=0;i<buffer.length;i++){
+      buffer[i] = Math.random()*255;
+    }
+    log("Buffer modificado");
+  }, Math.random()*5);
+}
+//////////////////////////////////////////////////
+// ?? TEST 21 — Range / Selection race
+//////////////////////////////////////////////////
+function test21(){
+  let div = document.createElement("div");
+  div.textContent = "AAAAA";
+  document.body.appendChild(div);
+
+  let range = document.createRange();
+  range.selectNodeContents(div);
+
+  // atividade
+  let interval = setInterval(()=>{
+    try{
+      range.toString();
+    }catch(e){}
+  },1);
+
+  // invalida
+  setTimeout(()=>{
+    div.remove();
+    clearInterval(interval);
+    log("Range invalidado");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 22 — FileReader abort race
+//////////////////////////////////////////////////
+function test22(){
+  let blob = new Blob(["A".repeat(100000)]);
+  let reader = new FileReader();
+
+  reader.readAsArrayBuffer(blob);
+
+  // abort durante leitura
+  setTimeout(()=>{
+    reader.abort();
+    log("FileReader abortado");
+  }, Math.random()*5);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 23 — CSSStyleSheet replace race
+//////////////////////////////////////////////////
+function test23(){
+  let style = new CSSStyleSheet();
+
+  let interval = setInterval(()=>{
+    style.replaceSync("body { background: red; }");
+  },1);
+
+  // invalida
+  setTimeout(()=>{
+    style = null;
+    clearInterval(interval);
+    log("Stylesheet invalidado");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 24 — Fullscreen race
+//////////////////////////////////////////////////
+function test24(){
+  let div = document.createElement("div");
+  document.body.appendChild(div);
+
+  div.requestFullscreen().then(()=>{
+    let interval = setInterval(()=>{
+      try{
+        document.exitFullscreen();
+      }catch(e){}
+    },1);
+
+    // invalida
+    setTimeout(()=>{
+      div.remove();
+      clearInterval(interval);
+      log("Fullscreen encerrado");
+    }, Math.random()*10);
+  }).catch(()=>{});
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 25 — sendBeacon + unload race
+//////////////////////////////////////////////////
+function test25(){
+  window.addEventListener("beforeunload", ()=>{
+    navigator.sendBeacon("https://example.com", "data");
+  });
+
+  // força unload
+  setTimeout(()=>{
+    location.href = "about:blank#" + Math.random();
+    log("Navigation triggered");
+  }, Math.random()*10);
+}
+//////////////////////////////////////////////////
+// ?? TEST 26 — DataTransfer race
+//////////////////////////////////////////////////
+function test26(){
+  let dt = new DataTransfer();
+
+  dt.setData("text/plain", "AAAA");
+
+  // atividade
+  let interval = setInterval(()=>{
+    try{
+      dt.getData("text/plain");
+    }catch(e){}
+  },1);
+
+  // invalida
+  setTimeout(()=>{
+    dt.clearData();
+    clearInterval(interval);
+    log("DataTransfer limpo");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 27 — Selection race
+//////////////////////////////////////////////////
+function test27(){
+  let div = document.createElement("div");
+  div.textContent = "BBBBB";
+  document.body.appendChild(div);
+
+  let sel = window.getSelection();
+  let range = document.createRange();
+  range.selectNodeContents(div);
+  sel.addRange(range);
+
+  let interval = setInterval(()=>{
+    try{
+      sel.toString();
+    }catch(e){}
+  },1);
+
+  // invalida
+  setTimeout(()=>{
+    sel.removeAllRanges();
+    div.remove();
+    clearInterval(interval);
+    log("Selection invalidada");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 28 — Cache API race
+//////////////////////////////////////////////////
+function test28(){
+  caches.open("test-cache").then(cache => {
+
+    let req = new Request("https://example.com");
+    let res = new Response("data");
+
+    cache.put(req, res);
+
+    let interval = setInterval(()=>{
+      cache.match(req).then(()=>{});
+    },1);
+
+    // invalida
+    setTimeout(()=>{
+      caches.delete("test-cache");
+      clearInterval(interval);
+      log("Cache deletado");
+    }, Math.random()*10);
+  });
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 29 — Video element race
+//////////////////////////////////////////////////
+function test29(){
+  let video = document.createElement("video");
+  video.src = "https://www.w3schools.com/html/mov_bbb.mp4";
+
+  document.body.appendChild(video);
+
+  video.play().catch(()=>{});
+
+  let interval = setInterval(()=>{
+    try{
+      video.currentTime += 0.1;
+    }catch(e){}
+  },1);
+
+  // invalida
+  setTimeout(()=>{
+    video.remove();
+    clearInterval(interval);
+    log("Video removido");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 30 — Geolocation race
+//////////////////////////////////////////////////
+function test30(){
+  if(!navigator.geolocation){
+    log("Geolocation não suportado");
+    return;
+  }
+
+  let id = navigator.geolocation.watchPosition(()=>{
+    log("Position callback");
+  });
+
+  // invalida rapidamente
+  setTimeout(()=>{
+    navigator.geolocation.clearWatch(id);
+    log("Geolocation watch limpo");
+  }, Math.random()*10);
+}
+//////////////////////////////////////////////////
+// ?? TEST 31 — IntersectionObserver race
+//////////////////////////////////////////////////
+function test31(){
+  let div = document.createElement("div");
+  document.body.appendChild(div);
+
+  let obs = new IntersectionObserver(()=>{
+    div.style.width = Math.random()*100 + "px";
+  });
+
+  obs.observe(div);
+
+  let interval = setInterval(()=>{
+    div.style.height = Math.random()*100 + "px";
+  },1);
+
+  setTimeout(()=>{
+    obs.disconnect();
+    div.remove();
+    clearInterval(interval);
+    log("IntersectionObserver invalidado");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 32 — TextEncoder streaming race
+//////////////////////////////////////////////////
+function test32(){
+  let encoder = new TextEncoder();
+
+  let buffer = new Uint8Array(1024);
+
+  let interval = setInterval(()=>{
+    encoder.encodeInto("AAAA", buffer);
+  },1);
+
+  setTimeout(()=>{
+    buffer = null;
+    clearInterval(interval);
+    log("Buffer invalidado");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 33 — SVG remove race
+//////////////////////////////////////////////////
+function test33(){
+  let svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  let rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+
+  svg.appendChild(rect);
+  document.body.appendChild(svg);
+
+  let interval = setInterval(()=>{
+    try{
+      rect.setAttribute("width", Math.random()*100);
+    }catch(e){}
+  },1);
+
+  setTimeout(()=>{
+    svg.remove();
+    clearInterval(interval);
+    log("SVG removido");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 34 — requestAnimationFrame race
+//////////////////////////////////////////////////
+function test34(){
+  let id;
+
+  function loop(){
+    id = requestAnimationFrame(loop);
+  }
+
+  loop();
+
+  setTimeout(()=>{
+    cancelAnimationFrame(id);
+    log("RAF cancelado");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 35 — MediaSource race
+//////////////////////////////////////////////////
+function test35(){
+  try{
+    let video = document.createElement("video");
+    let ms = new MediaSource();
+
+    video.src = URL.createObjectURL(ms);
+
+    ms.addEventListener("sourceopen", ()=>{
+      let sb = ms.addSourceBuffer('video/mp4; codecs="avc1.42E01E"');
+
+      let interval = setInterval(()=>{
+        try{
+          sb.appendBuffer(new Uint8Array(100));
+        }catch(e){}
+      },1);
+
+      setTimeout(()=>{
+        ms.endOfStream();
+        clearInterval(interval);
+        log("MediaSource finalizado");
+      }, Math.random()*10);
+    });
+
+    document.body.appendChild(video);
+
+  }catch(e){
+    log("Erro: " + e);
+  }
+}
+//////////////////////////////////////////////////
+// ?? TEST 36 — Web Locks race
+//////////////////////////////////////////////////
+function test36(){
+  if(!navigator.locks){
+    log("Web Locks não suportado");
+    return;
+  }
+
+  navigator.locks.request("test-lock", async lock => {
+    let active = true;
+
+    let interval = setInterval(()=>{
+      if(active){
+        // atividade contínua
+        let x = Math.random();
+      }
+    },1);
+
+    setTimeout(()=>{
+      active = false; // invalida uso
+      clearInterval(interval);
+      log("Lock liberado");
+    }, Math.random()*10);
+  });
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 37 — CompressionStream race
+//////////////////////////////////////////////////
+function test37(){
+  try{
+    let cs = new CompressionStream("gzip");
+    let writer = cs.writable.getWriter();
+
+    let interval = setInterval(()=>{
+      try{
+        writer.write(new Uint8Array(100));
+      }catch(e){}
+    },1);
+
+    setTimeout(()=>{
+      writer.close(); // invalida
+      clearInterval(interval);
+      log("CompressionStream fechado");
+    }, Math.random()*10);
+
+  }catch(e){
+    log("Erro: " + e);
+  }
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 38 — FormData race
+//////////////////////////////////////////////////
+function test38(){
+  let fd = new FormData();
+
+  fd.append("key", "value");
+
+  let interval = setInterval(()=>{
+    try{
+      fd.get("key");
+    }catch(e){}
+  },1);
+
+  setTimeout(()=>{
+    fd.delete("key"); // invalida
+    clearInterval(interval);
+    log("FormData modificado");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 39 — DOMParser race
+//////////////////////////////////////////////////
+function test39(){
+  let parser = new DOMParser();
+
+  let interval = setInterval(()=>{
+    try{
+      parser.parseFromString("<div></div>", "text/html");
+    }catch(e){}
+  },1);
+
+  setTimeout(()=>{
+    parser = null; // invalida
+    clearInterval(interval);
+    log("Parser invalidado");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 40 — Notification race
+//////////////////////////////////////////////////
+function test40(){
+  if(!("Notification" in window)){
+    log("Notification não suportado");
+    return;
+  }
+
+  Notification.requestPermission().then(permission=>{
+    if(permission !== "granted"){
+      log("Permissão negada");
+      return;
+    }
+
+    let n = new Notification("Test");
+
+    let interval = setInterval(()=>{
+      try{
+        n.title;
+      }catch(e){}
+    },1);
+
+    setTimeout(()=>{
+      n.close(); // invalida
+      clearInterval(interval);
+      log("Notification fechada");
+    }, Math.random()*10);
+  });
+}
+//////////////////////////////////////////////////
+// ?? TEST 41 — Shadow DOM race
+//////////////////////////////////////////////////
+function test41(){
+  let host = document.createElement("div");
+  document.body.appendChild(host);
+
+  let shadow = host.attachShadow({mode:"open"});
+  let span = document.createElement("span");
+  shadow.appendChild(span);
+
+  let interval = setInterval(()=>{
+    try{
+      span.textContent = Math.random();
+    }catch(e){}
+  },1);
+
+  setTimeout(()=>{
+    host.remove(); // invalida shadow tree
+    clearInterval(interval);
+    log("ShadowRoot removido");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 42 — Custom Elements lifecycle race
+//////////////////////////////////////////////////
+function test42(){
+  class XTest extends HTMLElement{
+    connectedCallback(){
+      this.interval = setInterval(()=>{
+        try{
+          this.textContent = Math.random();
+        }catch(e){}
+      },1);
+    }
+    disconnectedCallback(){
+      clearInterval(this.interval);
+    }
+  }
+
+  customElements.define("x-test", XTest);
+
+  let el = document.createElement("x-test");
+  document.body.appendChild(el);
+
+  setTimeout(()=>{
+    el.remove(); // dispara disconnect
+    log("CustomElement removido");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 43 — DecompressionStream race
+//////////////////////////////////////////////////
+function test43(){
+  try{
+    let ds = new DecompressionStream("gzip");
+    let writer = ds.writable.getWriter();
+
+    let interval = setInterval(()=>{
+      try{
+        writer.write(new Uint8Array(100));
+      }catch(e){}
+    },1);
+
+    setTimeout(()=>{
+      writer.close();
+      clearInterval(interval);
+      log("DecompressionStream fechado");
+    }, Math.random()*10);
+
+  }catch(e){
+    log("Erro: " + e);
+  }
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 44 — URL mutation race
+//////////////////////////////////////////////////
+function test44(){
+  let url = new URL("https://example.com");
+
+  let interval = setInterval(()=>{
+    try{
+      url.pathname = "/" + Math.random();
+    }catch(e){}
+  },1);
+
+  setTimeout(()=>{
+    url = null; // invalida
+    clearInterval(interval);
+    log("URL invalidada");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 45 — Screen orientation race
+//////////////////////////////////////////////////
+function test45(){
+  if(!screen.orientation){
+    log("Orientation API não suportada");
+    return;
+  }
+
+  function handler(){
+    try{
+      screen.orientation.angle;
+    }catch(e){}
+  }
+
+  screen.orientation.addEventListener("change", handler);
+
+  // invalida
+  setTimeout(()=>{
+    screen.orientation.removeEventListener("change", handler);
+    log("Listener removido");
+  }, Math.random()*10);
+}
+//////////////////////////////////////////////////
+// ?? TEST 46 — Worker terminate storm (FORTE)
+//////////////////////////////////////////////////
+function test46(){
+  let workers = [];
+
+  for(let i=0;i<10;i++){
+    let w = new Worker(URL.createObjectURL(new Blob([`
+      let i = 0;
+      setInterval(()=>{
+        postMessage(i++);
+      },1);
+    `])));
+    workers.push(w);
+  }
+
+  // atividade
+  workers.forEach(w=>{
+    w.onmessage = ()=>{};
+  });
+
+  // destruição concorrente
+  setTimeout(()=>{
+    workers.forEach(w=>{
+      try{
+        w.terminate();
+      }catch(e){}
+    });
+    log("Workers terminados");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 47 — MessagePort flood + close
+//////////////////////////////////////////////////
+function test47(){
+  let mc = new MessageChannel();
+
+  mc.port1.onmessage = ()=>{
+    for(let i=0;i<100;i++){
+      try{
+        mc.port1.postMessage("spam");
+      }catch(e){}
+    }
+  };
+
+  mc.port2.postMessage("start");
+
+  setTimeout(()=>{
+    mc.port1.close();
+    mc.port2.close();
+    log("Ports fechadas");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 48 — Multi-worker buffer race
+//////////////////////////////////////////////////
+function test48(){
+  let ab = new ArrayBuffer(1024);
+
+  let workerCode = `
+    onmessage = e => {
+      let buf = e.data;
+      let view = new Uint8Array(buf);
+      setInterval(()=>{
+        try{
+          view[0] = Math.random()*255;
+        }catch(e){}
+      },1);
+    }
+  `;
+
+  let w1 = new Worker(URL.createObjectURL(new Blob([workerCode])));
+  let w2 = new Worker(URL.createObjectURL(new Blob([workerCode])));
+
+  w1.postMessage(ab, [ab]);
+
+  setTimeout(()=>{
+    try{
+      w2.postMessage(ab, [ab]); // reuse após transfer
+    }catch(e){}
+    log("Buffer reutilizado");
+  }, Math.random()*10);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 49 — Blob worker revoke race
+//////////////////////////////////////////////////
+function test49(){
+  let blob = new Blob([`
+    setInterval(()=>{},1);
+  `]);
+
+  let url = URL.createObjectURL(blob);
+
+  let w = new Worker(url);
+
+  // invalida enquanto roda
+  setTimeout(()=>{
+    URL.revokeObjectURL(url);
+    log("URL revogada");
+  }, Math.random()*10);
+
+  // destrói depois
+  setTimeout(()=>{
+    w.terminate();
+    log("Worker terminado");
+  }, Math.random()*20);
+}
+
+//////////////////////////////////////////////////
+// ?? TEST 50 — Promise + destruction race
+//////////////////////////////////////////////////
+function test50(){
+  let obj = {
+    valueOf(){
+      Promise.resolve().then(()=>{
+        obj = null; // destruição async
+        log("Objeto destruído async");
+      });
+      return 1;
+    }
+  };
+
+  let r = obj + 1;
+
+  // força microtasks
+  for(let i=0;i<1000;i++){
+    Promise.resolve().then(()=>{});
+  }
+
+  log("Resultado: " + r);
+}
+
+
+</script>
+
+</body>
+</html>

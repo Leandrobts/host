@@ -1,0 +1,2432 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>PS4 Binary Suite - NOVOS TESTES 2026</title>
+</head>
+<body>
+    <div class="section">
+        <h2>Testes Grok</h2>
+    
+        
+        <button onclick="runMessageChannelTransferRace()">1. MessageChannel Transfer + Double Close Race (KERNEL PANIC)</button>
+        <button onclick="runWorkerTerminationPostRace()">2. Worker Termination vs Massive postMessage Race (KERNEL PANIC)</button>
+        <button onclick="runSABAtomicsContention()">3. SharedArrayBuffer + Atomics Contention Flood (KERNEL PANIC)</button>
+        <button onclick="runBlobWorkerRevokeRace()">4. Blob URL + Worker Revoke Race (KERNEL PANIC)</button>
+        <button onclick="runMicrotaskWorkerFlood()">5. Microtask Queue + Worker Promise Flood (KERNEL PANIC)</button>
+    <button onclick="runPortProxyDoubleFree()">1. MessagePort Proxy Double-Free Race (C++ UAF)</button>
+    <button onclick="runWorkerProxyGCStress()">2. Worker Proxy GC + Transfer Race (WebKit C++)</button>
+    <button onclick="runSABDetachDuringWait()">3. SAB Detach During Atomics.wait (Kernel Race)</button>
+    <button onclick="runBlobURLWorkerProxyRace()">4. Blob URL + Worker Proxy Destruction Race</button>
+    <button onclick="runPromiseMicrotaskProxyRace()">5. Promise Microtask + Worker Proxy Race (C++)</button>
+    <button onclick="runTransferableArrayRace()">1. Multi-Transferable ArrayBuffer + WorkerThreadProxy Race (C++ UAF)</button>
+    <button onclick="runErrorEventProxyRace()">2. Uncaught ErrorEvent + Worker Proxy Propagation Race (FreeBSD)</button>
+    <button onclick="runWebAssemblyProxyRace()">3. WebAssembly Module + Memory Proxy Destruction Race (C++)</button>
+    <button onclick="runAbortFetchProxyRace()">4. AbortController + Fetch Proxy Race (Kernel Signal)</button>
+    <button onclick="runImageDataTransferRace()">5. ImageData / Canvas Transfer + Proxy GC Race (FreeBSD)</button>
+    <button onclick="runReadableStreamPipeRace()">1. ReadableStream + Pipe + Worker Proxy Race (C++ UAF)</button>
+    <button onclick="runWebGLBufferProxyRace()">2. WebGL Buffer + Context Proxy Destruction Race (FreeBSD)</button>
+    <button onclick="runCryptoSubtlePromiseRace()">3. Crypto.subtle + Promise Settlement Proxy Race (C++)</button>
+    <button onclick="runOffscreenCanvasTransferRace()">4. OffscreenCanvas TransferControl + Proxy GC Race</button>
+    <button onclick="runEventSourceProxyRace()">5. EventSource (SSE) + Connection Proxy Race (Kernel)</button>
+    <button onclick="runFetchAbortProxyRace()">1. Fetch + AbortController Proxy Race (C++ UAF)</button>
+    <button onclick="runWasmCompileProxyRace()">2. WebAssembly Compile + Instantiate Proxy Race (FreeBSD)</button>
+    <button onclick="runBlobRevokeWorkerRace()">3. Blob URL Revoke + Worker Proxy Destruction Race</button>
+    <button onclick="runFormDataFetchRace()">4. FormData + Fetch Body Proxy Race (C++)</button>
+    <button onclick="runMessageChannelStructuredRace()">5. MessageChannel + Structured Clone Transfer Race</button>
+    <button onclick="runXMLHttpRequestProxyRace()">1. XMLHttpRequest Response + Proxy Race (C++ UAF)</button>
+    <button onclick="runTextEncoderDecoderRace()">2. TextEncoder + TextDecoder Buffer Race (FreeBSD)</button>
+    <button onclick="runHistoryStateProxyRace()">3. History.pushState + replaceState Proxy Race</button>
+    <button onclick="runNavigatorPluginProxyRace()">4. Navigator Plugins / MimeTypes Proxy Race (C++)</button>
+    <button onclick="runLocationURLParamsRace()">5. Location + URLSearchParams Navigation Proxy Race</button>
+    <button onclick="runWorkerRapidCreateDestroy()">1. Rapid Worker Create + Immediate Destroy (Pthread Cleanup Race)</button>
+    <button onclick="runWorkerTerminateDuringPostMessage()">2. Worker terminate() vs postMessage Race (Pthread Signal)</button>
+    <button onclick="runWorkerErrorPropagationRace()">3. Worker Error + Uncaught Exception Propagation Race</button>
+    <button onclick="runMessageChannelWorkerCloseRace()">4. MessageChannel + Worker Close/Destroy Race</button>
+    <button onclick="runWorkerLifecycleStress()">5. Worker Lifecycle + Promise + Close Race (Pthread Stress)</button>
+    <button onclick="runWorkerFetchStreamRace()">1. Worker + Fetch Response Stream Proxy Race (C++ UAF)</button>
+    <button onclick="runBlobStructuredCloneRace()">2. Blob + Structured Clone + Worker Proxy Race (FreeBSD)</button>
+    <button onclick="runPromiseRejectionProxyRace()">3. Rapid Promise Rejection + Worker Proxy Race (C++)</button>
+    <button onclick="runXHRResponseTypeRace()">4. XMLHttpRequest responseType + Proxy Destruction Race</button>
+    <button onclick="runURLWorkerCreationRace()">5. URL.createObjectURL + Worker Rapid Creation Race (Pthread)</button>
+    <button onclick="runFetchWorkerProxyRace()">1. Fetch + Worker Proxy + Rapid Terminate (C++ + Pthread)</button>
+    <button onclick="runBlobWorkerChannelRace()">2. Blob + MessageChannel + Worker Destroy Race</button>
+    <button onclick="runPromiseXHRWorkerRace()">3. Promise + XMLHttpRequest + Worker Race (Mixed)</button>
+    <button onclick="runURLProxyWorkerStress()">4. URL.createObjectURL + Worker Proxy + Pthread Cleanup</button>
+    <button onclick="runErrorFetchWorkerRace()">5. Error Propagation + Fetch + Worker Termination Race</button>
+    <button onclick="runResponseCloneWorkerRace()">1. Response.clone() + Worker Proxy Race (C++)</button>
+    <button onclick="runTextDecoderWorkerRace()">2. TextDecoder + Worker Rapid Destroy (Pthread)</button>
+    <button onclick="runFormDataPromiseWorkerRace()">3. FormData + Promise Chain + Worker Race</button>
+    <button onclick="runXHRChannelWorkerRace()">4. XMLHttpRequest + MessageChannel + Worker Destroy</button>
+    <button onclick="runBlobErrorTerminateRace()">5. Blob + Forced Error + Worker Termination Race</button>
+    <button onclick="runMessagePortUAF()">1. MessagePort Double Close UAF Race</button>
+    <button onclick="runWorkerProxyUAF()">2. Worker Proxy Detach + Terminate UAF</button>
+    <button onclick="runBlobURLUAF()">3. Blob URL Revoke + Worker Use-After-Free</button>
+    <button onclick="runFetchResponseUAF()">4. Fetch Response + Clone UAF Race</button>
+    <button onclick="runPromiseRejectionUAF()">5. Promise Rejection + Worker Proxy UAF</button>
+    <button onclick="runBlobURLUAFPure()">1. Blob URL Revoke + Delayed Use UAF</button>
+    <button onclick="runWorkerSelfCloseUAF()">2. Worker self.close() + Delayed postMessage UAF</button>
+    <button onclick="runResponseBodyUAF()">3. Fetch Response Body + Early Free UAF</button>
+    <button onclick="runFormDataBlobUAF()">4. FormData + Blob Append + Early Release UAF</button>
+    <button onclick="runPromiseThenUAF()">5. Promise.then() Chain + Object Free UAF</button>
+    <button onclick="runMessageChannelPortUAF()">1. MessageChannel Port Close + Delayed Use UAF (C++ Port)</button>
+    <button onclick="runWorkerBlobRevokeUAF()">2. Worker + Blob Revoke Immediate + Delayed PostMessage UAF</button>
+    <button onclick="runFetchBodyConsumeUAF()">3. Fetch Response Body Early Consume + Re-use UAF (FreeBSD)</button>
+    <button onclick="runXHRStateUAF()">4. XMLHttpRequest Early Abort + State Re-use UAF</button>
+    <button onclick="runPromiseObjectFreeUAF()">5. Promise Settlement + Object Free + Delayed Access UAF</button>
+    <button onclick="runFormDataFileUAF()">1. FormData + File + Early Release + Delayed Use UAF</button>
+    <button onclick="runXHRResponseUAF()">2. XMLHttpRequest + Response Early Free + Re-use UAF</button>
+    <button onclick="runResponseArrayBufferUAF()">3. Fetch Response.arrayBuffer() Consume + Delayed Re-use UAF</button>
+    <button onclick="runTextEncoderBufferUAF()">4. TextEncoder + encodeInto Buffer Early Free + Use UAF</button>
+    <button onclick="runURLSearchParamsUAF()">5. URLSearchParams + Location + Early Free + Delayed Access UAF</button>
+    <button onclick="runFormDataFileUAF()">1. FormData + File + Early Release + Delayed Use UAF</button>
+    <button onclick="runXHRResponseUAF()">2. XMLHttpRequest + Response Early Free + Re-use UAF</button>
+    <button onclick="runResponseArrayBufferUAF()">3. Fetch Response.arrayBuffer() Consume + Delayed Re-use UAF</button>
+    <button onclick="runTextEncoderBufferUAF()">4. TextEncoder + encodeInto Buffer Early Free + Use UAF</button>
+    <button onclick="runURLSearchParamsUAF()">5. URLSearchParams + Location + Early Free + Delayed Access UAF</button>
+    </div>
+
+    <div id="log"></div>
+    <div id="dummy"></div>
+    <div id="sandbox"></div>
+
+    <script>
+        function log(msg) {
+            const el = document.getElementById('log');
+            el.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+            el.scrollTop = el.scrollHeight;
+        }
+
+        // === NOVO TESTE 1: MessageChannel Transfer + Double Close Race ===
+        function runMessageChannelTransferRace() {
+            log("[NOVO] Iniciando MessageChannel Transfer + Double Close Race...");
+            const workerCode = `
+                onmessage = (e) => {
+                    const port = e.ports[0];
+                    setInterval(() => port.postMessage(new ArrayBuffer(512)), 0);
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let i = 0;
+            const interval = setInterval(() => {
+                const mc = new MessageChannel();
+                const w = new Worker(url);
+                w.postMessage("init", [mc.port2]);
+                
+                // Race: transfer + close imediato em ambos os lados
+                setTimeout(() => {
+                    mc.port1.close();
+                    mc.port2.close();
+                    w.terminate();
+                }, Math.random() * 8);
+                
+                i++;
+                if (i % 80 === 0) log(`MessageChannel races: ${i}`);
+                if (i > 1200) {
+                    clearInterval(interval);
+                    log("Teste 1 finalizado.");
+                }
+            }, 8);
+        }
+
+        // === NOVO TESTE 2: Worker Termination vs Massive postMessage Race ===
+        function runWorkerTerminationPostRace() {
+            log("[NOVO] Iniciando Worker Termination vs Massive postMessage Race...");
+            const workerCode = `
+                onmessage = () => {
+                    while (true) {
+                        postMessage(new ArrayBuffer(1024 * 64)); // 64KB por mensagem
+                    }
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let i = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("start");
+                
+                // Race: termina enquanto o worker ainda está enviando buffers grandes
+                setTimeout(() => {
+                    try { w.postMessage(new ArrayBuffer(1024 * 256)); } catch(e) {}
+                    w.terminate();
+                }, Math.random() * 12);
+                
+                i++;
+                if (i % 100 === 0) log(`Termination races: ${i}`);
+                if (i > 1500) {
+                    clearInterval(interval);
+                    log("Teste 2 finalizado.");
+                }
+            }, 6);
+        }
+
+        // === NOVO TESTE 3: SharedArrayBuffer + Atomics Contention Flood ===
+        function runSABAtomicsContention() {
+            log("[NOVO] Iniciando SharedArrayBuffer + Atomics Contention Flood...");
+            const sab = new SharedArrayBuffer(4096);
+            const view = new Int32Array(sab);
+            
+            const workerCode = `
+                onmessage = (e) => {
+                    const view = new Int32Array(e.data);
+                    while (true) {
+                        Atomics.notify(view, 0, 1);
+                        Atomics.wait(view, 0, 0, 1);
+                    }
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let i = 0;
+            const interval = setInterval(() => {
+                for (let j = 0; j < 12; j++) {
+                    const w = new Worker(url);
+                    w.postMessage(sab);
+                }
+                i += 12;
+                if (i % 300 === 0) log(`Atomics contention: ${i} workers`);
+                if (i > 4000) {
+                    clearInterval(interval);
+                    log("Teste 3 finalizado (SAB flood).");
+                }
+            }, 10);
+        }
+
+        // === NOVO TESTE 4: Blob URL + Worker Revoke Race ===
+        function runBlobWorkerRevokeRace() {
+            log("[NOVO] Iniciando Blob URL + Worker Revoke Race...");
+            let count = 0;
+            const interval = setInterval(() => {
+                for (let i = 0; i < 25; i++) {
+                    const blob = new Blob(["onmessage = () => { while(true) postMessage(1); }"], {type: "text/javascript"});
+                    const url = URL.createObjectURL(blob);
+                    const w = new Worker(url);
+                    w.postMessage("go");
+                    
+                    // Revoke enquanto o worker ainda está rodando
+                    setTimeout(() => {
+                        URL.revokeObjectURL(url);
+                        w.terminate();
+                    }, Math.random() * 15);
+                }
+                count += 25;
+                if (count % 500 === 0) log(`Blob+Revoke races: ${count}`);
+                if (count > 3000) {
+                    clearInterval(interval);
+                    log("Teste 4 finalizado.");
+                }
+            }, 12);
+        }
+
+        // === NOVO TESTE 5: Microtask Queue + Worker Promise Flood ===
+        function runMicrotaskWorkerFlood() {
+            log("[NOVO] Iniciando Microtask Queue + Worker Promise Flood...");
+            const workerCode = `
+                onmessage = () => {
+                    function spam() {
+                        Promise.resolve().then(() => {
+                            Promise.reject(new Error("microtask")).catch(() => {});
+                        });
+                        if (Math.random() > 0.8) close();
+                        setTimeout(spam, 0);
+                    }
+                    spam();
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let i = 0;
+            const interval = setInterval(() => {
+                for (let j = 0; j < 15; j++) {
+                    const w = new Worker(url);
+                    w.postMessage("start");
+                }
+                i += 15;
+                if (i % 400 === 0) log(`Microtask flood: ${i} workers`);
+                if (i > 5000) {
+                    clearInterval(interval);
+                    log("Teste 5 finalizado (microtask + pthread stress).");
+                }
+            }, 9);
+        }
+ // 1. MessagePort Proxy Double-Free Race
+        function runPortProxyDoubleFree() {
+            log("[C++] Iniciando MessagePort Proxy Double-Free Race...");
+            const workerCode = `
+                onmessage = (e) => {
+                    if (e.ports && e.ports[0]) {
+                        e.ports[0].postMessage(new ArrayBuffer(256));
+                    }
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const mc = new MessageChannel();
+                const w = new Worker(url);
+                w.postMessage("init", [mc.port2]);
+                
+                setTimeout(() => {
+                    mc.port1.close();
+                    try { mc.port2.close(); } catch(e) {}
+                    w.terminate();
+                }, 5 + Math.random() * 10);
+                
+                count++;
+                if (count % 60 === 0) log(`Port Proxy races: ${count}`);
+                if (count > 800) {
+                    clearInterval(interval);
+                    log("Teste 1 finalizado.");
+                }
+            }, 12);
+        }
+
+        // 2. Worker Proxy GC + Transfer Race
+        function runWorkerProxyGCStress() {
+            log("[C++] Iniciando Worker Proxy GC + Transfer Race...");
+            const workerCode = `
+                onmessage = (e) => {
+                    postMessage({buffer: new ArrayBuffer(512)}, [e.data]);
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                const buf = new ArrayBuffer(1024);
+                w.postMessage(buf, [buf]);
+                
+                setTimeout(() => {
+                    w.terminate();
+                }, 8 + Math.random() * 12);
+                
+                count++;
+                if (count % 80 === 0) log(`Worker Proxy GC races: ${count}`);
+                if (count > 1000) {
+                    clearInterval(interval);
+                    log("Teste 2 finalizado.");
+                }
+            }, 10);
+        }
+
+        // 3. SAB Detach During Atomics.wait
+        function runSABDetachDuringWait() {
+            log("[FreeBSD] Iniciando SAB Detach During Atomics.wait...");
+            const sab = new SharedArrayBuffer(2048);
+            const view = new Int32Array(sab);
+            
+            const workerCode = `
+                onmessage = (e) => {
+                    const v = new Int32Array(e.data);
+                    Atomics.wait(v, 0, 0, 10);
+                    postMessage("done");
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage(sab);
+                
+                setTimeout(() => {
+                    try { w.terminate(); } catch(e) {}
+                }, 15);
+                
+                count++;
+                if (count % 50 === 0) log(`SAB detach races: ${count}`);
+                if (count > 600) {
+                    clearInterval(interval);
+                    log("Teste 3 finalizado.");
+                }
+            }, 18);
+        }
+
+        // 4. Blob URL + Worker Proxy Destruction Race
+        function runBlobURLWorkerProxyRace() {
+            log("[C++] Iniciando Blob URL + Worker Proxy Destruction Race...");
+            let count = 0;
+            const interval = setInterval(() => {
+                for (let i = 0; i < 8; i++) {
+                    const blob = new Blob([`onmessage = () => postMessage(new ArrayBuffer(128));`], {type: "text/javascript"});
+                    const url = URL.createObjectURL(blob);
+                    const w = new Worker(url);
+                    w.postMessage("start");
+                    
+                    setTimeout(() => {
+                        URL.revokeObjectURL(url);
+                        w.terminate();
+                    }, 6 + Math.random() * 14);
+                }
+                count += 8;
+                if (count % 200 === 0) log(`Blob+Proxy races: ${count}`);
+                if (count > 1200) {
+                    clearInterval(interval);
+                    log("Teste 4 finalizado.");
+                }
+            }, 15);
+        }
+
+        // 5. Promise Microtask + Worker Proxy Race
+        function runPromiseMicrotaskProxyRace() {
+            log("[C++] Iniciando Promise Microtask + Worker Proxy Race...");
+            const workerCode = `
+                onmessage = () => {
+                    Promise.resolve().then(() => {
+                        postMessage(new ArrayBuffer(256));
+                    }).catch(() => {});
+                    Promise.reject("test").catch(() => {});
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("trigger");
+                
+                setTimeout(() => {
+                    w.terminate();
+                }, 7 + Math.random() * 11);
+                
+                count++;
+                if (count % 70 === 0) log(`Promise microtask races: ${count}`);
+                if (count > 900) {
+                    clearInterval(interval);
+                    log("Teste 5 finalizado.");
+                }
+            }, 13);
+        }
+ // 1. Multi-Transferable ArrayBuffer + WorkerThreadProxy Race
+        function runTransferableArrayRace() {
+            log("[C++] Iniciando Multi-Transferable ArrayBuffer + WorkerThreadProxy Race...");
+            const workerCode = `
+                onmessage = (e) => {
+                    if (e.data && e.data.buffers) {
+                        postMessage({ack: true}, e.data.buffers);
+                    }
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                const bufs = [new ArrayBuffer(512), new ArrayBuffer(512), new ArrayBuffer(512)];
+                w.postMessage({buffers: bufs}, bufs);
+                
+                setTimeout(() => {
+                    w.terminate();
+                }, 6 + Math.random() * 14);
+                
+                count++;
+                if (count % 70 === 0) log(`Transferable races: ${count}`);
+                if (count > 900) {
+                    clearInterval(interval);
+                    log("Teste 1 finalizado.");
+                }
+            }, 14);
+        }
+
+        // 2. Uncaught ErrorEvent + Worker Proxy Propagation Race
+        function runErrorEventProxyRace() {
+            log("[FreeBSD] Iniciando Uncaught ErrorEvent + Worker Proxy Propagation Race...");
+            const workerCode = `
+                onmessage = () => {
+                    throw new Error("proxy-test");
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("trigger");
+                w.onerror = () => {};
+                
+                setTimeout(() => {
+                    w.terminate();
+                }, 8 + Math.random() * 12);
+                
+                count++;
+                if (count % 65 === 0) log(`ErrorEvent races: ${count}`);
+                if (count > 850) {
+                    clearInterval(interval);
+                    log("Teste 2 finalizado.");
+                }
+            }, 15);
+        }
+
+        // 3. WebAssembly Module + Memory Proxy Destruction Race
+        function runWebAssemblyProxyRace() {
+            log("[C++] Iniciando WebAssembly Module + Memory Proxy Destruction Race...");
+            const workerCode = `
+                onmessage = async () => {
+                    const mod = await WebAssembly.compile(new Uint8Array(128));
+                    const instance = await WebAssembly.instantiate(mod);
+                    postMessage({memory: instance.exports.memory ? true : false});
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("start");
+                
+                setTimeout(() => {
+                    w.terminate();
+                }, 10 + Math.random() * 18);
+                
+                count++;
+                if (count % 55 === 0) log(`WASM proxy races: ${count}`);
+                if (count > 700) {
+                    clearInterval(interval);
+                    log("Teste 3 finalizado.");
+                }
+            }, 16);
+        }
+
+        // 4. AbortController + Fetch Proxy Race
+        function runAbortFetchProxyRace() {
+            log("[FreeBSD] Iniciando AbortController + Fetch Proxy Race (Kernel Signal)...");
+            const workerCode = `
+                onmessage = (e) => {
+                    const ctrl = new AbortController();
+                    fetch("data:text/plain,ok", {signal: ctrl.signal}).catch(() => {});
+                    if (e.data.abort) ctrl.abort();
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage({abort: true});
+                
+                setTimeout(() => {
+                    w.terminate();
+                }, 7 + Math.random() * 13);
+                
+                count++;
+                if (count % 60 === 0) log(`Abort/Fetch races: ${count}`);
+                if (count > 800) {
+                    clearInterval(interval);
+                    log("Teste 4 finalizado.");
+                }
+            }, 13);
+        }
+
+        // 5. ImageData / Canvas Transfer + Proxy GC Race
+        function runImageDataTransferRace() {
+            log("[C++] Iniciando ImageData/Canvas Transfer + Proxy GC Race...");
+            const workerCode = `
+                onmessage = (e) => {
+                    if (e.data && e.data.image) {
+                        postMessage({ack: true}, [e.data.image]);
+                    }
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                const canvas = document.createElement('canvas');
+                canvas.width = 64;
+                canvas.height = 64;
+                const ctx = canvas.getContext('2d');
+                const imgData = ctx.getImageData(0, 0, 64, 64);
+                const transferable = [imgData.data.buffer];
+                
+                w.postMessage({image: imgData.data.buffer}, transferable);
+                
+                setTimeout(() => {
+                    w.terminate();
+                }, 9 + Math.random() * 15);
+                
+                count++;
+                if (count % 50 === 0) log(`ImageData transfer races: ${count}`);
+                if (count > 650) {
+                    clearInterval(interval);
+                    log("Teste 5 finalizado.");
+                }
+            }, 17);
+        }
+ // 1. ReadableStream + Pipe + Worker Proxy Race
+        function runReadableStreamPipeRace() {
+            log("[C++] Iniciando ReadableStream Pipe + Worker Proxy Race...");
+            const workerCode = `
+                onmessage = (e) => {
+                    const rs = new ReadableStream({
+                        start(controller) { controller.enqueue(new Uint8Array(256)); controller.close(); }
+                    });
+                    postMessage({stream: true});
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("start");
+                
+                setTimeout(() => {
+                    w.terminate();
+                }, 8 + Math.random() * 15);
+                
+                count++;
+                if (count % 60 === 0) log(`ReadableStream races: ${count}`);
+                if (count > 750) {
+                    clearInterval(interval);
+                    log("Teste 1 finalizado.");
+                }
+            }, 14);
+        }
+
+        // 2. WebGL Buffer + Context Proxy Destruction Race
+        function runWebGLBufferProxyRace() {
+            log("[FreeBSD] Iniciando WebGL Buffer + Context Proxy Destruction Race...");
+            const workerCode = `
+                onmessage = () => {
+                    const canvas = new OffscreenCanvas(64, 64);
+                    const gl = canvas.getContext('webgl');
+                    if (gl) {
+                        const buffer = gl.createBuffer();
+                        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+                        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(128), gl.STATIC_DRAW);
+                    }
+                    postMessage("gl-done");
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("trigger");
+                
+                setTimeout(() => {
+                    w.terminate();
+                }, 9 + Math.random() * 16);
+                
+                count++;
+                if (count % 55 === 0) log(`WebGL proxy races: ${count}`);
+                if (count > 700) {
+                    clearInterval(interval);
+                    log("Teste 2 finalizado.");
+                }
+            }, 15);
+        }
+
+        // 3. Crypto.subtle + Promise Settlement Proxy Race
+        function runCryptoSubtlePromiseRace() {
+            log("[C++] Iniciando Crypto.subtle + Promise Settlement Proxy Race...");
+            const workerCode = `
+                onmessage = async () => {
+                    try {
+                        const key = await crypto.subtle.generateKey({name: "AES-GCM", length: 256}, true, ["encrypt"]);
+                        const enc = await crypto.subtle.encrypt({name: "AES-GCM", iv: new Uint8Array(12)}, key, new Uint8Array(64));
+                        postMessage({encrypted: enc.byteLength});
+                    } catch(e) {}
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("crypto");
+                
+                setTimeout(() => {
+                    w.terminate();
+                }, 10 + Math.random() * 18);
+                
+                count++;
+                if (count % 50 === 0) log(`Crypto.subtle races: ${count}`);
+                if (count > 650) {
+                    clearInterval(interval);
+                    log("Teste 3 finalizado.");
+                }
+            }, 16);
+        }
+
+        // 4. OffscreenCanvas TransferControl + Proxy GC Race
+        function runOffscreenCanvasTransferRace() {
+            log("[C++] Iniciando OffscreenCanvas TransferControl + Proxy GC Race...");
+            const workerCode = `
+                onmessage = (e) => {
+                    if (e.data && e.data.canvas) {
+                        postMessage({ack: true}, [e.data.canvas]);
+                    }
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                const canvas = new OffscreenCanvas(128, 128);
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                
+                try {
+                    w.postMessage({canvas: transferred}, [transferred]);
+                } catch(e) {}
+                
+                setTimeout(() => {
+                    w.terminate();
+                }, 7 + Math.random() * 13);
+                
+                count++;
+                if (count % 65 === 0) log(`OffscreenCanvas races: ${count}`);
+                if (count > 800) {
+                    clearInterval(interval);
+                    log("Teste 4 finalizado.");
+                }
+            }, 13);
+        }
+
+        // 5. EventSource (SSE) + Connection Proxy Race
+        function runEventSourceProxyRace() {
+            log("[FreeBSD] Iniciando EventSource (SSE) + Connection Proxy Race...");
+            const workerCode = `
+                onmessage = () => {
+                    try {
+                        const es = new EventSource("data:text/event-stream;base64,ZXZlbnQ6IHRlc3QKZGF0YTogMS8vbgo=");
+                        es.onmessage = () => {};
+                        es.onerror = () => {};
+                    } catch(e) {}
+                    postMessage("sse-init");
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("start");
+                
+                setTimeout(() => {
+                    w.terminate();
+                }, 8 + Math.random() * 14);
+                
+                count++;
+                if (count % 60 === 0) log(`EventSource proxy races: ${count}`);
+                if (count > 750) {
+                    clearInterval(interval);
+                    log("Teste 5 finalizado.");
+                }
+            }, 14);
+        }
+// 1. Fetch + AbortController Proxy Race
+        function runFetchAbortProxyRace() {
+            log("[C++] Iniciando Fetch + AbortController Proxy Race...");
+            const workerCode = `
+                onmessage = (e) => {
+                    const ctrl = new AbortController();
+                    fetch("data:text/plain,fetch-test", { signal: ctrl.signal })
+                        .then(() => {}).catch(() => {});
+                    if (e.data && e.data.abort) ctrl.abort();
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage({abort: true});
+                
+                setTimeout(() => { w.terminate(); }, 7 + Math.random() * 13);
+                
+                count++;
+                if (count % 60 === 0) log(`Fetch/Abort races: ${count}`);
+                if (count > 800) {
+                    clearInterval(interval);
+                    log("Teste 1 finalizado.");
+                }
+            }, 14);
+        }
+
+        // 2. WebAssembly Compile + Instantiate Proxy Race
+        function runWasmCompileProxyRace() {
+            log("[C++] Iniciando WebAssembly Compile + Instantiate Proxy Race...");
+            const workerCode = `
+                onmessage = async () => {
+                    try {
+                        const bytes = new Uint8Array(256);
+                        const mod = await WebAssembly.compile(bytes);
+                        const inst = await WebAssembly.instantiate(mod);
+                        postMessage({wasm: true});
+                    } catch(e) {}
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("wasm");
+                
+                setTimeout(() => { w.terminate(); }, 10 + Math.random() * 17);
+                
+                count++;
+                if (count % 55 === 0) log(`WebAssembly races: ${count}`);
+                if (count > 700) {
+                    clearInterval(interval);
+                    log("Teste 2 finalizado.");
+                }
+            }, 15);
+        }
+
+        // 3. Blob URL Revoke + Worker Proxy Destruction Race
+        function runBlobRevokeWorkerRace() {
+            log("[C++] Iniciando Blob URL Revoke + Worker Proxy Destruction Race...");
+            let count = 0;
+            const interval = setInterval(() => {
+                for (let i = 0; i < 6; i++) {
+                    const blob = new Blob(["onmessage = () => postMessage(new ArrayBuffer(128));"], 
+                                        {type: "text/javascript"});
+                    const objUrl = URL.createObjectURL(blob);
+                    const w = new Worker(objUrl);
+                    w.postMessage("start");
+                    
+                    setTimeout(() => {
+                        URL.revokeObjectURL(objUrl);
+                        w.terminate();
+                    }, 6 + Math.random() * 12);
+                }
+                count += 6;
+                if (count % 180 === 0) log(`Blob Revoke races: ${count}`);
+                if (count > 1100) {
+                    clearInterval(interval);
+                    log("Teste 3 finalizado.");
+                }
+            }, 16);
+        }
+
+        // 4. FormData + Fetch Body Proxy Race
+        function runFormDataFetchRace() {
+            log("[C++] Iniciando FormData + Fetch Body Proxy Race...");
+            const workerCode = `
+                onmessage = () => {
+                    const fd = new FormData();
+                    fd.append("test", "data");
+                    fd.append("file", new Blob([new Uint8Array(128)]));
+                    fetch("data:text/plain,ok", { method: "POST", body: fd })
+                        .then(() => {}).catch(() => {});
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("formdata");
+                
+                setTimeout(() => { w.terminate(); }, 8 + Math.random() * 14);
+                
+                count++;
+                if (count % 65 === 0) log(`FormData/Fetch races: ${count}`);
+                if (count > 850) {
+                    clearInterval(interval);
+                    log("Teste 4 finalizado.");
+                }
+            }, 13);
+        }
+
+        // 5. MessageChannel + Structured Clone Transfer Race
+        function runMessageChannelStructuredRace() {
+            log("[C++] Iniciando MessageChannel + Structured Clone Transfer Race...");
+            const workerCode = `
+                onmessage = (e) => {
+                    if (e.ports && e.ports[0]) {
+                        e.ports[0].postMessage({data: new Array(100).fill(0)});
+                    }
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const mc = new MessageChannel();
+                const w = new Worker(url);
+                w.postMessage("init", [mc.port2]);
+                
+                setTimeout(() => {
+                    mc.port1.close();
+                    try { mc.port2.close(); } catch(e) {}
+                    w.terminate();
+                }, 5 + Math.random() * 11);
+                
+                count++;
+                if (count % 70 === 0) log(`MessageChannel races: ${count}`);
+                if (count > 900) {
+                    clearInterval(interval);
+                    log("Teste 5 finalizado.");
+                }
+            }, 12);
+        }
+ // 1. XMLHttpRequest Response + Proxy Race
+        function runXMLHttpRequestProxyRace() {
+            log("[C++] Iniciando XMLHttpRequest Response + Proxy Race...");
+            const workerCode = `
+                onmessage = () => {
+                    const xhr = new XMLHttpRequest();
+                    xhr.open("GET", "data:text/plain,xhr-test");
+                    xhr.responseType = "arraybuffer";
+                    xhr.onload = () => { postMessage({size: xhr.response ? xhr.response.byteLength : 0}); };
+                    xhr.onerror = () => {};
+                    xhr.send();
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("xhr");
+                
+                setTimeout(() => { w.terminate(); }, 8 + Math.random() * 14);
+                
+                count++;
+                if (count % 60 === 0) log(`XHR proxy races: ${count}`);
+                if (count > 800) {
+                    clearInterval(interval);
+                    log("Teste 1 finalizado.");
+                }
+            }, 13);
+        }
+
+        // 2. TextEncoder + TextDecoder Buffer Race
+        function runTextEncoderDecoderRace() {
+            log("[C++] Iniciando TextEncoder + TextDecoder Buffer Race...");
+            const workerCode = `
+                onmessage = () => {
+                    try {
+                        const encoder = new TextEncoder();
+                        const encoded = encoder.encode("test string repeated for buffer");
+                        const decoder = new TextDecoder();
+                        const decoded = decoder.decode(encoded);
+                        postMessage({decoded: decoded.length});
+                    } catch(e) {}
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("encode");
+                
+                setTimeout(() => { w.terminate(); }, 7 + Math.random() * 12);
+                
+                count++;
+                if (count % 65 === 0) log(`TextEncoder races: ${count}`);
+                if (count > 850) {
+                    clearInterval(interval);
+                    log("Teste 2 finalizado.");
+                }
+            }, 12);
+        }
+
+        // 3. History.pushState + replaceState Proxy Race
+        function runHistoryStateProxyRace() {
+            log("[C++] Iniciando History.pushState + replaceState Proxy Race...");
+            const workerCode = `
+                onmessage = () => {
+                    try {
+                        history.pushState({test: 1}, "", "?state=" + Math.random());
+                        history.replaceState({test: 2}, "", "?replace=" + Math.random());
+                        postMessage("history-ok");
+                    } catch(e) {}
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("history");
+                
+                setTimeout(() => { w.terminate(); }, 9 + Math.random() * 15);
+                
+                count++;
+                if (count % 55 === 0) log(`History API races: ${count}`);
+                if (count > 700) {
+                    clearInterval(interval);
+                    log("Teste 3 finalizado.");
+                }
+            }, 14);
+        }
+
+        // 4. Navigator Plugins / MimeTypes Proxy Race
+        function runNavigatorPluginProxyRace() {
+            log("[C++] Iniciando Navigator Plugins / MimeTypes Proxy Race...");
+            const workerCode = `
+                onmessage = () => {
+                    try {
+                        const plugins = navigator.plugins;
+                        const mimeTypes = navigator.mimeTypes;
+                        postMessage({
+                            plugins: plugins ? plugins.length : 0,
+                            mimeTypes: mimeTypes ? mimeTypes.length : 0
+                        });
+                    } catch(e) {}
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("navigator");
+                
+                setTimeout(() => { w.terminate(); }, 6 + Math.random() * 13);
+                
+                count++;
+                if (count % 70 === 0) log(`Navigator proxy races: ${count}`);
+                if (count > 900) {
+                    clearInterval(interval);
+                    log("Teste 4 finalizado.");
+                }
+            }, 11);
+        }
+
+        // 5. Location + URLSearchParams Navigation Proxy Race
+        function runLocationURLParamsRace() {
+            log("[C++] Iniciando Location + URLSearchParams Navigation Proxy Race...");
+            const workerCode = `
+                onmessage = () => {
+                    try {
+                        const params = new URLSearchParams(location.search);
+                        params.set("race", Math.random().toString(36));
+                        const newUrl = "?" + params.toString();
+                        // Não navegamos de verdade para evitar reload
+                        history.replaceState(null, "", newUrl);
+                        postMessage("location-ok");
+                    } catch(e) {}
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("location");
+                
+                setTimeout(() => { w.terminate(); }, 8 + Math.random() * 14);
+                
+                count++;
+                if (count % 60 === 0) log(`Location/URL races: ${count}`);
+                if (count > 750) {
+                    clearInterval(interval);
+                    log("Teste 5 finalizado.");
+                }
+            }, 13);
+        }
+// 1. Rapid Worker Create + Immediate Destroy
+        function runWorkerRapidCreateDestroy() {
+            log("[Pthread] Iniciando Rapid Worker Create + Immediate Destroy...");
+            const workerCode = `onmessage = () => { postMessage("ready"); };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                for (let i = 0; i < 8; i++) {
+                    const w = new Worker(url);
+                    w.postMessage("init");
+                    setTimeout(() => { w.terminate(); }, 4 + Math.random() * 8);
+                }
+                count += 8;
+                if (count % 200 === 0) log(`Worker create/destroy: ${count}`);
+                if (count > 1200) {
+                    clearInterval(interval);
+                    log("Teste 1 finalizado.");
+                }
+            }, 18);
+        }
+
+        // 2. Worker terminate() vs postMessage Race
+        function runWorkerTerminateDuringPostMessage() {
+            log("[Pthread] Iniciando Worker terminate() vs postMessage Race...");
+            const workerCode = `
+                onmessage = (e) => {
+                    try {
+                        postMessage(new ArrayBuffer(256));
+                        postMessage({data: "long message"});
+                    } catch(e) {}
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("start");
+                
+                setTimeout(() => {
+                    try { w.postMessage("race"); } catch(e) {}
+                    w.terminate();
+                }, 5 + Math.random() * 10);
+                
+                count++;
+                if (count % 70 === 0) log(`Terminate vs postMessage: ${count}`);
+                if (count > 900) {
+                    clearInterval(interval);
+                    log("Teste 2 finalizado.");
+                }
+            }, 12);
+        }
+
+        // 3. Worker Error + Uncaught Exception Propagation Race
+        function runWorkerErrorPropagationRace() {
+            log("[Pthread] Iniciando Worker Error + Exception Propagation Race...");
+            const workerCode = `
+                onmessage = () => {
+                    throw new Error("pthread-error-test");
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("trigger");
+                w.onerror = (e) => { /* silenciar */ };
+                
+                setTimeout(() => { w.terminate(); }, 6 + Math.random() * 11);
+                
+                count++;
+                if (count % 65 === 0) log(`Worker error races: ${count}`);
+                if (count > 850) {
+                    clearInterval(interval);
+                    log("Teste 3 finalizado.");
+                }
+            }, 14);
+        }
+
+        // 4. MessageChannel + Worker Close/Destroy Race
+        function runMessageChannelWorkerCloseRace() {
+            log("[Pthread] Iniciando MessageChannel + Worker Close/Destroy Race...");
+            const workerCode = `
+                onmessage = (e) => {
+                    if (e.ports && e.ports[0]) {
+                        e.ports[0].postMessage("channel-ok");
+                    }
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const mc = new MessageChannel();
+                const w = new Worker(url);
+                w.postMessage("init", [mc.port2]);
+                
+                setTimeout(() => {
+                    mc.port1.close();
+                    try { mc.port2.close(); } catch(e) {}
+                    w.terminate();
+                }, 5 + Math.random() * 9);
+                
+                count++;
+                if (count % 75 === 0) log(`MessageChannel + Worker races: ${count}`);
+                if (count > 950) {
+                    clearInterval(interval);
+                    log("Teste 4 finalizado.");
+                }
+            }, 11);
+        }
+
+        // 5. Worker Lifecycle + Promise + Close Race
+        function runWorkerLifecycleStress() {
+            log("[Pthread] Iniciando Worker Lifecycle + Promise + Close Race...");
+            const workerCode = `
+                onmessage = () => {
+                    Promise.resolve().then(() => {
+                        postMessage("promise-done");
+                    }).catch(() => {});
+                    setTimeout(() => { close(); }, 3);
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("lifecycle");
+                
+                setTimeout(() => { w.terminate(); }, 7 + Math.random() * 12);
+                
+                count++;
+                if (count % 60 === 0) log(`Worker lifecycle races: ${count}`);
+                if (count > 800) {
+                    clearInterval(interval);
+                    log("Teste 5 finalizado.");
+                }
+            }, 15);
+        }
+// 1. Worker + Fetch Response Stream Proxy Race
+        function runWorkerFetchStreamRace() {
+            log("[C++] Iniciando Worker + Fetch Response Stream Proxy Race...");
+            const workerCode = `
+                onmessage = async () => {
+                    try {
+                        const res = await fetch("data:text/plain,stream-test");
+                        const reader = res.body.getReader();
+                        await reader.read();
+                        postMessage("stream-ok");
+                    } catch(e) {}
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("fetch");
+                
+                setTimeout(() => { w.terminate(); }, 8 + Math.random() * 15);
+                
+                count++;
+                if (count % 55 === 0) log(`Fetch stream races: ${count}`);
+                if (count > 700) {
+                    clearInterval(interval);
+                    log("Teste 1 finalizado.");
+                }
+            }, 16);
+        }
+
+        // 2. Blob + Structured Clone + Worker Proxy Race
+        function runBlobStructuredCloneRace() {
+            log("[C++] Iniciando Blob + Structured Clone + Worker Proxy Race...");
+            const workerCode = `
+                onmessage = (e) => {
+                    if (e.data && e.data.blob) {
+                        postMessage({received: true});
+                    }
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                const blob = new Blob([new Uint8Array(512)], {type: "application/octet-stream"});
+                w.postMessage({blob: blob});
+                
+                setTimeout(() => { w.terminate(); }, 7 + Math.random() * 13);
+                
+                count++;
+                if (count % 60 === 0) log(`Blob clone races: ${count}`);
+                if (count > 750) {
+                    clearInterval(interval);
+                    log("Teste 2 finalizado.");
+                }
+            }, 14);
+        }
+
+        // 3. Rapid Promise Rejection + Worker Proxy Race
+        function runPromiseRejectionProxyRace() {
+            log("[C++] Iniciando Rapid Promise Rejection + Worker Proxy Race...");
+            const workerCode = `
+                onmessage = () => {
+                    Promise.reject(new Error("rejection-test")).catch(() => {});
+                    Promise.resolve().then(() => {
+                        Promise.reject("chain-reject");
+                    }).catch(() => {});
+                    postMessage("promise-done");
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("trigger");
+                
+                setTimeout(() => { w.terminate(); }, 6 + Math.random() * 12);
+                
+                count++;
+                if (count % 65 === 0) log(`Promise rejection races: ${count}`);
+                if (count > 800) {
+                    clearInterval(interval);
+                    log("Teste 3 finalizado.");
+                }
+            }, 13);
+        }
+
+        // 4. XMLHttpRequest responseType + Proxy Destruction Race
+        function runXHRResponseTypeRace() {
+            log("[C++] Iniciando XMLHttpRequest responseType + Proxy Destruction Race...");
+            const workerCode = `
+                onmessage = () => {
+                    const xhr = new XMLHttpRequest();
+                    xhr.open("GET", "data:text/plain,xhr-test");
+                    xhr.responseType = "arraybuffer";
+                    xhr.onload = () => postMessage({size: xhr.response ? xhr.response.byteLength : 0});
+                    xhr.onerror = () => {};
+                    xhr.send();
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("xhr");
+                
+                setTimeout(() => { w.terminate(); }, 9 + Math.random() * 14);
+                
+                count++;
+                if (count % 58 === 0) log(`XHR responseType races: ${count}`);
+                if (count > 720) {
+                    clearInterval(interval);
+                    log("Teste 4 finalizado.");
+                }
+            }, 15);
+        }
+
+        // 5. URL.createObjectURL + Worker Rapid Creation Race (Pthread)
+        function runURLWorkerCreationRace() {
+            log("[FreeBSD] Iniciando URL.createObjectURL + Worker Rapid Creation Race...");
+            let count = 0;
+            const interval = setInterval(() => {
+                for (let i = 0; i < 7; i++) {
+                    const blob = new Blob([`onmessage = () => postMessage("url-ok");`], {type: "text/javascript"});
+                    const objUrl = URL.createObjectURL(blob);
+                    const w = new Worker(objUrl);
+                    w.postMessage("start");
+                    
+                    setTimeout(() => {
+                        URL.revokeObjectURL(objUrl);
+                        w.terminate();
+                    }, 5 + Math.random() * 10);
+                }
+                count += 7;
+                if (count % 210 === 0) log(`URL + Worker creation races: ${count}`);
+                if (count > 1050) {
+                    clearInterval(interval);
+                    log("Teste 5 finalizado.");
+                }
+            }, 17);
+        }
+ // 1. Fetch + Worker Proxy + Rapid Terminate
+        function runFetchWorkerProxyRace() {
+            log("[Misto] Iniciando Fetch + Worker Proxy + Rapid Terminate...");
+            const workerCode = `
+                onmessage = async () => {
+                    try {
+                        await fetch("data:text/plain,fetch-test");
+                        postMessage("fetch-ok");
+                    } catch(e) {}
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("start");
+                
+                setTimeout(() => {
+                    w.terminate();
+                }, 6 + Math.random() * 11);
+                
+                count++;
+                if (count % 60 === 0) log(`Fetch+Worker races: ${count}`);
+                if (count > 780) {
+                    clearInterval(interval);
+                    log("Teste 1 finalizado.");
+                }
+            }, 14);
+        }
+
+        // 2. Blob + MessageChannel + Worker Destroy Race
+        function runBlobWorkerChannelRace() {
+            log("[Misto] Iniciando Blob + MessageChannel + Worker Destroy Race...");
+            const workerCode = `
+                onmessage = (e) => {
+                    if (e.ports && e.ports[0]) {
+                        const blob = new Blob([new Uint8Array(256)]);
+                        e.ports[0].postMessage({blob: blob});
+                    }
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const mc = new MessageChannel();
+                const w = new Worker(url);
+                w.postMessage("init", [mc.port2]);
+                
+                setTimeout(() => {
+                    mc.port1.close();
+                    try { mc.port2.close(); } catch(e) {}
+                    w.terminate();
+                }, 5 + Math.random() * 10);
+                
+                count++;
+                if (count % 65 === 0) log(`Blob+Channel races: ${count}`);
+                if (count > 850) {
+                    clearInterval(interval);
+                    log("Teste 2 finalizado.");
+                }
+            }, 12);
+        }
+
+        // 3. Promise + XMLHttpRequest + Worker Race
+        function runPromiseXHRWorkerRace() {
+            log("[Misto] Iniciando Promise + XMLHttpRequest + Worker Race...");
+            const workerCode = `
+                onmessage = () => {
+                    Promise.resolve().then(() => {
+                        const xhr = new XMLHttpRequest();
+                        xhr.open("GET", "data:text/plain,test");
+                        xhr.responseType = "text";
+                        xhr.send();
+                    }).catch(() => {});
+                    postMessage("mixed-ok");
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("trigger");
+                
+                setTimeout(() => { w.terminate(); }, 7 + Math.random() * 13);
+                
+                count++;
+                if (count % 58 === 0) log(`Promise+XHR+Worker: ${count}`);
+                if (count > 750) {
+                    clearInterval(interval);
+                    log("Teste 3 finalizado.");
+                }
+            }, 15);
+        }
+
+        // 4. URL.createObjectURL + Worker Proxy + Pthread Cleanup
+        function runURLProxyWorkerStress() {
+            log("[Misto] Iniciando URL + Worker Proxy + Pthread Cleanup...");
+            let count = 0;
+            const interval = setInterval(() => {
+                for (let i = 0; i < 6; i++) {
+                    const blob = new Blob([`onmessage = () => postMessage("url-ok");`], {type: "text/javascript"});
+                    const objUrl = URL.createObjectURL(blob);
+                    const w = new Worker(objUrl);
+                    w.postMessage("start");
+                    
+                    setTimeout(() => {
+                        URL.revokeObjectURL(objUrl);
+                        w.terminate();
+                    }, 6 + Math.random() * 12);
+                }
+                count += 6;
+                if (count % 180 === 0) log(`URL+Worker pthread races: ${count}`);
+                if (count > 1080) {
+                    clearInterval(interval);
+                    log("Teste 4 finalizado.");
+                }
+            }, 16);
+        }
+
+        // 5. Error Propagation + Fetch + Worker Termination Race
+        function runErrorFetchWorkerRace() {
+            log("[Misto] Iniciando Error Propagation + Fetch + Worker Termination Race...");
+            const workerCode = `
+                onmessage = async () => {
+                    try {
+                        await fetch("data:text/plain,ok");
+                    } catch(e) {
+                        throw new Error("forced-error");
+                    }
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("start");
+                w.onerror = () => {}; // silenciar
+                
+                setTimeout(() => {
+                    w.terminate();
+                }, 8 + Math.random() * 14);
+                
+                count++;
+                if (count % 62 === 0) log(`Error+Fetch+Terminate: ${count}`);
+                if (count > 800) {
+                    clearInterval(interval);
+                    log("Teste 5 finalizado.");
+                }
+            }, 13);
+        }
+// 1. Response.clone() + Worker Proxy Race
+        function runResponseCloneWorkerRace() {
+            log("[Misto] Iniciando Response.clone() + Worker Proxy Race...");
+            const workerCode = `
+                onmessage = async () => {
+                    try {
+                        const res = await fetch("data:text/plain,clone-test");
+                        const cloned = res.clone();
+                        await cloned.text();
+                        postMessage("clone-ok");
+                    } catch(e) {}
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("start");
+                
+                setTimeout(() => { w.terminate(); }, 7 + Math.random() * 13);
+                
+                count++;
+                if (count % 58 === 0) log(`Response.clone races: ${count}`);
+                if (count > 750) {
+                    clearInterval(interval);
+                    log("Teste 1 finalizado.");
+                }
+            }, 15);
+        }
+
+        // 2. TextDecoder + Worker Rapid Destroy
+        function runTextDecoderWorkerRace() {
+            log("[Misto] Iniciando TextDecoder + Worker Rapid Destroy (Pthread)...");
+            const workerCode = `
+                onmessage = () => {
+                    try {
+                        const decoder = new TextDecoder();
+                        const encoded = new TextEncoder().encode("PS4 pthread test string");
+                        decoder.decode(encoded);
+                        postMessage("decoder-ok");
+                    } catch(e) {}
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("decode");
+                
+                setTimeout(() => { w.terminate(); }, 5 + Math.random() * 10);
+                
+                count++;
+                if (count % 70 === 0) log(`TextDecoder races: ${count}`);
+                if (count > 900) {
+                    clearInterval(interval);
+                    log("Teste 2 finalizado.");
+                }
+            }, 12);
+        }
+
+        // 3. FormData + Promise Chain + Worker Race
+        function runFormDataPromiseWorkerRace() {
+            log("[Misto] Iniciando FormData + Promise Chain + Worker Race...");
+            const workerCode = `
+                onmessage = () => {
+                    const fd = new FormData();
+                    fd.append("key1", "value1");
+                    fd.append("key2", new Blob([new Uint8Array(128)]));
+                    
+                    Promise.resolve(fd).then((data) => {
+                        return Promise.resolve("processed");
+                    }).catch(() => {}).then(() => {
+                        postMessage("formdata-ok");
+                    });
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("formdata");
+                
+                setTimeout(() => { w.terminate(); }, 8 + Math.random() * 14);
+                
+                count++;
+                if (count % 60 === 0) log(`FormData+Promise races: ${count}`);
+                if (count > 780) {
+                    clearInterval(interval);
+                    log("Teste 3 finalizado.");
+                }
+            }, 14);
+        }
+
+        // 4. XMLHttpRequest + MessageChannel + Worker Destroy
+        function runXHRChannelWorkerRace() {
+            log("[Misto] Iniciando XMLHttpRequest + MessageChannel + Worker Destroy...");
+            const workerCode = `
+                onmessage = (e) => {
+                    if (e.ports && e.ports[0]) {
+                        const xhr = new XMLHttpRequest();
+                        xhr.open("GET", "data:text/plain,xhr-channel");
+                        xhr.responseType = "text";
+                        xhr.onload = () => e.ports[0].postMessage("xhr-ok");
+                        xhr.send();
+                    }
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const mc = new MessageChannel();
+                const w = new Worker(url);
+                w.postMessage("init", [mc.port2]);
+                
+                setTimeout(() => {
+                    mc.port1.close();
+                    try { mc.port2.close(); } catch(e) {}
+                    w.terminate();
+                }, 6 + Math.random() * 11);
+                
+                count++;
+                if (count % 65 === 0) log(`XHR+Channel races: ${count}`);
+                if (count > 820) {
+                    clearInterval(interval);
+                    log("Teste 4 finalizado.");
+                }
+            }, 13);
+        }
+
+        // 5. Blob + Forced Error + Worker Termination Race
+        function runBlobErrorTerminateRace() {
+            log("[Misto] Iniciando Blob + Forced Error + Worker Termination Race...");
+            const workerCode = `
+                onmessage = () => {
+                    const blob = new Blob([new Uint8Array(512)]);
+                    try {
+                        // Força erro ao tentar algo inválido com Blob
+                        blob.slice(-1000); 
+                    } catch(e) {
+                        throw new Error("blob-error");
+                    }
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("blob-error");
+                w.onerror = () => {};
+                
+                setTimeout(() => {
+                    w.terminate();
+                }, 7 + Math.random() * 12);
+                
+                count++;
+                if (count % 62 === 0) log(`Blob+Error+Terminate: ${count}`);
+                if (count > 800) {
+                    clearInterval(interval);
+                    log("Teste 5 finalizado.");
+                }
+            }, 14);
+        }
+ // 1. MessagePort Double Close UAF Race
+        function runMessagePortUAF() {
+            log("[UAF] Iniciando MessagePort Double Close UAF Race...");
+            const workerCode = `
+                onmessage = (e) => {
+                    if (e.ports && e.ports[0]) e.ports[0].postMessage(new ArrayBuffer(128));
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const mc = new MessageChannel();
+                const w = new Worker(url);
+                w.postMessage("init", [mc.port2]);
+                
+                // Race clássica para UAF: close em ambos os lados em timing diferente
+                setTimeout(() => { mc.port1.close(); }, 3);
+                setTimeout(() => { 
+                    try { mc.port2.close(); } catch(e) {}
+                    w.terminate();
+                }, 8 + Math.random() * 7);
+                
+                count++;
+                if (count % 55 === 0) log(`MessagePort UAF races: ${count}`);
+                if (count > 700) {
+                    clearInterval(interval);
+                    log("Teste 1 finalizado.");
+                }
+            }, 15);
+        }
+
+        // 2. Worker Proxy Detach + Terminate UAF
+        function runWorkerProxyUAF() {
+            log("[UAF] Iniciando Worker Proxy Detach + Terminate UAF...");
+            const workerCode = `
+                onmessage = (e) => {
+                    postMessage(new ArrayBuffer(256));
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                const buf = new ArrayBuffer(512);
+                w.postMessage(buf, [buf]);   // detach
+                
+                setTimeout(() => {
+                    w.terminate();           // uso após detach
+                }, 5 + Math.random() * 9);
+                
+                count++;
+                if (count % 60 === 0) log(`Worker Proxy UAF: ${count}`);
+                if (count > 750) {
+                    clearInterval(interval);
+                    log("Teste 2 finalizado.");
+                }
+            }, 14);
+        }
+
+        // 3. Blob URL Revoke + Worker Use-After-Free
+        function runBlobURLUAF() {
+            log("[UAF] Iniciando Blob URL Revoke + Worker UAF...");
+            let count = 0;
+            const interval = setInterval(() => {
+                for (let i = 0; i < 5; i++) {
+                    const blob = new Blob(["onmessage = () => postMessage(new ArrayBuffer(192));"], 
+                                        {type: "text/javascript"});
+                    const objUrl = URL.createObjectURL(blob);
+                    const w = new Worker(objUrl);
+                    w.postMessage("start");
+                    
+                    // Revoke URL enquanto o Worker ainda usa o proxy
+                    setTimeout(() => {
+                        URL.revokeObjectURL(objUrl);
+                        w.terminate();
+                    }, 6 + Math.random() * 10);
+                }
+                count += 5;
+                if (count % 150 === 0) log(`Blob URL UAF races: ${count}`);
+                if (count > 900) {
+                    clearInterval(interval);
+                    log("Teste 3 finalizado.");
+                }
+            }, 16);
+        }
+
+        // 4. Fetch Response + Clone UAF Race
+        function runFetchResponseUAF() {
+            log("[UAF] Iniciando Fetch Response + Clone UAF Race...");
+            const workerCode = `
+                onmessage = async () => {
+                    try {
+                        const res = await fetch("data:text/plain,uaf-test");
+                        const cloned = res.clone();
+                        await cloned.text();
+                    } catch(e) {}
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("fetch");
+                
+                setTimeout(() => { w.terminate(); }, 7 + Math.random() * 12);
+                
+                count++;
+                if (count % 58 === 0) log(`Fetch Response UAF: ${count}`);
+                if (count > 720) {
+                    clearInterval(interval);
+                    log("Teste 4 finalizado.");
+                }
+            }, 15);
+        }
+
+        // 5. Promise Rejection + Worker Proxy UAF
+        function runPromiseRejectionUAF() {
+            log("[UAF] Iniciando Promise Rejection + Worker Proxy UAF...");
+            const workerCode = `
+                onmessage = () => {
+                    Promise.reject(new Error("uaf-rejection"))
+                        .catch(() => {})
+                        .then(() => {
+                            postMessage(new ArrayBuffer(128));
+                        });
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("trigger");
+                
+                setTimeout(() => {
+                    w.terminate();
+                }, 6 + Math.random() * 11);
+                
+                count++;
+                if (count % 62 === 0) log(`Promise UAF races: ${count}`);
+                if (count > 780) {
+                    clearInterval(interval);
+                    log("Teste 5 finalizado.");
+                }
+            }, 13);
+        }
+ // 1. Blob URL Revoke + Delayed Use (UAF clássico)
+        function runBlobURLUAFPure() {
+            log("[UAF] Iniciando Blob URL Revoke + Delayed Use UAF...");
+            let count = 0;
+            const interval = setInterval(() => {
+                for (let i = 0; i < 4; i++) {
+                    const blob = new Blob([new Uint8Array(1024)], {type: "application/octet-stream"});
+                    const url = URL.createObjectURL(blob);
+                    const w = new Worker(url);
+                    
+                    // Libera (revoke) imediatamente
+                    URL.revokeObjectURL(url);
+                    
+                    // Depois tenta usar (dangling)
+                    setTimeout(() => {
+                        try {
+                            w.postMessage("use-after-revoke");
+                            w.terminate();
+                        } catch(e) {}
+                    }, 8 + Math.random() * 12);
+                }
+                count += 4;
+                if (count % 120 === 0) log(`Blob URL UAF: ${count}`);
+                if (count > 600) {
+                    clearInterval(interval);
+                    log("Teste 1 finalizado.");
+                }
+            }, 18);
+        }
+
+        // 2. Worker self.close() + Delayed postMessage UAF
+        function runWorkerSelfCloseUAF() {
+            log("[UAF] Iniciando Worker self.close() + Delayed postMessage UAF...");
+            const workerCode = `
+                onmessage = () => {
+                    close();                    // libera a thread/worker
+                    // tenta continuar executando após close
+                    postMessage("still-alive-after-close");
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("trigger");
+                
+                // Tenta usar após o close interno
+                setTimeout(() => {
+                    try { w.postMessage("use-after-close"); } catch(e) {}
+                    w.terminate();
+                }, 10 + Math.random() * 15);
+                
+                count++;
+                if (count % 50 === 0) log(`Worker self.close UAF: ${count}`);
+                if (count > 650) {
+                    clearInterval(interval);
+                    log("Teste 2 finalizado.");
+                }
+            }, 16);
+        }
+
+        // 3. Fetch Response Body + Early Free UAF
+        function runResponseBodyUAF() {
+            log("[UAF] Iniciando Fetch Response Body + Early Free UAF...");
+            const workerCode = `
+                onmessage = async () => {
+                    const res = await fetch("data:text/plain,uaf-body-test");
+                    const textPromise = res.text();   // inicia leitura
+                    // tenta forçar liberação precoce
+                    postMessage("body-started");
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("start");
+                
+                setTimeout(() => {
+                    try { w.postMessage("use-after-body-free"); } catch(e) {}
+                    w.terminate();
+                }, 9 + Math.random() * 14);
+                
+                count++;
+                if (count % 55 === 0) log(`Response Body UAF: ${count}`);
+                if (count > 700) {
+                    clearInterval(interval);
+                    log("Teste 3 finalizado.");
+                }
+            }, 15);
+        }
+
+        // 4. FormData + Blob Append + Early Release UAF
+        function runFormDataBlobUAF() {
+            log("[UAF] Iniciando FormData + Blob Append + Early Release UAF...");
+            const workerCode = `
+                onmessage = () => {
+                    const fd = new FormData();
+                    const blob = new Blob([new Uint8Array(512)]);
+                    fd.append("file", blob);
+                    // libera blob logo após append
+                    postMessage("formdata-ready");
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("formdata");
+                
+                setTimeout(() => {
+                    try { w.postMessage("use-after-blob-release"); } catch(e) {}
+                    w.terminate();
+                }, 8 + Math.random() * 13);
+                
+                count++;
+                if (count % 52 === 0) log(`FormData Blob UAF: ${count}`);
+                if (count > 680) {
+                    clearInterval(interval);
+                    log("Teste 4 finalizado.");
+                }
+            }, 17);
+        }
+
+        // 5. Promise.then() Chain + Object Free UAF
+        function runPromiseThenUAF() {
+            log("[UAF] Iniciando Promise.then() Chain + Object Free UAF...");
+            const workerCode = `
+                onmessage = () => {
+                    let obj = { data: new ArrayBuffer(256) };
+                    Promise.resolve(obj).then((o) => {
+                        // tenta usar após possível GC/free
+                        postMessage({bufferSize: o.data ? o.data.byteLength : 0});
+                    });
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("promise");
+                
+                setTimeout(() => {
+                    w.terminate();
+                }, 11 + Math.random() * 16);
+                
+                count++;
+                if (count % 48 === 0) log(`Promise Chain UAF: ${count}`);
+                if (count > 600) {
+                    clearInterval(interval);
+                    log("Teste 5 finalizado.");
+                }
+            }, 18);
+        }
+// 1. MessageChannel Port Close + Delayed Use UAF (C++ Port Object)
+        function runMessageChannelPortUAF() {
+            log("[UAF] Iniciando MessageChannel Port Close + Delayed Use UAF...");
+            const workerCode = `onmessage = (e) => { if (e.ports && e.ports[0]) e.ports[0].postMessage("port"); };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const mc = new MessageChannel();
+                const w = new Worker(url);
+                w.postMessage("init", [mc.port2]);
+                
+                // Libera o port primeiro
+                mc.port1.close();
+                mc.port2.close();
+                
+                // Depois tenta usar o port já liberado (dangling)
+                setTimeout(() => {
+                    try {
+                        mc.port1.postMessage("use-after-free");
+                    } catch(e) {}
+                    w.terminate();
+                }, 10 + Math.random() * 15);
+                
+                count++;
+                if (count % 50 === 0) log(`MessageChannel Port UAF: ${count}`);
+                if (count > 650) {
+                    clearInterval(interval);
+                    log("Teste 1 finalizado.");
+                }
+            }, 17);
+        }
+
+        // 2. Worker + Blob Revoke Immediate + Delayed PostMessage UAF
+        function runWorkerBlobRevokeUAF() {
+            log("[UAF] Iniciando Worker + Blob Revoke Immediate + Delayed PostMessage UAF...");
+            let count = 0;
+            const interval = setInterval(() => {
+                for (let i = 0; i < 5; i++) {
+                    const blob = new Blob([`onmessage = () => postMessage(new ArrayBuffer(256));`], 
+                                        {type: "text/javascript"});
+                    const url = URL.createObjectURL(blob);
+                    const w = new Worker(url);
+                    
+                    // Libera imediatamente
+                    URL.revokeObjectURL(url);
+                    
+                    // Tenta usar o Worker após o revoke (dangling URL + proxy)
+                    setTimeout(() => {
+                        try {
+                            w.postMessage("use-after-revoke");
+                        } catch(e) {}
+                        w.terminate();
+                    }, 9 + Math.random() * 14);
+                }
+                count += 5;
+                if (count % 140 === 0) log(`Worker Blob Revoke UAF: ${count}`);
+                if (count > 700) {
+                    clearInterval(interval);
+                    log("Teste 2 finalizado.");
+                }
+            }, 18);
+        }
+
+        // 3. Fetch Response Body Early Consume + Re-use UAF
+        function runFetchBodyConsumeUAF() {
+            log("[UAF] Iniciando Fetch Response Body Early Consume + Re-use UAF...");
+            const workerCode = `
+                onmessage = async () => {
+                    const res = await fetch("data:text/plain,uaf-body");
+                    await res.text();           // consome o body (libera internamente)
+                    postMessage("body-consumed");
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("start");
+                
+                // Tenta reutilizar o body já consumido/liberado
+                setTimeout(() => {
+                    try { w.postMessage("use-after-body-free"); } catch(e) {}
+                    w.terminate();
+                }, 11 + Math.random() * 16);
+                
+                count++;
+                if (count % 48 === 0) log(`Fetch Body UAF: ${count}`);
+                if (count > 620) {
+                    clearInterval(interval);
+                    log("Teste 3 finalizado.");
+                }
+            }, 19);
+        }
+
+        // 4. XMLHttpRequest Early Abort + State Re-use UAF
+        function runXHRStateUAF() {
+            log("[UAF] Iniciando XMLHttpRequest Early Abort + State Re-use UAF...");
+            const workerCode = `
+                onmessage = () => {
+                    const xhr = new XMLHttpRequest();
+                    xhr.open("GET", "data:text/plain,xhr-uaf");
+                    xhr.abort();                    // libera estado interno imediatamente
+                    postMessage("xhr-aborted");
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("xhr");
+                
+                // Tenta acessar estado após abort (dangling C++ object)
+                setTimeout(() => {
+                    try { w.postMessage("use-after-abort"); } catch(e) {}
+                    w.terminate();
+                }, 8 + Math.random() * 13);
+                
+                count++;
+                if (count % 55 === 0) log(`XHR State UAF: ${count}`);
+                if (count > 680) {
+                    clearInterval(interval);
+                    log("Teste 4 finalizado.");
+                }
+            }, 16);
+        }
+
+        // 5. Promise Settlement + Object Free + Delayed Access UAF
+        function runPromiseObjectFreeUAF() {
+            log("[UAF] Iniciando Promise Settlement + Object Free + Delayed Access UAF...");
+            const workerCode = `
+                onmessage = () => {
+                    let obj = { buffer: new ArrayBuffer(512), flag: "live" };
+                    Promise.resolve(obj).then((o) => {
+                        postMessage("promise-resolved");
+                    });
+                    // força possível GC/free do objeto durante o settlement
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("promise");
+                
+                // Tenta acessar após possível free durante promise settlement
+                setTimeout(() => {
+                    try { w.postMessage("use-after-promise-free"); } catch(e) {}
+                    w.terminate();
+                }, 12 + Math.random() * 17);
+                
+                count++;
+                if (count % 52 === 0) log(`Promise Object UAF: ${count}`);
+                if (count > 650) {
+                    clearInterval(interval);
+                    log("Teste 5 finalizado.");
+                }
+            }, 18);
+        }
+// 1. FormData + File + Early Release + Delayed Use UAF
+        function runFormDataFileUAF() {
+            log("[UAF PURO] Iniciando FormData + File Early Release + Delayed Use...");
+            const workerCode = `
+                onmessage = () => {
+                    const file = new File([new Uint8Array(1024)], "uaf.bin");
+                    const fd = new FormData();
+                    fd.append("file", file);
+                    postMessage("formdata-ready");
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("start");
+                
+                // Libera cedo (File + FormData)
+                setTimeout(() => {
+                    try { w.postMessage("use-after-file-free"); } catch(e) {}
+                    w.terminate();
+                }, 18 + Math.random() * 22);
+                
+                count++;
+                if (count % 45 === 0) log(`FormData File UAF: ${count}`);
+                if (count > 550) {
+                    clearInterval(interval);
+                    log("Teste 1 finalizado.");
+                }
+            }, 25);
+        }
+
+        // 2. XMLHttpRequest + Response Early Free + Re-use UAF
+        function runXHRResponseUAF() {
+            log("[UAF PURO] Iniciando XMLHttpRequest + Response Early Free + Re-use...");
+            const workerCode = `
+                onmessage = () => {
+                    const xhr = new XMLHttpRequest();
+                    xhr.open("GET", "data:text/plain,uaf-xhr");
+                    xhr.responseType = "arraybuffer";
+                    xhr.send();
+                    xhr.abort(); // libera estado interno imediatamente
+                    postMessage("xhr-aborted-early");
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("xhr");
+                
+                setTimeout(() => {
+                    try { w.postMessage("use-after-xhr-free"); } catch(e) {}
+                    w.terminate();
+                }, 20 + Math.random() * 25);
+                
+                count++;
+                if (count % 42 === 0) log(`XHR Response UAF: ${count}`);
+                if (count > 520) {
+                    clearInterval(interval);
+                    log("Teste 2 finalizado.");
+                }
+            }, 28);
+        }
+
+        // 3. Fetch Response.arrayBuffer() Consume + Delayed Re-use UAF
+        function runResponseArrayBufferUAF() {
+            log("[UAF PURO] Iniciando Fetch Response.arrayBuffer() Consume + Delayed Re-use...");
+            const workerCode = `
+                onmessage = async () => {
+                    const res = await fetch("data:text/plain,uaf-arraybuffer");
+                    await res.arrayBuffer(); // consome e libera buffer interno
+                    postMessage("body-consumed");
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("fetch");
+                
+                setTimeout(() => {
+                    try { w.postMessage("use-after-arraybuffer-free"); } catch(e) {}
+                    w.terminate();
+                }, 22 + Math.random() * 28);
+                
+                count++;
+                if (count % 40 === 0) log(`Response ArrayBuffer UAF: ${count}`);
+                if (count > 500) {
+                    clearInterval(interval);
+                    log("Teste 3 finalizado.");
+                }
+            }, 30);
+        }
+
+        // 4. TextEncoder + encodeInto Buffer Early Free + Use UAF
+        function runTextEncoderBufferUAF() {
+            log("[UAF PURO] Iniciando TextEncoder + encodeInto Buffer Early Free + Use...");
+            const workerCode = `
+                onmessage = () => {
+                    const encoder = new TextEncoder();
+                    const buffer = new Uint8Array(2048);
+                    encoder.encodeInto("UAF test string for PS4 FreeBSD", buffer);
+                    postMessage("encoded");
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("encode");
+                
+                setTimeout(() => {
+                    try { w.postMessage("use-after-encoder-buffer-free"); } catch(e) {}
+                    w.terminate();
+                }, 19 + Math.random() * 24);
+                
+                count++;
+                if (count % 48 === 0) log(`TextEncoder Buffer UAF: ${count}`);
+                if (count > 580) {
+                    clearInterval(interval);
+                    log("Teste 4 finalizado.");
+                }
+            }, 26);
+        }
+
+        // 5. URLSearchParams + Location + Early Free + Delayed Access UAF
+        function runURLSearchParamsUAF() {
+            log("[UAF PURO] Iniciando URLSearchParams + Location Early Free + Delayed Access...");
+            const workerCode = `
+                onmessage = () => {
+                    const params = new URLSearchParams(location.search);
+                    params.set("uaf", Math.random().toString(36));
+                    history.replaceState(null, "", "?" + params.toString());
+                    postMessage("params-updated");
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("location");
+                
+                setTimeout(() => {
+                    try { w.postMessage("use-after-params-free"); } catch(e) {}
+                    w.terminate();
+                }, 21 + Math.random() * 26);
+                
+                count++;
+                if (count % 44 === 0) log(`URLSearchParams UAF: ${count}`);
+                if (count > 540) {
+                    clearInterval(interval);
+                    log("Teste 5 finalizado.");
+                }
+            }, 27);
+        }
+// 1. FormData + File + Early Release + Delayed Use UAF
+        function runFormDataFileUAF() {
+            log("[UAF PURO] Iniciando FormData + File Early Release + Delayed Use...");
+            const workerCode = `
+                onmessage = () => {
+                    const file = new File([new Uint8Array(1024)], "uaf.bin");
+                    const fd = new FormData();
+                    fd.append("file", file);
+                    postMessage("formdata-ready");
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("start");
+                
+                // Libera cedo (File + FormData)
+                setTimeout(() => {
+                    try { w.postMessage("use-after-file-free"); } catch(e) {}
+                    w.terminate();
+                }, 18 + Math.random() * 22);
+                
+                count++;
+                if (count % 45 === 0) log(`FormData File UAF: ${count}`);
+                if (count > 550) {
+                    clearInterval(interval);
+                    log("Teste 1 finalizado.");
+                }
+            }, 25);
+        }
+
+        // 2. XMLHttpRequest + Response Early Free + Re-use UAF
+        function runXHRResponseUAF() {
+            log("[UAF PURO] Iniciando XMLHttpRequest + Response Early Free + Re-use...");
+            const workerCode = `
+                onmessage = () => {
+                    const xhr = new XMLHttpRequest();
+                    xhr.open("GET", "data:text/plain,uaf-xhr");
+                    xhr.responseType = "arraybuffer";
+                    xhr.send();
+                    xhr.abort(); // libera estado interno imediatamente
+                    postMessage("xhr-aborted-early");
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("xhr");
+                
+                setTimeout(() => {
+                    try { w.postMessage("use-after-xhr-free"); } catch(e) {}
+                    w.terminate();
+                }, 20 + Math.random() * 25);
+                
+                count++;
+                if (count % 42 === 0) log(`XHR Response UAF: ${count}`);
+                if (count > 520) {
+                    clearInterval(interval);
+                    log("Teste 2 finalizado.");
+                }
+            }, 28);
+        }
+
+        // 3. Fetch Response.arrayBuffer() Consume + Delayed Re-use UAF
+        function runResponseArrayBufferUAF() {
+            log("[UAF PURO] Iniciando Fetch Response.arrayBuffer() Consume + Delayed Re-use...");
+            const workerCode = `
+                onmessage = async () => {
+                    const res = await fetch("data:text/plain,uaf-arraybuffer");
+                    await res.arrayBuffer(); // consome e libera buffer interno
+                    postMessage("body-consumed");
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("fetch");
+                
+                setTimeout(() => {
+                    try { w.postMessage("use-after-arraybuffer-free"); } catch(e) {}
+                    w.terminate();
+                }, 22 + Math.random() * 28);
+                
+                count++;
+                if (count % 40 === 0) log(`Response ArrayBuffer UAF: ${count}`);
+                if (count > 500) {
+                    clearInterval(interval);
+                    log("Teste 3 finalizado.");
+                }
+            }, 30);
+        }
+
+        // 4. TextEncoder + encodeInto Buffer Early Free + Use UAF
+        function runTextEncoderBufferUAF() {
+            log("[UAF PURO] Iniciando TextEncoder + encodeInto Buffer Early Free + Use...");
+            const workerCode = `
+                onmessage = () => {
+                    const encoder = new TextEncoder();
+                    const buffer = new Uint8Array(2048);
+                    encoder.encodeInto("UAF test string for PS4 FreeBSD", buffer);
+                    postMessage("encoded");
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("encode");
+                
+                setTimeout(() => {
+                    try { w.postMessage("use-after-encoder-buffer-free"); } catch(e) {}
+                    w.terminate();
+                }, 19 + Math.random() * 24);
+                
+                count++;
+                if (count % 48 === 0) log(`TextEncoder Buffer UAF: ${count}`);
+                if (count > 580) {
+                    clearInterval(interval);
+                    log("Teste 4 finalizado.");
+                }
+            }, 26);
+        }
+
+        // 5. URLSearchParams + Location + Early Free + Delayed Access UAF
+        function runURLSearchParamsUAF() {
+            log("[UAF PURO] Iniciando URLSearchParams + Location Early Free + Delayed Access...");
+            const workerCode = `
+                onmessage = () => {
+                    const params = new URLSearchParams(location.search);
+                    params.set("uaf", Math.random().toString(36));
+                    history.replaceState(null, "", "?" + params.toString());
+                    postMessage("params-updated");
+                };
+            `;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("location");
+                
+                setTimeout(() => {
+                    try { w.postMessage("use-after-params-free"); } catch(e) {}
+                    w.terminate();
+                }, 21 + Math.random() * 26);
+                
+                count++;
+                if (count % 44 === 0) log(`URLSearchParams UAF: ${count}`);
+                if (count > 540) {
+                    clearInterval(interval);
+                    log("Teste 5 finalizado.");
+                }
+            }, 27);
+        }
+    </script>
+</body>
+</html>
