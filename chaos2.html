@@ -1,0 +1,1374 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1280">
+<title>PS4 Browser — Crash PoC v2</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap');
+:root {
+  --bg:#03050a;--bg2:#070c14;--bg3:#0d1420;--bg4:#131c2e;
+  --ln:#1a2438;--ln2:#243050;
+  --r1:#ff1a3a;--r2:#cc0020;--r3:#ff6680;
+  --g1:#00ff88;--g2:#00aa55;
+  --y1:#ffcc00;--y2:#aa8800;
+  --c1:#00eeff;--c2:#008899;
+  --p1:#cc66ff;--p2:#882299;
+  --o1:#ff8800;
+  --tx:#8ab0cc;--tx2:#304860;
+  --mono:'Share Tech Mono',monospace;
+  --sans:'Rajdhani',sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--tx);font-family:var(--sans);font-size:14px}
+
+/* TOPBAR */
+.bar{background:var(--bg2);border-bottom:1px solid var(--ln);height:46px;display:flex;align-items:center;padding:0 18px;gap:14px;position:relative;z-index:10}
+.brand{font-family:var(--mono);font-size:11px;color:var(--r1);letter-spacing:3px}
+.brand b{color:var(--tx2);font-weight:400}
+.bar-mid{flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--tx2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.btn{font-family:var(--sans);font-size:12px;font-weight:700;border:none;border-radius:5px;padding:6px 16px;cursor:pointer;transition:all .15s;letter-spacing:.5px}
+.btn-r{background:var(--r2);color:#fff}.btn-r:hover{background:var(--r1)}
+.btn-dim{background:var(--bg3);border:1px solid var(--ln2);color:var(--tx)}.btn-dim:hover{background:var(--bg4)}
+
+/* LAYOUT */
+.layout{display:grid;grid-template-columns:220px 1fr 230px;height:calc(100vh - 46px);overflow:hidden}
+
+/* SIDEBAR */
+aside{background:var(--bg2);border-right:1px solid var(--ln);overflow-y:auto;padding:8px 0}
+.sg{padding:8px 12px 2px;font-size:9px;font-weight:700;letter-spacing:2px;color:var(--tx2);text-transform:uppercase;margin-top:6px}
+.sb{display:flex;align-items:center;gap:7px;width:100%;padding:7px 12px;background:none;border:none;border-left:2px solid transparent;color:var(--tx2);font-family:var(--sans);font-size:12px;font-weight:600;cursor:pointer;text-align:left;transition:all .1s}
+.sb:hover{background:var(--bg3);color:var(--tx)}
+.sb.on{color:var(--r1);border-left-color:var(--r1);background:rgba(255,26,58,.04)}
+.sc{margin-left:auto;font-family:var(--mono);font-size:9px;background:var(--bg3);border:1px solid var(--ln);border-radius:6px;padding:1px 6px;min-width:28px;text-align:center}
+.sc.done{color:var(--g1);border-color:rgba(0,255,136,.3)}
+.sc.crash{color:var(--r1);border-color:rgba(255,26,58,.3);animation:blink .4s infinite alternate}
+@keyframes blink{from{opacity:1}to{opacity:.3}}
+
+/* MAIN */
+main{overflow-y:auto;padding:18px;background:var(--bg)}
+.panel{display:none}.panel.on{display:block}
+.ph{margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--ln);display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.ph-text{}
+.pt{font-size:18px;font-weight:700;color:#fff;margin-bottom:3px}
+.ps{color:var(--tx2);font-size:11px;line-height:1.6;max-width:480px}
+.ph-run{flex-shrink:0}
+
+/* POC CARDS */
+.pgrid{display:flex;flex-direction:column;gap:10px}
+.pc{background:var(--bg2);border:1px solid var(--ln);border-radius:8px;overflow:hidden;transition:all .2s}
+.pc.running{border-color:var(--y1);box-shadow:0 0 16px rgba(255,204,0,.1)}
+.pc.crashed{border-color:var(--r1);box-shadow:0 0 20px rgba(255,26,58,.15)}
+.pc.survived{border-color:rgba(0,255,136,.3)}
+.pc.weird{border-color:rgba(204,102,255,.3)}
+
+.pc-head{padding:10px 14px;border-bottom:1px solid var(--ln);display:flex;align-items:center;gap:10px}
+.pc-num{font-family:var(--mono);font-size:9px;color:var(--tx2);min-width:24px}
+.pc-title{font-size:13px;font-weight:700;color:#fff;flex:1;line-height:1.3}
+.pc-tag{font-size:8px;font-weight:700;padding:2px 8px;border-radius:5px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
+.t-dom  {background:rgba(0,238,255,.08);color:var(--c1);border:1px solid rgba(0,238,255,.2)}
+.t-css  {background:rgba(0,255,136,.06);color:var(--g1);border:1px solid rgba(0,255,136,.15)}
+.t-mem  {background:rgba(255,136,0,.08);color:var(--o1);border:1px solid rgba(255,136,0,.18)}
+.t-js   {background:rgba(255,204,0,.07);color:var(--y1);border:1px solid rgba(255,204,0,.18)}
+.t-media{background:rgba(204,102,255,.08);color:var(--p1);border:1px solid rgba(204,102,255,.18)}
+.t-crash{background:rgba(255,26,58,.1);color:var(--r1);border:1px solid rgba(255,26,58,.25)}
+
+.pc-body{padding:12px 14px;display:flex;gap:12px;align-items:flex-start}
+.pc-desc{flex:1;font-family:var(--mono);font-size:10px;color:var(--tx2);line-height:1.7}
+.pc-desc em{color:var(--r3);font-style:normal}
+.pc-actions{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+.pc-btn{padding:6px 14px;background:var(--bg3);border:1px solid var(--ln2);border-radius:5px;color:var(--tx);font-family:var(--sans);font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap;min-width:90px;text-align:center}
+.pc-btn:hover{border-color:var(--r1);color:var(--r1);background:rgba(255,26,58,.05)}
+.pc-btn.active{background:var(--r2);color:#fff;border-color:var(--r1)}
+
+/* STATUS STRIP */
+.pc-status{padding:6px 14px;border-top:1px solid var(--ln);font-family:var(--mono);font-size:9px;display:none;line-height:1.8}
+.pc-status.show{display:block}
+.s-ok   {color:var(--g1)}
+.s-crash{color:var(--r1)}
+.s-warn {color:var(--y1)}
+.s-info {color:var(--c1)}
+.s-weird{color:var(--p1)}
+
+/* PROGRESS BAR */
+.pbar-wrap{background:var(--bg3);border-radius:2px;height:3px;overflow:hidden;margin-top:4px}
+.pbar-fill{height:100%;border-radius:2px;transition:width .1s;width:0%}
+
+/* CRASH ALERT OVERLAY */
+.crash-overlay{position:fixed;inset:0;background:rgba(255,26,58,.08);pointer-events:none;z-index:999;display:none;animation:crashflash .15s ease-out}
+@keyframes crashflash{0%{opacity:0}50%{opacity:1}100%{opacity:.2}}
+
+/* LIVE MONITOR (right panel) */
+.rp{background:var(--bg2);border-left:1px solid var(--ln);display:flex;flex-direction:column;font-size:11px}
+.rp-head{padding:9px 12px;border-bottom:1px solid var(--ln);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.rp-label{font-size:9px;font-weight:700;letter-spacing:2px;color:var(--tx2);text-transform:uppercase}
+.rp-clear{background:none;border:none;font-family:var(--sans);font-size:10px;color:var(--tx2);cursor:pointer}.rp-clear:hover{color:var(--r1)}
+
+/* COUNTERS */
+.rp-counters{padding:10px 12px;border-bottom:1px solid var(--ln);display:grid;grid-template-columns:1fr 1fr;gap:6px;flex-shrink:0}
+.ct{background:var(--bg3);border:1px solid var(--ln);border-radius:6px;padding:8px;text-align:center}
+.ct-n{font-family:var(--mono);font-size:22px;font-weight:700;line-height:1}
+.ct-l{font-size:9px;color:var(--tx2);text-transform:uppercase;letter-spacing:1px;margin-top:2px}
+
+/* LOG */
+#log{flex:1;overflow-y:auto;padding:8px 12px;font-family:var(--mono);font-size:9px;line-height:1.9}
+.lg{display:block}
+.lok{color:var(--g1)}.lwarn{color:var(--y1)}.lerr{color:var(--r1)}.linfo{color:var(--c1)}.ldim{color:var(--tx2)}.lcrash{color:var(--r1);font-weight:700}
+
+/* CRASH REPORT */
+.report-box{background:var(--bg3);border:1px solid var(--r1);border-radius:6px;padding:12px;margin:10px 0;font-family:var(--mono);font-size:9px;color:var(--r3);line-height:1.8;display:none}
+.report-box.show{display:block}
+
+::-webkit-scrollbar{width:3px}.:-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--ln2);border-radius:2px}
+</style>
+</head>
+<body>
+
+<div class="crash-overlay" id="crash-overlay"></div>
+
+<div class="bar">
+  <div class="brand">PS4 <b>//</b> CRASH POC <b>v2</b></div>
+  <div class="bar-mid" id="ua-bar">—</div>
+  <button class="btn btn-r" onclick="runAll()">Executar Todos</button>
+  <button class="btn btn-dim" onclick="resetAll()">Reset</button>
+</div>
+
+<div class="layout">
+<aside>
+  <div class="sg">Categorias</div>
+  <button class="sb on"  data-p="dom"    onclick="nav('dom',this)"   >DOM Stress        <span class="sc" id="cnt-dom"   >6</span></button>
+  <button class="sb"     data-p="css"    onclick="nav('css',this)"   >CSS Parser        <span class="sc" id="cnt-css"   >6</span></button>
+  <button class="sb"     data-p="mem"    onclick="nav('mem',this)"   >Memory Pressure   <span class="sc" id="cnt-mem"   >5</span></button>
+  <button class="sb"     data-p="js"     onclick="nav('js',this)"    >JS Engine         <span class="sc" id="cnt-js"    >6</span></button>
+  <button class="sb"     data-p="media"  onclick="nav('media',this)" >Media / Canvas    <span class="sc" id="cnt-media" >5</span></button>
+  <button class="sb"     data-p="combo"  onclick="nav('combo',this)" >Combinados        <span class="sc" id="cnt-combo" >5</span></button>
+</aside>
+
+<main id="main">
+
+<div class="panel on" id="p-dom">
+  <div class="ph">
+    <div class="ph-text"><div class="pt">DOM Stress</div><div class="ps">Testes de limites do parser DOM e do motor de layout do WebKit. Cada teste foca em uma edge case específica que versões antigas do WebKit não tratam corretamente.</div></div>
+    <div class="ph-run"><button class="btn btn-r" onclick="runCategory('dom')">Rodar categoria</button></div>
+  </div>
+  <div class="pgrid" id="grid-dom"></div>
+</div>
+
+<div class="panel" id="p-css">
+  <div class="ph">
+    <div class="ph-text"><div class="pt">CSS Parser</div><div class="ps">O CSS parser do WebKit do PS4 tem limites conhecidos com seletores aninhados profundos, calc() em cascata e media queries malformadas.</div></div>
+    <div class="ph-run"><button class="btn btn-r" onclick="runCategory('css')">Rodar categoria</button></div>
+  </div>
+  <div class="pgrid" id="grid-css"></div>
+</div>
+
+<div class="panel" id="p-mem">
+  <div class="ph">
+    <div class="ph-text"><div class="pt">Memory Pressure</div><div class="ps">Força o motor JavaScript a alocar e descartar memória de formas que podem travar o GC ou saturar o heap do PS4.</div></div>
+    <div class="ph-run"><button class="btn btn-r" onclick="runCategory('mem')">Rodar categoria</button></div>
+  </div>
+  <div class="pgrid" id="grid-mem"></div>
+</div>
+
+<div class="panel" id="p-js">
+  <div class="ph">
+    <div class="ph-text"><div class="pt">JS Engine</div><div class="ps">Edge cases no JavaScriptCore do PS4 — recursão, coerção de tipos extrema, e operações que deveriam crashar mas talvez não crashem.</div></div>
+    <div class="ph-run"><button class="btn btn-r" onclick="runCategory('js')">Rodar categoria</button></div>
+  </div>
+  <div class="pgrid" id="grid-js"></div>
+</div>
+
+<div class="panel" id="p-media">
+  <div class="ph">
+    <div class="ph-text"><div class="pt">Media e Canvas</div><div class="ps">O pipeline de mídia e canvas do PS4 tem limitações de hardware — canvas extremo, WebGL edge cases e media malformada.</div></div>
+    <div class="ph-run"><button class="btn btn-r" onclick="runCategory('media')">Rodar categoria</button></div>
+  </div>
+  <div class="pgrid" id="grid-media"></div>
+</div>
+
+<div class="panel" id="p-combo">
+  <div class="ph">
+    <div class="ph-text"><div class="pt">Combinados</div><div class="ps">Combinações simultâneas de DOM + CSS + memória que juntas podem travar o compositor do PS4 mesmo quando separadas não causam crash.</div></div>
+    <div class="ph-run"><button class="btn btn-r" onclick="runCategory('combo')">Rodar categoria</button></div>
+  </div>
+  <div class="pgrid" id="grid-combo"></div>
+</div>
+
+</main>
+
+<!-- RIGHT PANEL -->
+<div class="rp">
+  <div class="rp-head">
+    <span class="rp-label">Monitor</span>
+    <button class="rp-clear" onclick="document.getElementById('log').innerHTML=''">limpar</button>
+  </div>
+  <div class="rp-counters">
+    <div class="ct"><div class="ct-n" id="ct-run" style="color:var(--c1)">0</div><div class="ct-l">Rodados</div></div>
+    <div class="ct"><div class="ct-n" id="ct-crash" style="color:var(--r1)">0</div><div class="ct-l">Crashes</div></div>
+    <div class="ct"><div class="ct-n" id="ct-ok" style="color:var(--g1)">0</div><div class="ct-l">Surviveram</div></div>
+    <div class="ct"><div class="ct-n" id="ct-weird" style="color:var(--p1)">0</div><div class="ct-l">Weird</div></div>
+  </div>
+  <div id="log"></div>
+
+  <div style="padding:10px 12px;border-top:1px solid var(--ln);flex-shrink:0">
+    <div style="font-size:9px;font-weight:700;letter-spacing:1px;color:var(--tx2);text-transform:uppercase;margin-bottom:6px">Relatório de Crash</div>
+    <div class="report-box" id="crash-report"></div>
+    <button class="pc-btn" style="width:100%;text-align:center;margin-top:4px" onclick="generateReport()">Gerar PoC Report</button>
+  </div>
+</div>
+</div>
+
+<script>
+// ═══════════════════════════════════════
+// CORE
+// ═══════════════════════════════════════
+const logEl = document.getElementById('log');
+const ctrs = { run:0, crash:0, ok:0, weird:0 };
+const crashLog = [];
+
+function lg(m, t='dim') {
+  const s = document.createElement('span');
+  s.className = 'lg l' + t;
+  const ts = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  s.textContent = '[' + ts + '] ' + m;
+  logEl.appendChild(s);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function bump(k) {
+  ctrs[k]++;
+  const el = document.getElementById('ct-' + k);
+  if (el) el.textContent = ctrs[k];
+}
+
+function flashCrash() {
+  const ov = document.getElementById('crash-overlay');
+  ov.style.display = 'block';
+  setTimeout(() => ov.style.display = 'none', 300);
+}
+
+function nav(id, btn) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('on'));
+  document.querySelectorAll('.sb').forEach(b => b.classList.remove('on'));
+  document.getElementById('p-' + id).classList.add('on');
+  if (btn) btn.classList.add('on');
+}
+
+function resetAll() {
+  ctrs.run = ctrs.crash = ctrs.ok = ctrs.weird = 0;
+  ['run','crash','ok','weird'].forEach(k => { const e=document.getElementById('ct-'+k); if(e) e.textContent='0'; });
+  document.querySelectorAll('.pc').forEach(c => {
+    c.classList.remove('running','crashed','survived','weird');
+    const s=c.querySelector('.pc-status'); if(s){s.className='pc-status';s.innerHTML='';}
+  });
+  logEl.innerHTML='';
+  crashLog.length=0;
+  document.getElementById('crash-report').className='report-box';
+  lg('reset', 'dim');
+}
+
+// ═══════════════════════════════════════
+// POC BUILDER
+// ═══════════════════════════════════════
+function poc(gridId, num, title, tag, desc, fn) {
+  const g = document.getElementById('grid-' + gridId);
+  if (!g) return;
+  const id = 'pc-' + gridId + '-' + num;
+  const c = document.createElement('div');
+  c.className = 'pc';
+  c.id = id;
+  c.innerHTML = `
+    <div class="pc-head">
+      <span class="pc-num">#${String(num).padStart(2,'0')}</span>
+      <span class="pc-title">${title}</span>
+      <span class="pc-tag t-${tag}">${tag}</span>
+    </div>
+    <div class="pc-body">
+      <div class="pc-desc">${desc}</div>
+      <div class="pc-actions">
+        <button class="pc-btn" onclick="runPoc('${id}')">Rodar</button>
+      </div>
+    </div>
+    <div class="pc-status" id="st-${id}"></div>`;
+  g.appendChild(c);
+  c._fn = fn;
+  return c;
+}
+
+function setStatus(id, lines, type) {
+  const st = document.getElementById('st-' + id);
+  const card = document.getElementById(id);
+  if (!st || !card) return;
+  st.innerHTML = lines.map(l => `<span class="s-${l[0]}">${l[1]}</span>`).join('');
+  st.className = 'pc-status show';
+  card.classList.remove('running','crashed','survived','weird');
+  card.classList.add(type === 'crash' ? 'crashed' : type === 'weird' ? 'weird' : 'survived');
+  if (type === 'crash') {
+    flashCrash();
+    bump('crash');
+    const title = card.querySelector('.pc-title').textContent;
+    crashLog.push({ id, title, lines });
+    const cnt = document.getElementById('cnt-' + id.split('-')[1]);
+    if (cnt) { cnt.className = 'sc crash'; }
+    lg('⚡ POTENTIAL CRASH: ' + title, 'lcrash');
+  } else if (type === 'weird') {
+    bump('weird');
+    lg('⚠ WEIRD: ' + card.querySelector('.pc-title').textContent, 'lwarn');
+  } else {
+    bump('ok');
+    lg('✓ survived: ' + card.querySelector('.pc-title').textContent, 'ok');
+  }
+}
+
+async function runPoc(id) {
+  const card = document.getElementById(id);
+  if (!card || !card._fn) return;
+  card.classList.add('running');
+  bump('run');
+  lg('→ ' + card.querySelector('.pc-title').textContent, 'info');
+  const st = document.getElementById('st-' + id);
+  if (st) { st.innerHTML='<span class="s-info">executando...</span>'; st.className='pc-status show'; }
+  try {
+    const r = card._fn();
+    if (r && r.then) await r;
+  } catch(e) {
+    setStatus(id, [['crash','EXCEPTION: ' + e.message]], 'crash');
+  }
+  card.classList.remove('running');
+}
+
+async function runCategory(cat) {
+  const cards = document.querySelectorAll(`[id^="pc-${cat}-"]`);
+  for (const c of cards) {
+    await new Promise(r => setTimeout(r, 120));
+    await runPoc(c.id);
+  }
+}
+
+async function runAll() {
+  for (const cat of ['dom','css','mem','js','media','combo']) {
+    await runCategory(cat);
+    await new Promise(r => setTimeout(r, 200));
+  }
+}
+
+// ═══════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════
+function injectStyle(css) {
+  const s = document.createElement('style');
+  s.textContent = css;
+  document.head.appendChild(s);
+  return s;
+}
+
+function makeScratchpad() {
+  const d = document.createElement('div');
+  d.style.cssText = 'position:absolute;top:-9999px;left:-9999px;width:1px;height:1px;overflow:hidden;pointer-events:none';
+  document.body.appendChild(d);
+  return d;
+}
+
+function cleanup(el) { try { if (el && el.parentNode) el.parentNode.removeChild(el); } catch(_){} }
+
+function time(fn) {
+  const t = performance.now();
+  let r;
+  try { r = fn(); } catch(e) { return { ms: performance.now()-t, err: e.message }; }
+  return { ms: performance.now()-t, result: r };
+}
+
+// ═══════════════════════════════════════
+// ██ DOM STRESS
+// ═══════════════════════════════════════
+let n=1;
+
+poc('dom', n++,
+'Árvore DOM de 15.000 nós com reflow forçado a cada inserção',
+'crash',
+`Cria <em>15.000 elementos</em> aninhados e força <em>offsetHeight</em> após cada inserção — obriga o layout engine a recalcular o fluxo inteiro a cada passo. O WebKit antigo do PS4 pode travar no loop de reflow.`,
+() => {
+  const id = 'pc-dom-1';
+  const scratch = makeScratchpad();
+  const t0 = performance.now();
+  let root = scratch; let reflows = 0; let crashed = false;
+  try {
+    for (let i = 0; i < 15000; i++) {
+      const el = document.createElement(i % 3 === 0 ? 'div' : i % 3 === 1 ? 'span' : 'p');
+      el.textContent = i;
+      root.appendChild(el);
+      // força reflow a cada 100
+      if (i % 100 === 0) { const _ = scratch.offsetHeight; reflows++; }
+      if (i % 500 === 0) root = el; // aprofunda a árvore
+      if (performance.now() - t0 > 8000) { crashed = true; break; }
+    }
+  } catch(e) {
+    cleanup(scratch);
+    setStatus(id, [['crash','EXCEPTION em inserção #'+reflows*100+': '+e.message]], 'crash');
+    return;
+  }
+  const ms = (performance.now()-t0).toFixed(0);
+  cleanup(scratch);
+  if (crashed) {
+    setStatus(id, [['crash','TIMEOUT após 8s — layout engine provavelmente travou'],['warn','reflows completados: '+reflows]], 'crash');
+  } else {
+    setStatus(id, [['ok','15k nós + '+reflows+' reflows em '+ms+'ms — sobreviveu'],['info','Comparar tempo com Chrome — PS4 muito mais lento = bug']], 'ok');
+  }
+});
+
+poc('dom', n++,
+'querySelectorAll com seletor de 500 classes encadeadas',
+'dom',
+`Executa <em>querySelectorAll(".a.b.c...500 classes")</em> — o seletor complexo força o matcher a percorrer toda a árvore de combinações. Versões antigas do WebKit têm complexidade exponencial nesse caso.`,
+() => {
+  const id = 'pc-dom-2';
+  const selector = Array.from({length:500}, (_,i) => '.cls'+i).join('');
+  const t0 = performance.now();
+  let result, err;
+  try { result = document.querySelectorAll(selector).length; }
+  catch(e) { err = e.message; }
+  const ms = (performance.now()-t0).toFixed(2);
+  if (err) {
+    setStatus(id,[['crash','ERRO no seletor 500 classes: '+err],['warn','O motor CSS rejeitou o seletor']],'crash');
+  } else if (parseFloat(ms) > 500) {
+    setStatus(id,[['crash','LENTO: '+ms+'ms para seletor 500 classes — motor CSS próximo do limite'],['info','resultado: '+result+' elementos']],'crash');
+  } else {
+    setStatus(id,[['ok','querySelectorAll 500 classes: '+ms+'ms ('+result+' matches)'],['info','PS4 esperado: muito mais lento']],'ok');
+  }
+});
+
+poc('dom', n++,
+'cloneNode(deep) em árvore de 5.000 nós 10 vezes',
+'dom',
+`Clona recursivamente uma subárvore com <em>5.000 nós</em> 10 vezes sem pausas. Pode saturar o heap do WebKit com cópias profundas rápidas.`,
+() => {
+  const id = 'pc-dom-3';
+  const scratch = makeScratchpad();
+  let root = scratch;
+  for (let i = 0; i < 5000; i++) {
+    const c = document.createElement('div');
+    root.appendChild(c);
+    if (i % 100 === 0) root = c;
+  }
+  const t0 = performance.now();
+  let clones = 0;
+  try {
+    for (let i = 0; i < 10; i++) {
+      const clone = scratch.cloneNode(true);
+      clones++;
+      clone.remove();
+    }
+  } catch(e) {
+    cleanup(scratch);
+    setStatus(id,[['crash','CRASH no clone #'+clones+': '+e.message]],'crash');
+    return;
+  }
+  const ms = (performance.now()-t0).toFixed(0);
+  cleanup(scratch);
+  setStatus(id,[['ok','10x cloneNode(5k nós): '+ms+'ms'],['info','PS4 esperado: 5-20x mais lento ou sem resposta']],'ok');
+});
+
+poc('dom', n++,
+'innerHTML = string de 2MB com estrutura complexa',
+'dom',
+`Atribui uma string HTML de <em>~2MB</em> com tabelas, listas e spans aninhados ao innerHTML de um elemento. O parser HTML do PS4 pode travar com inputs grandes.`,
+() => {
+  const id = 'pc-dom-4';
+  const scratch = makeScratchpad();
+  let html = '';
+  for (let i = 0; i < 5000; i++) {
+    html += `<div class="r${i%10}" data-id="${i}"><span><b>${i}</b><em>${Math.random().toFixed(6)}</em></span></div>`;
+  }
+  const t0 = performance.now();
+  let err;
+  try { scratch.innerHTML = html; }
+  catch(e) { err = e.message; }
+  const ms = (performance.now()-t0).toFixed(2);
+  const size = (html.length/1024).toFixed(0);
+  cleanup(scratch);
+  if (err) {
+    setStatus(id,[['crash','ERRO ao parsear '+size+'KB de HTML: '+err]],'crash');
+  } else {
+    setStatus(id,[['ok','innerHTML '+size+'KB em '+ms+'ms — sobreviveu'],['info','PS4 pode demorar >1s — documentar o tempo']],'ok');
+  }
+});
+
+poc('dom', n++,
+'insertBefore em loop com nó sendo movido (não copiado)',
+'crash',
+`Move o <em>mesmo nó</em> entre dois containers num loop de 10.000 iterações via insertBefore. Versões antigas do WebKit podem travar ao invalidar referências de nós que estão se movendo.`,
+() => {
+  const id = 'pc-dom-5';
+  const a = makeScratchpad(); const b = makeScratchpad();
+  const node = document.createElement('div');
+  a.appendChild(node);
+  const t0 = performance.now();
+  let i = 0;
+  try {
+    for (; i < 10000; i++) {
+      const target = i % 2 === 0 ? b : a;
+      target.insertBefore(node, target.firstChild);
+    }
+  } catch(e) {
+    cleanup(a); cleanup(b);
+    setStatus(id,[['crash','CRASH em move #'+i+': '+e.message]],'crash');
+    return;
+  }
+  const ms = (performance.now()-t0).toFixed(0);
+  cleanup(a); cleanup(b);
+  setStatus(id,[['ok','10k moves do mesmo nó: '+ms+'ms'],['info','Comportamento esperado do WebKit: aceitar sem crash']],'ok');
+});
+
+poc('dom', n++,
+'dispatchEvent sintético em nó removido do DOM',
+'dom',
+`Remove um elemento do DOM e depois tenta <em>dispatchEvent</em> nele. O PS4 pode acessar memória inválida ao tentar percorrer a cadeia de listeners de um nó órfão.`,
+() => {
+  const id = 'pc-dom-6';
+  const scratch = makeScratchpad();
+  const el = document.createElement('div');
+  scratch.appendChild(el);
+  let received = false;
+  el.addEventListener('customtest', () => received = true);
+  scratch.removeChild(el); // el is now detached
+  let err;
+  try {
+    el.dispatchEvent(new Event('customtest', { bubbles: true }));
+  } catch(e) { err = e.message; }
+  cleanup(scratch);
+  if (err) {
+    setStatus(id,[['crash','CRASH ao dispatchEvent em nó removido: '+err]],'crash');
+  } else {
+    setStatus(id,[['ok','dispatchEvent em nó removido — sem crash'],['info','received: '+received+' (true = listener ainda ativo em nó órfão)']], received ? 'weird' : 'ok');
+  }
+});
+
+// ═══════════════════════════════════════
+// ██ CSS PARSER
+// ═══════════════════════════════════════
+n=1;
+
+poc('css', n++,
+'CSS calc() aninhado 100 níveis de profundidade',
+'css',
+`Gera uma regra CSS com <em>calc() dentro de calc()</em> 100 vezes. Parsers CSS com recursão limitada podem atingir o stack limit ao avaliar a expressão.`,
+() => {
+  const id = 'pc-css-1';
+  let expr = '1px';
+  for (let i = 0; i < 100; i++) expr = `calc(${expr} + ${i}px)`;
+  const t0 = performance.now();
+  const style = injectStyle(`.calc-deep-test { width: ${expr}; }`);
+  const el = document.createElement('div');
+  el.className = 'calc-deep-test';
+  document.body.appendChild(el);
+  const computed = window.getComputedStyle(el).width;
+  const ms = (performance.now()-t0).toFixed(2);
+  document.body.removeChild(el);
+  document.head.removeChild(style);
+  if (parseFloat(ms) > 500) {
+    setStatus(id,[['crash','LENTO: '+ms+'ms para calc 100 níveis'],['warn','computed: '+computed]],'crash');
+  } else {
+    setStatus(id,[['ok','calc 100 níveis: '+ms+'ms — computed: '+computed]],'ok');
+  }
+});
+
+poc('css', n++,
+':not() com seletor composto de 200 classes',
+'css',
+`Cria regra com <em>:not(.a.b.c...200 classes)</em>. Implementações antigas do WebKit não otimizam :not() composto e podem crashar ou ignorar silenciosamente.`,
+() => {
+  const id = 'pc-css-2';
+  const classes = Array.from({length:200}, (_,i) => '.n'+i).join('');
+  const t0 = performance.now();
+  let err;
+  try {
+    const s = injectStyle(`.not-test:not(${classes}) { color: red; }`);
+    document.head.removeChild(s);
+  } catch(e) { err = e.message; }
+  const ms = (performance.now()-t0).toFixed(2);
+  if (err) {
+    setStatus(id,[['crash','ERRO ao parsear :not() 200 classes: '+err]],'crash');
+  } else if (parseFloat(ms) > 200) {
+    setStatus(id,[['crash','LENTO: '+ms+'ms para :not(200 classes) — CSS parser sob pressão']],'crash');
+  } else {
+    setStatus(id,[['ok',':not(200 classes): '+ms+'ms']],'ok');
+  }
+});
+
+poc('css', n++,
+'@keyframes com 10.000 frames de 0% a 100% interpolando',
+'css',
+`Injeta uma animação com <em>10.000 keyframes</em> distribuídos de 0% a 100%. O compilador de animações do WebKit pode consumir toda a memória ao criar os interpoladores.`,
+() => {
+  const id = 'pc-css-3';
+  let frames = '@keyframes mega-anim {\n';
+  for (let i = 0; i <= 10000; i++) {
+    const pct = (i / 10000 * 100).toFixed(3);
+    frames += `  ${pct}% { transform: rotate(${i}deg) scale(${1 + i/10000}); opacity: ${i/10000}; }\n`;
+  }
+  frames += '}';
+  const t0 = performance.now();
+  let err;
+  try {
+    const s = injectStyle(frames + ' .mega { animation: mega-anim 1s infinite; }');
+    const el = document.createElement('div');
+    el.className = 'mega';
+    el.style.cssText = 'position:absolute;top:-9999px;width:1px;height:1px';
+    document.body.appendChild(el);
+    const _ = window.getComputedStyle(el).animationName;
+    document.body.removeChild(el);
+    document.head.removeChild(s);
+  } catch(e) { err = e.message; }
+  const ms = (performance.now()-t0).toFixed(0);
+  if (err) {
+    setStatus(id,[['crash','EXCEÇÃO com 10k keyframes: '+err]],'crash');
+  } else if (parseFloat(ms) > 2000) {
+    setStatus(id,[['crash','TRAVAMENTO: '+ms+'ms para compilar 10k keyframes']],'crash');
+  } else {
+    setStatus(id,[['ok','10k keyframes: '+ms+'ms — sobreviveu'],['info','PS4 esperado: bem mais lento']],'ok');
+  }
+});
+
+poc('css', n++,
+'CSS Grid com 1000 colunas e 1000 linhas (1M células)',
+'css',
+`Cria um grid <em>1000×1000</em> e preenche com 10.000 elementos filhos. O algoritmo de layout de grid tem complexidade O(n²) em algumas situações — pode travar o PS4.`,
+() => {
+  const id = 'pc-css-4';
+  const scratch = makeScratchpad();
+  const s = injectStyle('#grid-stress{display:grid;grid-template-columns:repeat(1000,1px);grid-template-rows:repeat(1000,1px);width:1px;height:1px;overflow:hidden}');
+  scratch.id = 'grid-stress';
+  for (let i = 0; i < 10000; i++) {
+    const c = document.createElement('div');
+    c.style.cssText = 'grid-column:'+(i%1000+1)+';grid-row:'+(Math.floor(i/1000)+1);
+    scratch.appendChild(c);
+  }
+  const t0 = performance.now();
+  const _ = scratch.offsetWidth; // force layout
+  const ms = (performance.now()-t0).toFixed(0);
+  cleanup(scratch);
+  document.head.removeChild(s);
+  if (parseFloat(ms) > 3000) {
+    setStatus(id,[['crash','GRID 1000x1000 travou por '+ms+'ms — layout engine sobrecarregado']],'crash');
+  } else {
+    setStatus(id,[['ok','grid 1000x1000 layout: '+ms+'ms']],'ok');
+  }
+});
+
+poc('css', n++,
+'filter: blur(0px) em 5000 elementos com will-change',
+'css',
+`Cria 5000 elementos com <em>filter:blur + will-change:transform</em> — cada um é promovido para uma layer de GPU pelo compositor. O PS4 tem VRAM limitada.`,
+() => {
+  const id = 'pc-css-5';
+  const scratch = makeScratchpad();
+  scratch.style.cssText = 'position:absolute;top:-9999px;width:1px;height:1px';
+  const s = injectStyle('.blur-layer{filter:blur(0px);will-change:transform;width:1px;height:1px;position:absolute}');
+  const t0 = performance.now();
+  for (let i = 0; i < 5000; i++) {
+    const el = document.createElement('div');
+    el.className = 'blur-layer';
+    scratch.appendChild(el);
+  }
+  const _ = scratch.offsetHeight;
+  const ms = (performance.now()-t0).toFixed(0);
+  cleanup(scratch);
+  document.head.removeChild(s);
+  setStatus(id,[
+    [parseFloat(ms) > 1000 ? 'crash' : 'ok', '5000 GPU layers: '+ms+'ms'],
+    ['info','will-change cria layer por elemento — PS4 VRAM limitada']
+  ], parseFloat(ms) > 1000 ? 'crash' : 'ok');
+});
+
+poc('css', n++,
+'transition em todos os 300 props CSS simultaneamente',
+'css',
+`Aplica <em>transition: all 0s</em> e muda 300 propriedades de uma vez. O motor de transição precisa rastrear todas as propriedades afetadas simultaneamente.`,
+() => {
+  const id = 'pc-css-6';
+  const scratch = makeScratchpad();
+  scratch.style.transition = 'all 0s';
+  const props = ['color','background','opacity','width','height','margin','padding','border-width','font-size','letter-spacing','line-height','transform','filter','top','left','right','bottom','z-index','flex-grow','flex-shrink','border-radius','outline-width','text-indent','word-spacing','border-spacing'];
+  const t0 = performance.now();
+  props.forEach((p, i) => { try { scratch.style[p] = i % 2 === 0 ? '1px' : '2px'; } catch(_){} });
+  const _ = scratch.offsetWidth;
+  const ms = (performance.now()-t0).toFixed(2);
+  cleanup(scratch);
+  setStatus(id,[['ok','transition all + 25 props: '+ms+'ms'],['info','PS4: verificar se transition dispara corretamente']],'ok');
+});
+
+// ═══════════════════════════════════════
+// ██ MEMORY PRESSURE
+// ═══════════════════════════════════════
+n=1;
+
+poc('mem', n++,
+'Preencher heap JS até o limite com strings de 1KB',
+'mem',
+`Aloca strings de 1KB em array até receber OOM ou esgotar o tempo. Mapeia o <em>limite de heap do PS4</em> para incluir no relatório.`,
+() => {
+  const id = 'pc-mem-1';
+  const arr = [];
+  const chunk = 'x'.repeat(1024);
+  const t0 = performance.now();
+  let allocated = 0;
+  try {
+    while (performance.now() - t0 < 5000) {
+      arr.push(chunk + allocated);
+      allocated++;
+      if (allocated % 1000 === 0) {
+        const el = document.getElementById('st-' + id);
+        if (el) { el.innerHTML = `<span class="s-info">alocado: ${(allocated/1024).toFixed(1)}MB...</span>`; el.className='pc-status show'; }
+      }
+    }
+  } catch(e) {
+    const mb = (allocated / 1024).toFixed(1);
+    setStatus(id,[['crash','OOM após '+mb+'MB: '+e.message],['info','Limite de heap do PS4: ~'+mb+'MB']],'crash');
+    return;
+  }
+  const mb = (allocated / 1024).toFixed(1);
+  setStatus(id,[['warn','5s alocando: '+mb+'MB sem OOM — PS4 pode ter mais heap'],['info','Resultado útil: documentar o MB máximo']],'ok');
+});
+
+poc('mem', n++,
+'10.000 closures com referência a array de 1KB cada',
+'mem',
+`Cria 10.000 funções, cada uma capturando um array de 1KB no closure. Força o GC a rastrear <em>10MB de closures</em> — pode travar o coletor de lixo do PS4.`,
+() => {
+  const id = 'pc-mem-2';
+  const t0 = performance.now();
+  const fns = [];
+  try {
+    for (let i = 0; i < 10000; i++) {
+      const captured = new Uint8Array(1024); // 1KB each
+      captured[0] = i & 0xFF;
+      fns.push(() => captured[0]);
+    }
+    const ms = (performance.now()-t0).toFixed(0);
+    const sample = fns[5000]();
+    setStatus(id,[['ok','10k closures (10MB capturado): '+ms+'ms'],['info','sample closure call: '+sample]],'ok');
+  } catch(e) {
+    setStatus(id,[['crash','OOM criando closures: '+e.message],['info','closures criados: '+fns.length]],'crash');
+  }
+});
+
+poc('mem', n++,
+'Float64Array de 128MB sendo preenchido com operações',
+'mem',
+`Aloca <em>Float64Array de 128MB</em> e faz operações matemáticas em todos os elementos. Testa se o PS4 consegue manter um buffer grande ativo no heap.`,
+() => {
+  const id = 'pc-mem-3';
+  const MB = 128;
+  const t0 = performance.now();
+  let arr;
+  try {
+    arr = new Float64Array(MB * 1024 * 1024 / 8); // 128MB
+    for (let i = 0; i < arr.length; i += 4096) arr[i] = Math.sin(i); // stride access
+    const ms = (performance.now()-t0).toFixed(0);
+    const checksum = arr[arr.length - 4096];
+    arr = null;
+    setStatus(id,[['ok',MB+'MB Float64Array + stride fill: '+ms+'ms'],['info','last val: '+checksum.toFixed(4)]],'ok');
+  } catch(e) {
+    arr = null;
+    setStatus(id,[['crash','FALHOU ao alocar '+MB+'MB: '+e.message],['info','Limite de ArrayBuffer do PS4 < 128MB']],'crash');
+  }
+});
+
+poc('mem', n++,
+'Criar e descartar 100 iframes em 2 segundos',
+'mem',
+`Cria e remove <em>100 iframes</em> rapidamente — cada iframe tem seu próprio contexto JS, DOM e CSS. O GC do PS4 pode não conseguir liberar os contextos a tempo.`,
+() => new Promise(resolve => {
+  const id = 'pc-mem-4';
+  const t0 = performance.now();
+  let count = 0;
+  const st = document.getElementById('st-' + id);
+  const iv = setInterval(() => {
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:absolute;top:-9999px;width:50px;height:50px;border:none';
+    document.body.appendChild(iframe);
+    try {
+      const d = iframe.contentDocument;
+      d.open(); d.write('<html><body><script>var x=new Array(1000).fill(Math.random())<\/script></body></html>'); d.close();
+    } catch(_){}
+    setTimeout(() => { try { iframe.parentNode.removeChild(iframe); } catch(_){} }, 50);
+    count++;
+    if (st) { st.innerHTML = `<span class="s-info">iframe #${count}/100...</span>`; st.className='pc-status show'; }
+    if (count >= 100) {
+      clearInterval(iv);
+      const ms = (performance.now()-t0).toFixed(0);
+      setStatus(id,[['ok','100 iframes criados/destruídos: '+ms+'ms'],['info','PS4: verificar se memória é liberada corretamente']],'ok');
+      resolve();
+    }
+  }, 20);
+  setTimeout(() => { clearInterval(iv); resolve(); setStatus(id,[['crash','TIMEOUT — criação de iframes parou em '+count+'/100']],'crash'); }, 8000);
+}));
+
+poc('mem', n++,
+'WeakMap com 50.000 entradas + forçar GC por alocação',
+'mem',
+`Preenche uma <em>WeakMap com 50.000 entradas</em>, descarta as chaves e tenta forçar o GC via alocação pesada. Versões antigas do JSC podem ter leak ou travar.`,
+() => {
+  const id = 'pc-mem-5';
+  const wm = new WeakMap();
+  const keys = [];
+  const t0 = performance.now();
+  for (let i = 0; i < 50000; i++) {
+    const key = { id: i };
+    keys.push(key);
+    wm.set(key, new Array(100).fill(i));
+  }
+  const fillMs = (performance.now()-t0).toFixed(0);
+  // discard half the keys
+  keys.splice(0, 25000);
+  // Force GC pressure
+  let pressure;
+  try { pressure = new Float32Array(20 * 1024 * 1024); pressure = null; } catch(_){}
+  const total = (performance.now()-t0).toFixed(0);
+  setStatus(id,[
+    ['ok','WeakMap 50k: fill='+fillMs+'ms total='+total+'ms'],
+    ['info','keys restantes: '+keys.length+' (25k descartadas)']
+  ],'ok');
+});
+
+// ═══════════════════════════════════════
+// ██ JS ENGINE
+// ═══════════════════════════════════════
+n=1;
+
+poc('js', n++,
+'Recursão até stack overflow — medir profundidade máxima',
+'js',
+`Chama função recursiva sem limite até <em>RangeError: Maximum call stack</em>. Mapeia a <em>profundidade máxima do stack do PS4</em> — menor que o Chrome indica versão mais antiga do JSC.`,
+() => {
+  const id = 'pc-js-1';
+  let depth = 0;
+  function recurse() { depth++; return recurse(); }
+  const t0 = performance.now();
+  try { recurse(); }
+  catch(e) {
+    const ms = (performance.now()-t0).toFixed(0);
+    const type = e instanceof RangeError ? 'crash' : 'weird';
+    setStatus(id,[
+      [type, 'Stack overflow em profundidade: '+depth],
+      ['info', 'Chrome desktop: ~15.000 | PS4 WebKit: pode ser <5.000'],
+      ['info', 'erro: '+e.message+' em '+ms+'ms']
+    ], depth < 5000 ? 'crash' : 'ok');
+  }
+});
+
+poc('js', n++,
+'JSON.parse de string de 50MB',
+'js',
+`Gera uma string JSON válida de <em>~50MB</em> e chama JSON.parse. O PS4 pode travar ou ficar lento por limitação do parser JSON do JSC.`,
+() => {
+  const id = 'pc-js-2';
+  const arr = Array.from({length: 500000}, (_,i) => ({ id:i, v:Math.random(), s:'str'+i }));
+  let jsonStr;
+  try { jsonStr = JSON.stringify(arr); }
+  catch(e) { setStatus(id,[['crash','JSON.stringify falhou: '+e.message]],'crash'); return; }
+  const size = (jsonStr.length / 1024 / 1024).toFixed(1);
+  const t0 = performance.now();
+  let parsed;
+  try { parsed = JSON.parse(jsonStr); }
+  catch(e) { setStatus(id,[['crash','JSON.parse '+size+'MB falhou: '+e.message]],'crash'); return; }
+  const ms = (performance.now()-t0).toFixed(0);
+  setStatus(id,[
+    [parseFloat(ms) > 3000 ? 'crash' : 'ok', 'JSON.parse '+size+'MB: '+ms+'ms'],
+    ['info', 'parsed.length: '+parsed.length]
+  ], parseFloat(ms) > 3000 ? 'crash' : 'ok');
+});
+
+poc('js', n++,
+'Regex catastrófico (ReDoS) com string de 40 chars',
+'js',
+`Executa uma regex com <em>backtracking exponencial</em> numa string de 40 chars. O JSC do PS4 pode não ter proteção contra ReDoS — potencial hang.`,
+() => new Promise(resolve => {
+  const id = 'pc-js-3';
+  const input = 'a'.repeat(40) + '!';
+  const t0 = performance.now();
+  let result = null;
+  // Run in a way we can measure
+  const timeout = setTimeout(() => {
+    setStatus(id,[['crash','HANG: regex ainda executando após 5s — ReDoS CONFIRMADO'],['info','String: "'+input.substring(0,20)+'..."'],['info','PS4 sem proteção contra ReDoS']],'crash');
+    resolve();
+  }, 5000);
+  try {
+    result = /^(a+)+$/.test(input);
+    clearTimeout(timeout);
+    const ms = (performance.now()-t0).toFixed(0);
+    setStatus(id,[
+      [parseInt(ms) > 2000 ? 'crash' : 'ok', 'ReDoS em '+ms+'ms — resultado: '+result],
+      ['info', parseInt(ms) > 2000 ? 'PS4 sem proteção ReDoS!' : 'Rápido — JSC tem proteção']
+    ], parseInt(ms) > 2000 ? 'crash' : 'ok');
+  } catch(e) {
+    clearTimeout(timeout);
+    setStatus(id,[['crash','EXCEÇÃO no ReDoS: '+e.message]],'crash');
+  }
+  resolve();
+}));
+
+poc('js', n++,
+'Object.keys em objeto com 1 milhão de propriedades',
+'js',
+`Cria objeto com <em>1.000.000 de propriedades nomeadas</em> e chama Object.keys. Força o motor a alocar um array de 1M strings.`,
+() => {
+  const id = 'pc-js-4';
+  const t0 = performance.now();
+  const obj = {};
+  for (let i = 0; i < 1000000; i++) obj['k'+i] = i;
+  const buildMs = (performance.now()-t0).toFixed(0);
+  const t1 = performance.now();
+  let keys;
+  try {
+    keys = Object.keys(obj);
+  } catch(e) {
+    setStatus(id,[['crash','Object.keys 1M props falhou: '+e.message],['info','build: '+buildMs+'ms']],'crash');
+    return;
+  }
+  const keysMs = (performance.now()-t1).toFixed(0);
+  setStatus(id,[
+    [parseInt(keysMs) > 2000 ? 'crash' : 'ok', '1M props build:'+buildMs+'ms keys:'+keysMs+'ms'],
+    ['info', 'keys.length: '+keys.length]
+  ], parseInt(keysMs) > 2000 ? 'crash' : 'ok');
+});
+
+poc('js', n++,
+'Proxy com handler get que chama outro Proxy em cadeia de 500',
+'js',
+`Cria <em>cadeia de 500 Proxies</em> onde o get de cada um acessa o próximo. Uma propriedade acessa 500 traps encadeadas.`,
+() => {
+  const id = 'pc-js-5';
+  if (!window.Proxy) { setStatus(id,[['warn','Proxy não disponível no PS4']],'weird'); return; }
+  const base = { value: 42 };
+  let current = base;
+  const t0 = performance.now();
+  for (let i = 0; i < 500; i++) {
+    const prev = current;
+    current = new Proxy(prev, { get(t,p) { return Reflect.get(t,p); } });
+  }
+  let result;
+  try { result = current.value; }
+  catch(e) { setStatus(id,[['crash','500 Proxy chain falhou: '+e.message]],'crash'); return; }
+  const ms = (performance.now()-t0).toFixed(2);
+  setStatus(id,[
+    ['ok', '500 Proxy chain: '+ms+'ms resultado: '+result],
+    ['info', 'PS4 sem Proxy = skip; com Proxy = medir latência']
+  ],'ok');
+});
+
+poc('js', n++,
+'eval de script de 500KB gerado dinamicamente',
+'js',
+`Gera um script de <em>~500KB</em> com 50.000 variáveis e operações matemáticas e chama eval(). Testa o compilador JIT do PS4.`,
+() => {
+  const id = 'pc-js-6';
+  let script = 'var __r=0;';
+  for (let i = 0; i < 50000; i++) script += `var _v${i}=${i*Math.PI.toFixed(8)};__r+=_v${i};`;
+  script += '__r;';
+  const size = (script.length / 1024).toFixed(0);
+  const t0 = performance.now();
+  let result;
+  try { result = eval(script); }
+  catch(e) { setStatus(id,[['crash','eval '+size+'KB falhou: '+e.message]],'crash'); return; }
+  const ms = (performance.now()-t0).toFixed(0);
+  setStatus(id,[
+    [parseInt(ms) > 3000 ? 'crash' : 'ok', 'eval '+size+'KB: '+ms+'ms'],
+    ['info', 'resultado: '+result.toFixed(2)]
+  ], parseInt(ms) > 3000 ? 'crash' : 'ok');
+});
+
+// ═══════════════════════════════════════
+// ██ MEDIA / CANVAS
+// ═══════════════════════════════════════
+n=1;
+
+poc('media', n++,
+'Canvas 4096×4096 com getImageData de toda a área',
+'media',
+`Cria canvas <em>4096×4096</em> (16M pixels, 64MB de buffer), preenche com gradiente e faz getImageData da área completa.`,
+() => {
+  const id = 'pc-media-1';
+  const t0 = performance.now();
+  let canvas;
+  try {
+    canvas = document.createElement('canvas');
+    canvas.width = 4096; canvas.height = 4096;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) { setStatus(id,[['warn','getContext 2D retornou null em 4096x4096']],'weird'); return; }
+    const grad = ctx.createLinearGradient(0,0,4096,4096);
+    grad.addColorStop(0,'#ff0000'); grad.addColorStop(1,'#0000ff');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,4096,4096);
+    const drawMs = (performance.now()-t0).toFixed(0);
+    const t1 = performance.now();
+    const imgData = ctx.getImageData(0,0,4096,4096);
+    const readMs = (performance.now()-t1).toFixed(0);
+    const sum = imgData.data[0] + imgData.data[imgData.data.length-4];
+    canvas = null;
+    setStatus(id,[
+      [parseInt(readMs) > 2000 ? 'crash' : 'ok', '4096² canvas: draw='+drawMs+'ms read='+readMs+'ms'],
+      ['info', 'buffer size: '+(imgData.data.length/1024/1024).toFixed(0)+'MB checksum: '+sum]
+    ], parseInt(readMs) > 2000 ? 'crash' : 'ok');
+  } catch(e) {
+    canvas = null;
+    setStatus(id,[['crash','Canvas 4096² falhou: '+e.message]],'crash');
+  }
+});
+
+poc('media', n++,
+'toDataURL em canvas 2048×2048 10 vezes seguidas',
+'media',
+`Chama <em>toDataURL()</em> 10 vezes num canvas de 2048×2048 — cada chamada serializa ~12MB de pixels para base64. Pode saturar a CPU do PS4.`,
+() => {
+  const id = 'pc-media-2';
+  const canvas = document.createElement('canvas');
+  canvas.width = 2048; canvas.height = 2048;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) { setStatus(id,[['warn','sem contexto 2D']],'weird'); return; }
+  ctx.fillStyle = '#336699'; ctx.fillRect(0,0,2048,2048);
+  const t0 = performance.now();
+  let urls = 0;
+  try {
+    for (let i = 0; i < 10; i++) {
+      const url = canvas.toDataURL('image/png');
+      urls++;
+      if (url.length < 100) throw new Error('toDataURL retornou string inválida');
+    }
+  } catch(e) {
+    setStatus(id,[['crash','toDataURL falhou na iteração #'+urls+': '+e.message]],'crash');
+    return;
+  }
+  const ms = (performance.now()-t0).toFixed(0);
+  setStatus(id,[
+    [parseInt(ms) > 5000 ? 'crash' : 'ok', '10x toDataURL 2048²: '+ms+'ms ('+(ms/10).toFixed(0)+'ms/frame)'],
+    ['info', 'PS4 a ~30fps: max ~33ms/frame']
+  ], parseInt(ms) > 5000 ? 'crash' : 'ok');
+});
+
+poc('media', n++,
+'drawImage de canvas em canvas 10.000 vezes',
+'media',
+`Usa um canvas como fonte de <em>drawImage</em> 10.000 vezes em loop. Força o compositor de canvas a fazer 10k blits sem pausa.`,
+() => {
+  const id = 'pc-media-3';
+  const src = document.createElement('canvas');
+  src.width = 64; src.height = 64;
+  const sctx = src.getContext('2d');
+  sctx.fillStyle = '#ff6600'; sctx.fillRect(0,0,64,64);
+  const dst = document.createElement('canvas');
+  dst.width = 512; dst.height = 512;
+  const dctx = dst.getContext('2d');
+  const t0 = performance.now();
+  try {
+    for (let i = 0; i < 10000; i++) {
+      dctx.drawImage(src, (i*7) % 448, (i*13) % 448);
+    }
+  } catch(e) {
+    setStatus(id,[['crash','drawImage 10k falhou: '+e.message]],'crash');
+    return;
+  }
+  const ms = (performance.now()-t0).toFixed(0);
+  setStatus(id,[
+    [parseInt(ms) > 2000 ? 'crash' : 'ok', '10k drawImage: '+ms+'ms ('+(ms/10).toFixed(2)+'ms/op)'],
+    ['info', 'PS4 GPU limitada: esperar muito mais lento']
+  ], parseInt(ms) > 2000 ? 'crash' : 'ok');
+});
+
+poc('media', n++,
+'WebGL: compila 100 shaders em sequência',
+'media',
+`Cria um contexto WebGL e compila <em>100 fragment shaders</em> simples. A compilação de shaders é cara na GPU do PS4.`,
+() => {
+  const id = 'pc-media-4';
+  const canvas = document.createElement('canvas');
+  canvas.width = 1; canvas.height = 1;
+  const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+  if (!gl) { setStatus(id,[['warn','WebGL não disponível']],'weird'); return; }
+  const t0 = performance.now();
+  let compiled = 0;
+  try {
+    for (let i = 0; i < 100; i++) {
+      const shader = gl.createShader(gl.FRAGMENT_SHADER);
+      gl.shaderSource(shader, `precision mediump float;void main(){gl_FragColor=vec4(${(i/100).toFixed(2)},0.0,0.0,1.0);}`);
+      gl.compileShader(shader);
+      compiled++;
+      gl.deleteShader(shader);
+    }
+  } catch(e) {
+    setStatus(id,[['crash','WebGL shader #'+compiled+' falhou: '+e.message]],'crash');
+    return;
+  }
+  const ms = (performance.now()-t0).toFixed(0);
+  setStatus(id,[
+    [parseInt(ms) > 3000 ? 'crash' : 'ok', '100 shaders compilados: '+ms+'ms ('+(ms/100).toFixed(1)+'ms/shader)'],
+    ['info', 'PS4 GPU: compilação pode ser bem mais lenta']
+  ], parseInt(ms) > 3000 ? 'crash' : 'ok');
+});
+
+poc('media', n++,
+'Criar 200 AudioContext (ou webkitAudioContext)',
+'media',
+`Instancia <em>200 AudioContexts</em> sem fechar nenhum. O PS4 tem um limite de contextos de áudio simultâneos que quando excedido pode crashar.`,
+() => {
+  const id = 'pc-media-5';
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) { setStatus(id,[['warn','AudioContext não disponível']],'weird'); return; }
+  const contexts = [];
+  const t0 = performance.now();
+  let created = 0;
+  try {
+    for (let i = 0; i < 200; i++) {
+      const ctx = new AC();
+      contexts.push(ctx);
+      created++;
+    }
+  } catch(e) {
+    const ms = (performance.now()-t0).toFixed(0);
+    // Close all
+    contexts.forEach(c => { try { c.close(); } catch(_){} });
+    setStatus(id,[
+      ['crash', 'LIMITE DE AUDIOCONTEXT EM #'+created+': '+e.message],
+      ['info', 'Limite de AudioContext do PS4 = ~'+created]
+    ],'crash');
+    return;
+  }
+  const ms = (performance.now()-t0).toFixed(0);
+  contexts.forEach(c => { try { c.close(); } catch(_){} });
+  setStatus(id,[
+    ['ok', '200 AudioContexts: '+ms+'ms — sobreviveu'],
+    ['info', 'PS4 pode ter limite menor — documentar onde trava']
+  ],'ok');
+});
+
+// ═══════════════════════════════════════
+// ██ COMBINADOS
+// ═══════════════════════════════════════
+n=1;
+
+poc('combo', n++,
+'DOM stress + CSS reflow + JS heavy loop simultâneos',
+'crash',
+`Executa em <em>paralelo via Promise.all</em>: 5.000 inserções DOM, injeção de 10.000 regras CSS e sort de 100.000 elementos — 3 threads de pressão simultâneas.`,
+() => new Promise(resolve => {
+  const id = 'pc-combo-1';
+  const t0 = performance.now();
+  const domTask = new Promise(r => {
+    const s = makeScratchpad();
+    for (let i = 0; i < 5000; i++) { const el=document.createElement('div'); el.textContent=i; s.appendChild(el); }
+    const _ = s.offsetHeight;
+    cleanup(s); r('dom:'+document.querySelectorAll('div').length);
+  });
+  const cssTask = new Promise(r => {
+    const style = injectStyle(Array.from({length:10000},(_,i)=>`.rc${i}{color:hsl(${i%360},50%,50%)}`).join('\n'));
+    document.head.removeChild(style);
+    r('css:ok');
+  });
+  const jsTask = new Promise(r => {
+    const arr = Array.from({length:100000},()=>Math.random());
+    arr.sort();
+    r('js:'+arr[0].toFixed(6));
+  });
+  Promise.all([domTask, cssTask, jsTask]).then(results => {
+    const ms = (performance.now()-t0).toFixed(0);
+    setStatus(id,[
+      [parseInt(ms) > 4000 ? 'crash' : 'ok', 'Triple stress: '+ms+'ms'],
+      ['info', results.join(' | ')]
+    ], parseInt(ms) > 4000 ? 'crash' : 'ok');
+    resolve();
+  });
+  setTimeout(() => { resolve(); setStatus(id,[['crash','TIMEOUT — triple stress travou o PS4 por >10s']],'crash'); }, 10000);
+}));
+
+poc('combo', n++,
+'1000 iframes + canvas 512² + 5000 DOM nodes ao mesmo tempo',
+'crash',
+`Cria <em>20 iframes</em> com canvas 512² cada, inserindo 250 nós DOM por iframe — simula uma página complexa com múltiplos contextos de renderização.`,
+() => new Promise(resolve => {
+  const id = 'pc-combo-2';
+  const t0 = performance.now();
+  const iframes = [];
+  let done = 0;
+  for (let i = 0; i < 20; i++) {
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:absolute;top:-9999px;width:1px;height:1px;border:none';
+    document.body.appendChild(iframe);
+    iframes.push(iframe);
+    try {
+      const d = iframe.contentDocument; d.open();
+      d.write(`<html><body><canvas id="c" width="512" height="512"></canvas><script>
+        var cv=document.getElementById('c');
+        var cx=cv.getContext('2d');
+        if(cx){cx.fillStyle='#'+Math.floor(Math.random()*0xffffff).toString(16);cx.fillRect(0,0,512,512);}
+        for(var j=0;j<250;j++){var el=document.createElement('div');el.textContent=j;document.body.appendChild(el);}
+        parent.postMessage('done-${i}','*');
+      <\/script></body></html>`);
+      d.close();
+    } catch(e) { done++; }
+  }
+  const handler = e => {
+    if (typeof e.data === 'string' && e.data.startsWith('done-')) {
+      done++;
+      if (done >= 20) {
+        window.removeEventListener('message', handler);
+        const ms = (performance.now()-t0).toFixed(0);
+        iframes.forEach(f => { try { f.parentNode.removeChild(f); } catch(_){} });
+        setStatus(id,[
+          [parseInt(ms) > 5000 ? 'crash' : 'ok', '20 iframes×(canvas 512²+250 nós): '+ms+'ms'],
+          ['info', 'done: '+done+'/20']
+        ], parseInt(ms) > 5000 ? 'crash' : 'ok');
+        resolve();
+      }
+    }
+  };
+  window.addEventListener('message', handler);
+  setTimeout(() => {
+    window.removeEventListener('message', handler);
+    iframes.forEach(f => { try { f.parentNode.removeChild(f); } catch(_){} });
+    setStatus(id,[['crash','TIMEOUT — iframes travaram o compositor do PS4'],['info','done: '+done+'/20']],'crash');
+    resolve();
+  }, 12000);
+}));
+
+poc('combo', n++,
+'MutationObserver monitorando 10.000 mutações rápidas + CSS transition trigger',
+'crash',
+`MutationObserver observando um container → insere 10.000 filhos rapidamente → cada inserção dispara transição CSS. O observer callback pode não conseguir acompanhar.`,
+() => new Promise(resolve => {
+  const id = 'pc-combo-3';
+  const scratch = makeScratchpad();
+  const style = injectStyle('.mut-el{transition:opacity 0.001s;opacity:0}.mut-el.show{opacity:1}');
+  let mutCount = 0;
+  const obs = new MutationObserver(muts => { mutCount += muts.length; });
+  obs.observe(scratch, { childList: true, subtree: true });
+  const t0 = performance.now();
+  for (let i = 0; i < 10000; i++) {
+    const el = document.createElement('div');
+    el.className = 'mut-el';
+    scratch.appendChild(el);
+    void el.offsetWidth; // force reflow
+    el.className = 'mut-el show'; // trigger transition
+  }
+  const ms = (performance.now()-t0).toFixed(0);
+  obs.disconnect();
+  cleanup(scratch);
+  document.head.removeChild(style);
+  setStatus(id,[
+    [parseInt(ms) > 5000 ? 'crash' : 'ok', '10k mut+transition: '+ms+'ms mutações: '+mutCount],
+    ['info', 'PS4: MutationObserver pode atrasar ou perder mutações']
+  ], parseInt(ms) > 5000 ? 'crash' : 'ok');
+  resolve();
+}));
+
+poc('combo', n++,
+'localStorage flood + DOM 5k nodes + CSS 5k rules simultâneos',
+'mem',
+`Três operações pesadas em paralelo: escrever <em>5.000 chaves no localStorage</em>, inserir 5.000 nós DOM e injetar 5.000 regras CSS — para estressar todos os subsistemas.`,
+() => {
+  const id = 'pc-combo-4';
+  const t0 = performance.now();
+  // localStorage
+  let lsOk = 0;
+  for (let i = 0; i < 5000; i++) {
+    try { localStorage.setItem('_s'+i, 'v'.repeat(100)); lsOk++; }
+    catch(e) { break; }
+  }
+  for (let i = 0; i < 5000; i++) localStorage.removeItem('_s'+i);
+  // DOM
+  const scratch = makeScratchpad();
+  for (let i = 0; i < 5000; i++) { const el=document.createElement('div'); el.id='_d'+i; scratch.appendChild(el); }
+  const domNodes = scratch.children.length;
+  cleanup(scratch);
+  // CSS
+  let cssRules = 0;
+  const style = injectStyle(Array.from({length:5000},(_,i)=>`._r${i}{margin:${i%10}px}`).join(''));
+  cssRules = style.sheet ? style.sheet.cssRules.length : 0;
+  document.head.removeChild(style);
+  const ms = (performance.now()-t0).toFixed(0);
+  setStatus(id,[
+    [parseInt(ms) > 5000 ? 'crash' : 'ok', 'Triple storage+DOM+CSS: '+ms+'ms'],
+    ['info', 'ls:'+lsOk+' dom:'+domNodes+' css:'+cssRules]
+  ], parseInt(ms) > 5000 ? 'crash' : 'ok');
+});
+
+poc('combo', n++,
+'O teste definitivo: canvas 2048² + WebGL + 10k DOM + 10k CSS + ReDoS + recursão',
+'crash',
+`Todos os subsistemas ao mesmo tempo: <em>canvas + WebGL + DOM + CSS + regex + recursão</em>. Se o PS4 sobreviver isso, você tem um baseline de estabilidade.`,
+() => new Promise(resolve => {
+  const id = 'pc-combo-5';
+  const t0 = performance.now();
+  const results = [];
+  // Canvas
+  try {
+    const cv = document.createElement('canvas'); cv.width=2048; cv.height=2048;
+    const cx = cv.getContext('2d');
+    if (cx) { cx.fillRect(0,0,2048,2048); results.push('canvas:ok'); }
+  } catch(e) { results.push('canvas:err'); }
+  // DOM
+  const scratch = makeScratchpad();
+  for (let i=0;i<10000;i++){const el=document.createElement('div');el.textContent=i;scratch.appendChild(el);}
+  results.push('dom:'+scratch.children.length);
+  cleanup(scratch);
+  // CSS
+  const style = injectStyle(Array.from({length:10000},(_,i)=>`._x${i}{color:hsl(${i%360},50%,50%)}`).join(''));
+  document.head.removeChild(style);
+  results.push('css:ok');
+  // Stack depth test
+  let depth = 0;
+  try { (function r(){depth++;r();})(); } catch(e) { results.push('stack:'+depth); }
+  // JSON heavy
+  try {
+    const big = JSON.stringify(Array.from({length:10000},(_,i)=>({id:i,v:Math.random()})));
+    JSON.parse(big);
+    results.push('json:ok');
+  } catch(e) { results.push('json:err'); }
+  const ms = (performance.now()-t0).toFixed(0);
+  setStatus(id,[
+    [parseInt(ms) > 8000 ? 'crash' : 'ok', 'DEFINITIVO: '+ms+'ms'],
+    ['info', results.join(' | ')]
+  ], parseInt(ms) > 8000 ? 'crash' : 'ok');
+  resolve();
+}));
+
+// ═══════════════════════════════════════
+// REPORT GENERATOR
+// ═══════════════════════════════════════
+function generateReport() {
+  const reportEl = document.getElementById('crash-report');
+  if (crashLog.length === 0) {
+    reportEl.innerHTML = '<span class="s-info">Nenhum crash detectado ainda — execute os testes primeiro.</span>';
+    reportEl.className = 'report-box show';
+    return;
+  }
+  const ua = navigator.userAgent;
+  const isPS4 = ua.includes('PlayStation 4');
+  let report = `=== PS4 BROWSER CRASH POC REPORT ===\n`;
+  report += `Data: ${new Date().toLocaleString('pt-BR')}\n`;
+  report += `UA: ${ua}\n`;
+  report += `Plataforma: ${isPS4 ? 'PS4 CONFIRMADO' : 'Outro (Chrome/Firefox?)'}\n\n`;
+  report += `CRASHES DETECTADOS: ${crashLog.length}\n\n`;
+  crashLog.forEach((c, i) => {
+    report += `[CRASH #${i+1}] ${c.title}\n`;
+    c.lines.forEach(l => { report += `  ${l[0].toUpperCase()}: ${l[1]}\n`; });
+    report += '\n';
+  });
+  report += `=== NEXT STEPS ===\n`;
+  report += `1. Gravar video do browser travando durante os testes marcados como CRASH\n`;
+  report += `2. Anotar o numero exato do firmware do PS4 (Configuracoes > Sistema)\n`;
+  report += `3. Verificar se o crash e reproduzivel: quantas vezes em 10 tentativas\n`;
+  report += `4. Submeter via hackerone.com/playstation com video + este report\n`;
+  reportEl.textContent = report;
+  reportEl.className = 'report-box show';
+  navigator.clipboard.writeText(report).catch(() => {});
+  lg('Report gerado — ' + crashLog.length + ' crashes documentados', 'ok');
+}
+
+// INIT
+document.getElementById('ua-bar').textContent = navigator.userAgent.substring(0, 110);
+lg('Crash PoC v2 pronta — hospede no GitHub Pages e acesse no PS4', 'info');
+lg('UA: ' + (navigator.userAgent.includes('PlayStation') ? 'PS4 DETECTADO ✓' : 'Não é PS4 — Chrome normal'), navigator.userAgent.includes('PlayStation') ? 'ok' : 'warn');
+</script>
+</body>
+</html>

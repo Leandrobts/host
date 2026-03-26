@@ -1,0 +1,1472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PS4 JSEngine Chaos v2</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=VT323&family=Courier+Prime:wght@400;700&display=swap');
+
+  :root {
+    --r: #ff003c;
+    --o: #ff6a00;
+    --y: #ffe600;
+    --g: #00ff88;
+    --b: #00cfff;
+    --bg: #05000a;
+    --panel: #0a0010;
+    --border: #1a0030;
+    --dim: #2d0050;
+    --text: #e0b0ff;
+    --muted: #5a2080;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Courier Prime', monospace;
+    font-size: 13px;
+    min-height: 100vh;
+    padding: 20px;
+    background-image: radial-gradient(ellipse at 20% 50%, #1a003366 0%, transparent 60%),
+                      radial-gradient(ellipse at 80% 20%, #00003366 0%, transparent 50%);
+  }
+
+  header { text-align: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--dim); }
+
+  header h1 {
+    font-family: 'VT323', monospace;
+    font-size: 36px;
+    letter-spacing: 8px;
+    color: var(--r);
+    text-shadow: 0 0 20px #ff003c88, 0 0 60px #ff003c33;
+    margin-bottom: 4px;
+  }
+
+  header p { color: var(--muted); letter-spacing: 3px; font-size: 10px; }
+
+  #log-panel {
+    background: var(--panel);
+    border: 1px solid var(--dim);
+    border-left: 3px solid var(--r);
+    padding: 12px 16px;
+    margin-bottom: 22px;
+    height: 150px;
+    overflow-y: auto;
+    font-size: 12px;
+    line-height: 1.7;
+    position: relative;
+  }
+  #log-panel::before {
+    content: 'CHAOS OUTPUT';
+    position: absolute; top: -9px; left: 12px;
+    background: var(--bg); padding: 0 6px;
+    font-size: 10px; color: var(--r); letter-spacing: 3px;
+    font-family: 'VT323', monospace;
+  }
+  .log-ok   { color: var(--g); }
+  .log-warn { color: var(--y); }
+  .log-err  { color: var(--r); }
+  .log-info { color: var(--b); }
+
+  #clear-log {
+    float: right; background: transparent; border: 1px solid var(--muted);
+    color: var(--muted); padding: 2px 10px; cursor: pointer;
+    font-family: inherit; font-size: 10px; letter-spacing: 2px;
+  }
+  #clear-log:hover { border-color: var(--r); color: var(--r); }
+
+  .section-title {
+    font-family: 'VT323', monospace;
+    font-size: 16px;
+    letter-spacing: 5px;
+    color: var(--o);
+    margin: 22px 0 10px;
+    padding-left: 10px;
+    border-left: 2px solid var(--dim);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+    gap: 10px;
+  }
+
+  .test-card {
+    background: var(--panel);
+    border: 1px solid var(--dim);
+    padding: 14px 16px;
+    position: relative;
+    transition: border-color 0.15s;
+  }
+  .test-card:hover { border-color: var(--r); }
+  .test-card .test-id { font-size: 9px; color: var(--muted); letter-spacing: 2px; margin-bottom: 3px; }
+  .test-card .test-name { color: var(--o); font-size: 13px; margin-bottom: 4px; font-weight: bold; }
+  .test-card .test-desc { color: var(--muted); font-size: 11px; line-height: 1.5; margin-bottom: 12px; }
+  .test-card button {
+    background: transparent; border: 1px solid var(--r);
+    color: var(--r); padding: 6px 16px; cursor: pointer;
+    font-family: inherit; font-size: 11px; letter-spacing: 2px;
+    width: 100%; transition: background 0.15s, color 0.15s; text-transform: uppercase;
+  }
+  .test-card button:hover { background: var(--r); color: var(--bg); }
+  .test-card .status-dot {
+    position: absolute; top: 12px; right: 14px;
+    width: 7px; height: 7px; border-radius: 50%; background: var(--dim);
+  }
+  .test-card.ran     .status-dot { background: var(--g); box-shadow: 0 0 6px var(--g); }
+  .test-card.warn    .status-dot { background: var(--y); box-shadow: 0 0 6px var(--y); }
+  .test-card.crashed .status-dot { background: var(--r); box-shadow: 0 0 8px var(--r); }
+
+  footer {
+    margin-top: 32px; text-align: center; color: var(--muted);
+    font-size: 10px; letter-spacing: 3px; border-top: 1px solid var(--dim); padding-top: 14px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>// JS ENGINE CHAOS v2 //</h1>
+  <p>WEBKIT CONFUSION TESTS — CROSS-API ENTANGLEMENT — CRASH ORIENTED</p>
+</header>
+
+<div id="log-panel">
+  <button id="clear-log" onclick="clearLog()">CLEAR</button>
+  <div id="log-output"><span class="log-info">[READY] — Engine confusion tests loaded. Run and monitor for crashes.</span></div>
+</div>
+
+<!-- ─── SECTION 1: PROTOTYPE & TYPE CONFUSION ─────────────────────────────── -->
+<div class="section-title">01 / PROTOTYPE &amp; TYPE CONFUSION</div>
+<div class="grid">
+
+  <div class="test-card" id="card-pt1">
+    <div class="status-dot"></div>
+    <div class="test-id">PT-01</div>
+    <div class="test-name">TypedArray.__proto__ Swap</div>
+    <div class="test-desc">Troca o __proto__ de um TypedArray por Array durante iteração ativa — confunde o type guard do engine.</div>
+    <button onclick="runPT1(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-pt2">
+    <div class="status-dot"></div>
+    <div class="test-id">PT-02</div>
+    <div class="test-name">Symbol.toPrimitive no TypedArray set()</div>
+    <div class="test-desc">Objeto com Symbol.toPrimitive retornando valores inesperados é passado para TypedArray.set() — mistura coerção com operação de memória.</div>
+    <button onclick="runPT2(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-pt3">
+    <div class="status-dot"></div>
+    <div class="test-id">PT-03</div>
+    <div class="test-name">Array.prototype.sort com valueOf Mutation</div>
+    <div class="test-desc">Items do array modificam o próprio array via valueOf() durante sort() — reentrada no sort engine.</div>
+    <button onclick="runPT3(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-pt4">
+    <div class="status-dot"></div>
+    <div class="test-id">PT-04</div>
+    <div class="test-name">Getter que Muda o Tipo do Objeto</div>
+    <div class="test-desc">defineProperty com getter que muda o [[Class]] do objeto enquanto JSON.stringify está em execução.</div>
+    <button onclick="runPT4(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-pt5">
+    <div class="status-dot"></div>
+    <div class="test-id">PT-05</div>
+    <div class="test-name">Proxy que Muta Target Durante for...in</div>
+    <div class="test-desc">Proxy intercepta has/ownKeys e adiciona/remove propriedades do target durante for...in loop ativo.</div>
+    <button onclick="runPT5(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-pt6">
+    <div class="status-dot"></div>
+    <div class="test-id">PT-06</div>
+    <div class="test-name">Object.defineProperty Loop com GC Pressure</div>
+    <div class="test-desc">Redefine propriedades com getter/setter em loop enquanto força GC com grandes alocações — type feedback poisoning.</div>
+    <button onclick="runPT6(this)">RUN</button>
+  </div>
+
+</div>
+
+<!-- ─── SECTION 2: EVENT LOOP ENTANGLEMENT ────────────────────────────────── -->
+<div class="section-title">02 / EVENT LOOP ENTANGLEMENT</div>
+<div class="grid">
+
+  <div class="test-card" id="card-el1">
+    <div class="status-dot"></div>
+    <div class="test-id">EL-01</div>
+    <div class="test-name">Promise resolve() dentro de setTimeout(0) Aninhado</div>
+    <div class="test-desc">100k setTimeouts(0) cada um resolvendo uma Promise — satura microtask queue dentro de macrotask, confunde o scheduler.</div>
+    <button onclick="runEL1(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-el2">
+    <div class="status-dot"></div>
+    <div class="test-id">EL-02</div>
+    <div class="test-name">MutationObserver + Promise Interleave</div>
+    <div class="test-desc">MutationObserver dispara Promises que modificam o DOM — microtasks e mutation callbacks se re-ativam mutuamente.</div>
+    <button onclick="runEL2(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-el3">
+    <div class="status-dot"></div>
+    <div class="test-id">EL-03</div>
+    <div class="test-name">queueMicrotask Storm + DOM Reflow</div>
+    <div class="test-desc">Enfileira 50k microtasks que forçam reflow via offsetHeight — mistura fila de micro com operações de layout síncronas.</div>
+    <button onclick="runEL3(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-el4">
+    <div class="status-dot"></div>
+    <div class="test-id">EL-04</div>
+    <div class="test-name">requestAnimationFrame + Promise Deadlock</div>
+    <div class="test-desc">rAF encadeia Promises que agendam mais rAFs — testa colisão entre frame scheduler e microtask queue.</div>
+    <button onclick="runEL4(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-el5">
+    <div class="status-dot"></div>
+    <div class="test-id">EL-05</div>
+    <div class="test-name">Event Dispatch dentro de Getter durante JSON.stringify</div>
+    <div class="test-desc">Getter dispara dispatchEvent() síncrono enquanto JSON.stringify está serializando — reentrada no event system.</div>
+    <button onclick="runEL5(this)">RUN</button>
+  </div>
+
+</div>
+
+<!-- ─── SECTION 3: GENERATOR & ASYNC CONFUSION ───────────────────────────── -->
+<div class="section-title">03 / GENERATOR &amp; ASYNC CONFUSION</div>
+<div class="grid">
+
+  <div class="test-card" id="card-gen1">
+    <div class="status-dot"></div>
+    <div class="test-id">GEN-01</div>
+    <div class="test-name">Generator que Modifica seu Próprio Iterador</div>
+    <div class="test-desc">Generator retorna referência a si mesmo via yield e usa .return()/.throw() de dentro da própria execução.</div>
+    <button onclick="runGEN1(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-gen2">
+    <div class="status-dot"></div>
+    <div class="test-id">GEN-02</div>
+    <div class="test-name">Async Generator + SharedWorker Ping-Pong</div>
+    <div class="test-desc">Async generator aguarda mensagens de um SharedWorker e re-envia para outro — mistura async iteration com worker message loop.</div>
+    <button onclick="runGEN2(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-gen3">
+    <div class="status-dot"></div>
+    <div class="test-id">GEN-03</div>
+    <div class="test-name">for...of em TypedArray com Getter Mutante</div>
+    <div class="test-desc">Itera TypedArray com for...of enquanto Symbol.iterator é redefinido na primeira iteração — confunde o iterator protocol.</div>
+    <button onclick="runGEN3(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-gen4">
+    <div class="status-dot"></div>
+    <div class="test-id">GEN-04</div>
+    <div class="test-name">Async/Await + try/finally com throw Cruzado</div>
+    <div class="test-desc">Async function com finally que joga nova exceção — interrompe exception propagation em múltiplos níveis de await.</div>
+    <button onclick="runGEN4(this)">RUN</button>
+  </div>
+
+</div>
+
+<!-- ─── SECTION 4: MEMORY & GC CHAOS ─────────────────────────────────────── -->
+<div class="section-title">04 / MEMORY &amp; GC CHAOS</div>
+<div class="grid">
+
+  <div class="test-card" id="card-gc1">
+    <div class="status-dot"></div>
+    <div class="test-id">GC-01</div>
+    <div class="test-name">WeakRef + FinalizationRegistry Reanimação</div>
+    <div class="test-desc">Callback do FinalizationRegistry recria o objeto coletado via WeakRef — testa se o GC lida com "ressurreição" de objetos.</div>
+    <button onclick="runGC1(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-gc2">
+    <div class="status-dot"></div>
+    <div class="test-id">GC-02</div>
+    <div class="test-name">Closure Circular com TypedArray</div>
+    <div class="test-desc">Cria 50k closures que se referenciam circularmente e cada uma segura uma fatia de ArrayBuffer — força GC de ciclos com objetos nativos.</div>
+    <button onclick="runGC2(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-gc3">
+    <div class="status-dot"></div>
+    <div class="test-id">GC-03</div>
+    <div class="test-name">Worker Termination durante Transferable em Voo</div>
+    <div class="test-desc">Termina o Worker imediatamente após postMessage com ArrayBuffer transferível — objeto pode estar num estado indefinido.</div>
+    <button onclick="runGC3(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-gc4">
+    <div class="status-dot"></div>
+    <div class="test-id">GC-04</div>
+    <div class="test-name">Event Listener em Elemento Orphan com Closure</div>
+    <div class="test-desc">Adiciona listeners em elementos removidos do DOM que referenciam elementos vivos — testa coleta de grafos de objetos mistos.</div>
+    <button onclick="runGC4(this)">RUN</button>
+  </div>
+
+</div>
+
+<!-- ─── SECTION 5: API CROSS-CONTAMINATION ───────────────────────────────── -->
+<div class="section-title">05 / API CROSS-CONTAMINATION</div>
+<div class="grid">
+
+  <div class="test-card" id="card-cc1">
+    <div class="status-dot"></div>
+    <div class="test-id">CC-01</div>
+    <div class="test-name">Canvas drawImage de Canvas em Resize</div>
+    <div class="test-desc">drawImage() usando outro canvas como fonte enquanto esse canvas está sendo redimensionado em rAF — race entre GPU upload e resize.</div>
+    <button onclick="runCC1(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-cc2">
+    <div class="status-dot"></div>
+    <div class="test-id">CC-02</div>
+    <div class="test-name">AudioContext + Canvas + Worker Simultâneo</div>
+    <div class="test-desc">AudioContext processa áudio via ScriptProcessor enquanto Canvas renderiza e Worker faz cálculos — 3 threads concorrentes com callbacks cruzados.</div>
+    <button onclick="runCC2(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-cc3">
+    <div class="status-dot"></div>
+    <div class="test-id">CC-03</div>
+    <div class="test-name">History pushState dentro de popstate Handler</div>
+    <div class="test-desc">Handler de popstate chama pushState recursivamente — reentrada no navigation stack durante event handling.</div>
+    <button onclick="runCC3(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-cc4">
+    <div class="status-dot"></div>
+    <div class="test-id">CC-04</div>
+    <div class="test-name">Fetch Response.body + Worker + MutationObserver</div>
+    <div class="test-desc">Lê ReadableStream de Fetch em chunks via Worker; cada chunk dispara mutação DOM que ativa MutationObserver — 3 APIs assíncronas encadeadas.</div>
+    <button onclick="runCC4(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-cc5">
+    <div class="status-dot"></div>
+    <div class="test-id">CC-05</div>
+    <div class="test-name">localStorage no Worker (Probe de Segurança)</div>
+    <div class="test-desc">Tenta acessar localStorage de dentro de um Worker — comportamento undefined; alguns WebKits lançam, outros crasham.</div>
+    <button onclick="runCC5(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-cc6">
+    <div class="status-dot"></div>
+    <div class="test-id">CC-06</div>
+    <div class="test-name">CSS Animation Event + DOM Remove + History</div>
+    <div class="test-desc">animationend remove o elemento e chama pushState — testa se o event system limpa handles de elementos mortos.</div>
+    <button onclick="runCC6(this)">RUN</button>
+  </div>
+
+</div>
+
+<!-- ─── SECTION 6: JIT POISONING ─────────────────────────────────────────── -->
+<div class="section-title">06 / JIT COMPILER POISONING</div>
+<div class="grid">
+
+  <div class="test-card" id="card-jit1">
+    <div class="status-dot"></div>
+    <div class="test-id">JIT-01</div>
+    <div class="test-name">Função Hot Redefinida durante JIT</div>
+    <div class="test-desc">Aquece uma função para JIT (100k iterações) e então redefine Function.prototype.call — tipo de feedback de JIT fica inválido.</div>
+    <button onclick="runJIT1(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-jit2">
+    <div class="status-dot"></div>
+    <div class="test-id">JIT-02</div>
+    <div class="test-name">Shape Transition Após JIT Optimization</div>
+    <div class="test-desc">JIT optimiza acesso a {x,y,z}, depois adiciona novas propriedades para causar shape transition — invalida inline cache.</div>
+    <button onclick="runJIT2(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-jit3">
+    <div class="status-dot"></div>
+    <div class="test-id">JIT-03</div>
+    <div class="test-name">arguments[0] Mutado por Setter</div>
+    <div class="test-desc">Função com setter que altera arguments[0] enquanto o valor é lido em loop JIT-otimizado — args/params aliasing bug clássico.</div>
+    <button onclick="runJIT3(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-jit4">
+    <div class="status-dot"></div>
+    <div class="test-id">JIT-04</div>
+    <div class="test-name">eval() dentro de Loop Hot</div>
+    <div class="test-desc">Chama eval() com código diferente em cada iteração de um loop JIT-aquecido — força deoptimização constante.</div>
+    <button onclick="runJIT4(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-jit5">
+    <div class="status-dot"></div>
+    <div class="test-id">JIT-05</div>
+    <div class="test-name">Megamorphic Call Site</div>
+    <div class="test-desc">Chama o mesmo site com 100+ tipos de objetos diferentes — satura inline cache e força fallback para interpreter lento.</div>
+    <button onclick="runJIT5(this)">RUN</button>
+  </div>
+
+</div>
+
+<!-- ─── SECTION 7: EXCEPTION SYSTEM ABUSE ────────────────────────────────── -->
+<div class="section-title">07 / EXCEPTION SYSTEM ABUSE</div>
+<div class="grid">
+
+  <div class="test-card" id="card-ex1">
+    <div class="status-dot"></div>
+    <div class="test-id">EX-01</div>
+    <div class="test-name">throw dentro de Symbol.toPrimitive em Comparação</div>
+    <div class="test-desc">Symbol.toPrimitive lança exceção durante comparação tipada — interrompe o type comparison engine no meio.</div>
+    <button onclick="runEX1(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-ex2">
+    <div class="status-dot"></div>
+    <div class="test-id">EX-02</div>
+    <div class="test-name">TypeError em Proxy apply Trap durante new</div>
+    <div class="test-desc">Proxy intercepta apply e construct — lança de dentro do construct trap durante new — confunde o call/construct distinction.</div>
+    <button onclick="runEX2(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-ex3">
+    <div class="status-dot"></div>
+    <div class="test-id">EX-03</div>
+    <div class="test-name">Promise.reject não capturado + Error em Finalizer</div>
+    <div class="test-desc">Promise.reject sem .catch() enquanto FinalizationRegistry callback lança Error — dois caminhos de erro assíncronos simultâneos.</div>
+    <button onclick="runEX3(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-ex4">
+    <div class="status-dot"></div>
+    <div class="test-id">EX-04</div>
+    <div class="test-name">Stack Overflow em toString() Recursivo</div>
+    <div class="test-desc">Object.prototype.toString redefinido para chamar template literal que aciona toString novamente — stack overflow controlado.</div>
+    <button onclick="runEX4(this)">RUN</button>
+  </div>
+
+</div>
+
+<!-- ─── SECTION 8: DEEP ENTANGLEMENT COMBOS ──────────────────────────────── -->
+<div class="section-title">08 / DEEP COMBOS — MÁXIMO CAOS</div>
+<div class="grid">
+
+  <div class="test-card" id="card-combo1">
+    <div class="status-dot"></div>
+    <div class="test-id">COMBO-01</div>
+    <div class="test-name">Proxy + TypedArray + Async + DOM Mutation</div>
+    <div class="test-desc">Proxy envolve TypedArray; getter inicia async function que modifica DOM; MutationObserver chama de volta no Proxy — loop de 4 APIs.</div>
+    <button onclick="runCOMBO1(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-combo2">
+    <div class="status-dot"></div>
+    <div class="test-id">COMBO-02</div>
+    <div class="test-name">Generator + Worker + Canvas + History</div>
+    <div class="test-desc">Generator controla renderização Canvas via yield; cada frame envia resultado ao Worker; Worker chama pushState via postMessage — 4 vias simultâneas.</div>
+    <button onclick="runCOMBO2(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-combo3">
+    <div class="status-dot"></div>
+    <div class="test-id">COMBO-03</div>
+    <div class="test-name">FinalizationRegistry + Proxy + Promise + Blob</div>
+    <div class="test-desc">Objeto coletado pelo GC faz FinalizationRegistry criar Proxy de Blob que retorna Promise — sequência GC→Proxy→async com objeto morto.</div>
+    <button onclick="runCOMBO3(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-combo4">
+    <div class="status-dot"></div>
+    <div class="test-id">COMBO-04</div>
+    <div class="test-name">AudioContext onaudioprocess + SharedArrayBuffer Race</div>
+    <div class="test-desc">ScriptProcessorNode escreve em SharedArrayBuffer; Worker lê com Atomics.wait; main thread faz pushState durante o wait — audio thread, JS thread e history racing.</div>
+    <button onclick="runCOMBO4(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-combo5">
+    <div class="status-dot"></div>
+    <div class="test-id">COMBO-05</div>
+    <div class="test-name">Objeto com Todas as Armadilhas de Proxy + sort()</div>
+    <div class="test-desc">Array de Proxies onde cada trap (get, set, has, deleteProperty) modifica outros itens do array — sort() nesse array causa caos total no comparison engine.</div>
+    <button onclick="runCOMBO5(this)">RUN</button>
+  </div>
+
+</div>
+
+<footer>PS4 WEBKIT CHAOS v2 — BUG BOUNTY SCOPE ONLY — HACKERONE/SONY</footer>
+
+<canvas id="cv-a" width="512" height="512" style="display:none"></canvas>
+<canvas id="cv-b" width="512" height="512" style="display:none"></canvas>
+<div id="dom-scratch" style="position:absolute;left:-9999px"></div>
+
+<script>
+// ─── LOGGER ───────────────────────────────────────────────────────────────────
+function log(msg, type) {
+  var el = document.getElementById('log-output');
+  var d = document.createElement('div');
+  d.className = 'log-' + (type||'ok');
+  d.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+  el.appendChild(d);
+  el.parentElement.scrollTop = el.parentElement.scrollHeight;
+}
+function clearLog() { document.getElementById('log-output').innerHTML = ''; }
+function mark(id, state) {
+  var c = document.getElementById('card-' + id.toLowerCase());
+  if (c) c.className = 'test-card ' + state;
+}
+
+// ─── PT-01 TypedArray.__proto__ Swap ─────────────────────────────────────────
+function runPT1() {
+  mark('pt1','ran');
+  log('PT-01 — TypedArray proto swap during iteration...', 'info');
+  try {
+    var ta = new Float64Array(1000);
+    for (var i = 0; i < 1000; i++) ta[i] = i * 1.1;
+    var sum = 0;
+    var swapped = false;
+    for (var i = 0; i < ta.length; i++) {
+      if (i === 500 && !swapped) {
+        Object.setPrototypeOf(ta, Array.prototype);
+        swapped = true;
+      }
+      sum += ta[i] || 0;
+    }
+    log('PT-01 — survived proto swap. sum=' + sum.toFixed(2) + ' proto=' + Object.getPrototypeOf(ta).constructor.name, 'ok');
+  } catch(e) {
+    alert('PT-01 CRASH/THROW: ' + e.message);
+    log('PT-01 threw: ' + e.message, 'warn');
+    mark('pt1','warn');
+  }
+}
+
+// ─── PT-02 Symbol.toPrimitive no TypedArray.set() ────────────────────────────
+function runPT2() {
+  mark('pt2','ran');
+  log('PT-02 — Symbol.toPrimitive chaos in TypedArray.set()...', 'info');
+  try {
+    var ta = new Int32Array(10);
+    var callCount = 0;
+    var evil = {
+      length: 5,
+      get 0() { callCount++; return { [Symbol.toPrimitive]() { ta[0] = 0xDEAD; return 99; } }; },
+      get 1() { return { valueOf() { return Infinity; } }; },
+      get 2() { return { valueOf() { return NaN; } }; },
+      get 3() { return { valueOf() { return -0; } }; },
+      get 4() { return { [Symbol.toPrimitive](hint) { return hint === 'number' ? 2**31 : ''; } }; }
+    };
+    ta.set(evil);
+    alert('PT-02: TypedArray.set() with evil toPrimitive values:\n' + Array.from(ta).join(', ') + '\ntoPrimitive calls: ' + callCount);
+    log('PT-02 — values: ' + Array.from(ta).slice(0,5).join(','), 'warn');
+    mark('pt2','warn');
+  } catch(e) {
+    alert('PT-02 threw: ' + e.message);
+    log('PT-02 threw: ' + e.message, 'warn');
+    mark('pt2','warn');
+  }
+}
+
+// ─── PT-03 Array.sort com valueOf Mutation ────────────────────────────────────
+function runPT3() {
+  mark('pt3','ran');
+  log('PT-03 — Array.sort with self-mutating valueOf...', 'info');
+  try {
+    var arr = [];
+    for (var i = 0; i < 100; i++) {
+      (function(idx) {
+        arr.push({
+          valueOf: function() {
+            if (arr.length > 50) arr.splice(0, 10); // mutate during sort
+            return Math.random() * 100;
+          }
+        });
+      })(i);
+    }
+    arr.sort(function(a, b) { return a - b; });
+    log('PT-03 — sort completed on mutating array. Final length: ' + arr.length, 'ok');
+  } catch(e) {
+    alert('PT-03 THROW: ' + e.message);
+    log('PT-03 threw: ' + e.message, 'warn');
+    mark('pt3','warn');
+  }
+}
+
+// ─── PT-04 Getter que Muda o Tipo durante JSON.stringify ─────────────────────
+function runPT4() {
+  mark('pt4','ran');
+  log('PT-04 — Getter mutates class during JSON.stringify...', 'info');
+  try {
+    var obj = { a: 1, b: 2 };
+    var calls = 0;
+    Object.defineProperty(obj, 'c', {
+      enumerable: true,
+      get: function() {
+        calls++;
+        if (calls === 1) {
+          // Turn obj into array-like during serialization
+          obj.length = 3;
+          obj[0] = 'injected';
+          Object.defineProperty(obj, 'd', { enumerable: true, value: { nested: obj } });
+        }
+        return 'chaos-' + calls;
+      }
+    });
+    var result = JSON.stringify(obj);
+    alert('PT-04 JSON result: ' + result + '\nGetter calls: ' + calls);
+    log('PT-04 — JSON ok, getter calls=' + calls, 'warn');
+    mark('pt4','warn');
+  } catch(e) {
+    alert('PT-04 threw: ' + e.message);
+    log('PT-04 threw: ' + e.message, 'warn');
+    mark('pt4','warn');
+  }
+}
+
+// ─── PT-05 Proxy Muta Target durante for...in ─────────────────────────────────
+function runPT5() {
+  mark('pt5','ran');
+  log('PT-05 — Proxy mutates target during for...in...', 'info');
+  try {
+    var target = {};
+    for (var i = 0; i < 100; i++) target['prop' + i] = i;
+    var seen = [];
+    var p = new Proxy(target, {
+      has: function(t, k) {
+        if (seen.length % 10 === 0) {
+          delete t['prop' + seen.length];
+          t['new' + seen.length] = seen.length;
+        }
+        return k in t;
+      }
+    });
+    for (var k in p) seen.push(k);
+    log('PT-05 — for...in saw ' + seen.length + ' keys (started with 100)', 'warn');
+    alert('PT-05: for...in traversed ' + seen.length + ' keys on mutating proxy target');
+    mark('pt5','warn');
+  } catch(e) {
+    alert('PT-05 threw: ' + e.message);
+    log('PT-05 threw: ' + e.message, 'warn'); mark('pt5','warn');
+  }
+}
+
+// ─── PT-06 defineProperty + GC Pressure ──────────────────────────────────────
+function runPT6() {
+  mark('pt6','ran');
+  log('PT-06 — defineProperty loop with GC pressure...', 'info');
+  var sinks = [];
+  for (var i = 0; i < 5000; i++) {
+    var obj = {};
+    Object.defineProperty(obj, 'x', {
+      get: function() { sinks.push(new ArrayBuffer(1024)); return 42; },
+      configurable: true
+    });
+    var v = obj.x;
+    Object.defineProperty(obj, 'x', { value: v + 1, configurable: true, writable: true });
+    if (i % 500 === 0) sinks = []; // Release pressure periodically
+  }
+  log('PT-06 — 5k defineProperty cycles done.', 'ok');
+}
+
+// ─── EL-01 Promise dentro de setTimeout Aninhado ─────────────────────────────
+function runEL1() {
+  mark('el1','ran');
+  log('EL-01 — 10k setTimeout(0) each resolving a Promise...', 'info');
+  var resolved = 0;
+  for (var i = 0; i < 10000; i++) {
+    (function(n) {
+      setTimeout(function() {
+        Promise.resolve(n).then(function(v) {
+          resolved++;
+          if (resolved === 10000) log('EL-01 — all 10k promise/timeout chains resolved.', 'ok');
+        });
+      }, 0);
+    })(i);
+  }
+}
+
+// ─── EL-02 MutationObserver + Promise Interleave ──────────────────────────────
+function runEL2() {
+  mark('el2','ran');
+  log('EL-02 — MutationObserver <-> Promise loop...', 'info');
+  var scratch = document.getElementById('dom-scratch');
+  var depth = 0;
+  var MAX = 200;
+  var obs = new MutationObserver(function() {
+    depth++;
+    if (depth < MAX) {
+      Promise.resolve().then(function() {
+        var el = document.createElement('span');
+        el.textContent = depth;
+        scratch.appendChild(el);
+      });
+    } else {
+      obs.disconnect();
+      log('EL-02 — ' + MAX + ' mutation→promise→mutation cycles completed.', 'ok');
+      scratch.innerHTML = '';
+    }
+  });
+  obs.observe(scratch, { childList: true });
+  scratch.appendChild(document.createElement('div'));
+}
+
+// ─── EL-03 queueMicrotask + Reflow ────────────────────────────────────────────
+function runEL3() {
+  mark('el3','ran');
+  log('EL-03 — 5k microtasks forcing DOM reflow...', 'info');
+  var scratch = document.getElementById('dom-scratch');
+  var el = document.createElement('div');
+  scratch.appendChild(el);
+  var count = 0;
+  function tick() {
+    el.textContent = count;
+    var _h = el.offsetHeight; // Force reflow
+    count++;
+    if (count < 5000) queueMicrotask(tick);
+    else { log('EL-03 — 5k microtask+reflow cycles done.', 'ok'); scratch.innerHTML = ''; }
+  }
+  queueMicrotask(tick);
+}
+
+// ─── EL-04 rAF + Promise Loop ─────────────────────────────────────────────────
+function runEL4() {
+  mark('el4','ran');
+  log('EL-04 — rAF chains Promises that schedule more rAFs...', 'info');
+  var count = 0;
+  function frame() {
+    count++;
+    if (count < 300) {
+      Promise.resolve().then(function() {
+        requestAnimationFrame(frame);
+      });
+    } else {
+      log('EL-04 — 300 rAF+Promise cycles done.', 'ok');
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+// ─── EL-05 dispatchEvent dentro de Getter durante JSON ───────────────────────
+function runEL5() {
+  mark('el5','ran');
+  log('EL-05 — dispatchEvent inside getter during JSON.stringify...', 'info');
+  var scratch = document.getElementById('dom-scratch');
+  var eventFired = 0;
+  scratch.addEventListener('test-ev', function() { eventFired++; });
+  var obj = {};
+  Object.defineProperty(obj, 'trigger', {
+    enumerable: true,
+    get: function() {
+      scratch.dispatchEvent(new Event('test-ev'));
+      return 'dispatched';
+    }
+  });
+  try {
+    var result = JSON.stringify(obj);
+    alert('EL-05: JSON ok, events dispatched during stringify: ' + eventFired + '\nResult: ' + result);
+    log('EL-05 — eventFired=' + eventFired + ' during JSON.stringify', 'warn');
+    mark('el5','warn');
+  } catch(e) {
+    alert('EL-05 threw: ' + e.message);
+    log('EL-05 threw: ' + e.message, 'warn'); mark('el5','warn');
+  }
+}
+
+// ─── GEN-01 Generator que Se Modifica ────────────────────────────────────────
+function runGEN1() {
+  mark('gen1','ran');
+  log('GEN-01 — Self-modifying generator...', 'info');
+  try {
+    function* selfMod() {
+      var it = selfMod(); // Get another instance
+      yield 1;
+      var res = it.next();  // Step the other instance
+      yield res.value;
+      it.return('done');    // Close the other instance
+      yield 3;
+    }
+    var gen = selfMod();
+    var vals = [];
+    var r;
+    while (!(r = gen.next()).done) vals.push(r.value);
+    log('GEN-01 — values: ' + vals.join(', '), 'ok');
+  } catch(e) {
+    alert('GEN-01 threw: ' + e.message);
+    log('GEN-01 threw: ' + e.message, 'warn'); mark('gen1','warn');
+  }
+}
+
+// ─── GEN-02 Async Generator + SharedWorker ───────────────────────────────────
+function runGEN2() {
+  mark('gen2','ran');
+  log('GEN-02 — Async generator + SharedWorker ping-pong...', 'info');
+  var blob = new Blob(['self.onconnect=function(e){var p=e.ports[0];p.start();p.onmessage=function(m){p.postMessage(m.data*2);};}'], {type:'application/javascript'});
+  var url = URL.createObjectURL(blob);
+  try {
+    var sw = new SharedWorker(url);
+    sw.port.start();
+    async function* gen() {
+      for (var i = 1; i <= 10; i++) {
+        sw.port.postMessage(i);
+        var v = await new Promise(function(res) { sw.port.onmessage = function(e) { res(e.data); }; });
+        yield v;
+      }
+    }
+    (async function() {
+      var results = [];
+      for await (var v of gen()) results.push(v);
+      log('GEN-02 — async gen results: ' + results.join(','), 'ok');
+      URL.revokeObjectURL(url);
+    })();
+  } catch(e) {
+    log('GEN-02 threw: ' + e.message, 'warn'); mark('gen2','warn');
+  }
+}
+
+// ─── GEN-03 for...of com Symbol.iterator Swap ─────────────────────────────────
+function runGEN3() {
+  mark('gen3','ran');
+  log('GEN-03 — for...of with Symbol.iterator redefined mid-loop...', 'info');
+  try {
+    var ta = new Uint32Array([1,2,3,4,5,6,7,8,9,10]);
+    var origIter = ta[Symbol.iterator].bind(ta);
+    var count = 0;
+    var seen = [];
+    var iter = origIter();
+    var swapped = false;
+    while (true) {
+      var next = iter.next();
+      if (next.done) break;
+      seen.push(next.value);
+      count++;
+      if (count === 5 && !swapped) {
+        // Swap iterator protocol mid-iteration
+        Uint32Array.prototype[Symbol.iterator] = function*() { yield 99; yield 100; };
+        swapped = true;
+      }
+    }
+    // Restore
+    delete Uint32Array.prototype[Symbol.iterator];
+    alert('GEN-03: Saw values: ' + seen.join(',') + '\n(Expected 1-10, got interesting results if iterator swap worked)');
+    log('GEN-03 — seen: ' + seen.join(','), 'warn');
+    mark('gen3','warn');
+  } catch(e) {
+    alert('GEN-03 threw: ' + e.message);
+    log('GEN-03 threw: ' + e.message, 'warn'); mark('gen3','warn');
+  }
+}
+
+// ─── GEN-04 Async finally com throw Cruzado ───────────────────────────────────
+function runGEN4() {
+  mark('gen4','ran');
+  log('GEN-04 — Async finally cross-throw...', 'info');
+  async function dangerous() {
+    try {
+      await Promise.reject(new Error('original'));
+    } finally {
+      throw new Error('finally-override');
+    }
+  }
+  async function catcher() {
+    try {
+      await dangerous();
+    } catch(e) {
+      log('GEN-04 — caught: ' + e.message + ' (expected finally-override)', e.message === 'finally-override' ? 'ok' : 'warn');
+      alert('GEN-04: Caught error = "' + e.message + '"\n(Should be "finally-override", not "original")');
+    }
+  }
+  catcher();
+}
+
+// ─── GC-01 WeakRef Resurrection ───────────────────────────────────────────────
+function runGC1() {
+  mark('gc1','ran');
+  log('GC-01 — WeakRef + FinalizationRegistry resurrection...', 'info');
+  if (typeof WeakRef === 'undefined' || typeof FinalizationRegistry === 'undefined') {
+    log('GC-01 — WeakRef/FinalizationRegistry NOT available.', 'warn');
+    alert('GC-01: WeakRef or FinalizationRegistry not supported!');
+    mark('gc1','warn'); return;
+  }
+  var resurrected = [];
+  var registry = new FinalizationRegistry(function(val) {
+    log('GC-01 — finalizer called for: ' + val + ' — recreating!', 'warn');
+    resurrected.push({ revived: val, newObj: { x: Math.random() } });
+    alert('GC-01: FinalizationRegistry callback fired!\nValue: ' + val + '\nResurrections: ' + resurrected.length);
+  });
+  (function() {
+    var obj = { id: 'target-object', data: new ArrayBuffer(1024 * 1024) };
+    var ref = new WeakRef(obj);
+    registry.register(obj, 'my-target');
+    log('GC-01 — object registered. Deref: ' + (ref.deref() ? 'alive' : 'gone'), 'info');
+  })();
+  log('GC-01 — object out of scope. GC may not run immediately.', 'ok');
+}
+
+// ─── GC-02 Closure Circular + TypedArray ──────────────────────────────────────
+function runGC2() {
+  mark('gc2','ran');
+  log('GC-02 — 10k circular closures holding TypedArray slices...', 'info');
+  var ab = new ArrayBuffer(1024 * 1024 * 20); // 20MB
+  var closures = [];
+  for (var i = 0; i < 10000; i++) {
+    (function(idx) {
+      var slice = new Uint8Array(ab, (idx * 2048) % (ab.byteLength - 2048), 2048);
+      var fn = function() { return closures[idx] && slice[0]; };
+      closures.push(fn);
+    })(i);
+  }
+  log('GC-02 — ' + closures.length + ' circular closures created.', 'ok');
+  setTimeout(function() {
+    closures = [];
+    log('GC-02 — closures released. GC should now collect 20MB.', 'ok');
+  }, 1000);
+}
+
+// ─── GC-03 Worker Terminate durante Transferable ──────────────────────────────
+function runGC3() {
+  mark('gc3','ran');
+  log('GC-03 — Worker terminate during in-flight transferable...', 'info');
+  var blob = new Blob(['self.onmessage=function(e){for(var i=0;i<1e8;i++){}self.postMessage(e.data,[e.data]);}'], {type:'application/javascript'});
+  var w = new Worker(URL.createObjectURL(blob));
+  var ab = new ArrayBuffer(1024 * 1024 * 10); // 10MB
+  w.onmessage = function(e) { log('GC-03 — worker returned buffer, byteLength=' + e.data.byteLength, 'ok'); };
+  w.onerror = function(e) { log('GC-03 — worker error: ' + e.message, 'warn'); };
+  w.postMessage(ab, [ab]);
+  // Terminate immediately — buffer is in-flight
+  setTimeout(function() {
+    w.terminate();
+    log('GC-03 — worker terminated mid-transfer. ab.byteLength=' + ab.byteLength, ab.byteLength === 0 ? 'ok' : 'warn');
+    alert('GC-03: Buffer state after worker terminate mid-transfer:\nab.byteLength = ' + ab.byteLength);
+  }, 10);
+}
+
+// ─── GC-04 Event Listener em Orphan Node ─────────────────────────────────────
+function runGC4() {
+  mark('gc4','ran');
+  log('GC-04 — Event listeners on orphan DOM nodes...', 'info');
+  var scratch = document.getElementById('dom-scratch');
+  var live = document.createElement('span');
+  live.textContent = 'live';
+  scratch.appendChild(live);
+  var count = 0;
+  for (var i = 0; i < 10000; i++) {
+    var orphan = document.createElement('div');
+    orphan.addEventListener('custom', (function(n) {
+      return function() { live.textContent = n; count++; };
+    })(i));
+    // orphan never attached to document
+  }
+  log('GC-04 — 10k orphan nodes with closures to live node. GC pressure...', 'ok');
+  setTimeout(function() {
+    live.dispatchEvent(new Event('custom'));
+    log('GC-04 — live event dispatched. Orphan count alive: ' + count, 'ok');
+  }, 500);
+}
+
+// ─── CC-01 Canvas drawImage de Canvas em Resize ───────────────────────────────
+function runCC1() {
+  mark('cc1','ran');
+  log('CC-01 — drawImage from resizing canvas...', 'info');
+  var src = document.getElementById('cv-a');
+  var dst = document.getElementById('cv-b');
+  var ctx_src = src.getContext('2d');
+  var ctx_dst = dst.getContext('2d');
+  var frame = 0;
+  function tick() {
+    frame++;
+    src.width = 100 + (frame % 400);
+    src.height = 100 + (frame % 400);
+    ctx_src.fillStyle = 'hsl(' + frame + ',100%,50%)';
+    ctx_src.fillRect(0, 0, src.width, src.height);
+    try {
+      ctx_dst.drawImage(src, 0, 0);
+    } catch(e) {
+      log('CC-01 drawImage threw at frame=' + frame + ': ' + e.message, 'warn');
+      mark('cc1','warn'); return;
+    }
+    if (frame < 500) requestAnimationFrame(tick);
+    else log('CC-01 — 500 frames of draw+resize done.', 'ok');
+  }
+  requestAnimationFrame(tick);
+}
+
+// ─── CC-02 Audio + Canvas + Worker Simultâneo ─────────────────────────────────
+function runCC2() {
+  mark('cc2','ran');
+  log('CC-02 — AudioContext + Canvas + Worker all running...', 'info');
+  // Worker
+  var wb = new Blob(['var x=0;setInterval(function(){x++;postMessage(x);},50);'], {type:'application/javascript'});
+  var w = new Worker(URL.createObjectURL(wb));
+  // Canvas
+  var canvas = document.getElementById('cv-a');
+  var ctx = canvas.getContext('2d');
+  var frame = 0;
+  // Audio
+  var audioCtx;
+  try { audioCtx = new (window.AudioContext||window.webkitAudioContext)(); } catch(e) {}
+  w.onmessage = function(e) {
+    ctx.fillStyle = 'rgba(0,' + (e.data % 255) + ',128,0.1)';
+    ctx.fillRect(Math.random()*512, Math.random()*512, 50, 50);
+    frame++;
+    if (frame >= 100) {
+      w.terminate();
+      if (audioCtx) audioCtx.close();
+      log('CC-02 — 100 cross-API frames done.', 'ok');
+    }
+  };
+}
+
+// ─── CC-03 History pushState dentro de popstate ───────────────────────────────
+function runCC3() {
+  mark('cc3','ran');
+  log('CC-03 — pushState inside popstate handler...', 'info');
+  var depth = 0;
+  var MAX = 50;
+  var handler = function(e) {
+    depth++;
+    if (depth < MAX) {
+      try { history.pushState({d:depth}, '', '#reentrant-' + depth); }
+      catch(ex) { log('CC-03 threw at depth=' + depth + ': ' + ex.message, 'warn'); mark('cc3','warn'); window.removeEventListener('popstate', handler); return; }
+    } else {
+      window.removeEventListener('popstate', handler);
+      log('CC-03 — ' + depth + ' re-entrant pushStates survived.', 'ok');
+      alert('CC-03: pushState inside popstate worked for ' + depth + ' levels!');
+    }
+  };
+  window.addEventListener('popstate', handler);
+  history.pushState({init:true}, '', '#reentrant-0');
+  history.back();
+}
+
+// ─── CC-04 Fetch + Worker + MutationObserver ──────────────────────────────────
+function runCC4() {
+  mark('cc4','ran');
+  log('CC-04 — Fetch stream → Worker → MutationObserver chain...', 'info');
+  var scratch = document.getElementById('dom-scratch');
+  var chunks = 0;
+  var obs = new MutationObserver(function(muts) {
+    chunks += muts.length;
+    if (chunks >= 5) { obs.disconnect(); log('CC-04 — ' + chunks + ' mutation chunks from fetch/worker chain.', 'ok'); }
+  });
+  obs.observe(scratch, {childList:true});
+  var blob = new Blob(['self.onmessage=function(e){self.postMessage(e.data.length);}'], {type:'application/javascript'});
+  var w = new Worker(URL.createObjectURL(blob));
+  w.onmessage = function(e) {
+    var el = document.createElement('div');
+    el.textContent = 'chunk:' + e.data;
+    scratch.appendChild(el);
+  };
+  // Simulate stream-like chunked data
+  var data = new Array(10).fill('chunk'.repeat(100));
+  data.forEach(function(d) { w.postMessage(d); });
+}
+
+// ─── CC-05 localStorage no Worker ─────────────────────────────────────────────
+function runCC5() {
+  mark('cc5','ran');
+  log('CC-05 — Probing localStorage access from Worker...', 'info');
+  var code = 'try { var v = localStorage.getItem("test"); self.postMessage("accessible: " + v); } catch(e) { self.postMessage("threw: " + e.name + " - " + e.message); }';
+  var w = new Worker(URL.createObjectURL(new Blob([code], {type:'application/javascript'})));
+  w.onmessage = function(e) {
+    alert('CC-05: localStorage from Worker = ' + e.data);
+    log('CC-05 — result: ' + e.data, e.data.indexOf('threw') > -1 ? 'ok' : 'warn');
+    if (e.data.indexOf('threw') === -1) mark('cc5','warn');
+    w.terminate();
+  };
+  w.onerror = function(e) {
+    log('CC-05 — Worker error: ' + e.message, 'ok');
+    alert('CC-05: Worker threw error trying localStorage: ' + e.message);
+  };
+}
+
+// ─── CC-06 animationend + DOM Remove + History ───────────────────────────────
+function runCC6() {
+  mark('cc6','ran');
+  log('CC-06 — animationend triggers DOM remove + pushState...', 'info');
+  var style = document.createElement('style');
+  style.textContent = '@keyframes cc6anim{from{opacity:1}to{opacity:0}}';
+  document.head.appendChild(style);
+  var scratch = document.getElementById('dom-scratch');
+  var count = 0;
+  for (var i = 0; i < 50; i++) {
+    var el = document.createElement('div');
+    el.style.animation = 'cc6anim 50ms forwards';
+    el.addEventListener('animationend', (function(e) {
+      return function() {
+        try {
+          e.parentNode && e.parentNode.removeChild(e);
+          history.pushState({cc6:count}, '', '#cc6-' + count);
+          count++;
+        } catch(ex) { log('CC-06 error: ' + ex.message, 'warn'); }
+      };
+    })(el));
+    scratch.appendChild(el);
+  }
+  setTimeout(function() {
+    log('CC-06 — ' + count + '/50 animationend+remove+pushState done.', 'ok');
+    document.head.removeChild(style);
+    scratch.innerHTML = '';
+  }, 1000);
+}
+
+// ─── JIT-01 Função Hot Redefinida ─────────────────────────────────────────────
+function runJIT1() {
+  mark('jit1','ran');
+  log('JIT-01 — Warm function, then poison Function.prototype.call...', 'info');
+  function hot(x) { return x * x + x; }
+  // Warm up
+  var sum = 0;
+  for (var i = 0; i < 100000; i++) sum += hot(i);
+  log('JIT-01 — warmed up, sum=' + sum + '. Poisoning call...', 'info');
+  var origCall = Function.prototype.call;
+  Function.prototype.call = function() {
+    return origCall.apply(this, arguments);
+  };
+  var sum2 = 0;
+  try {
+    for (var i = 0; i < 10000; i++) sum2 += hot.call(null, i);
+    log('JIT-01 — post-poison sum2=' + sum2, 'ok');
+  } finally {
+    Function.prototype.call = origCall;
+  }
+}
+
+// ─── JIT-02 Shape Transition ──────────────────────────────────────────────────
+function runJIT2() {
+  mark('jit2','ran');
+  log('JIT-02 — Shape transition after JIT optimization...', 'info');
+  function readXY(o) { return o.x + o.y; }
+  var objs = [];
+  for (var i = 0; i < 50000; i++) objs.push({x: i, y: i*2});
+  var s1 = 0;
+  for (var i = 0; i < objs.length; i++) s1 += readXY(objs[i]);
+  log('JIT-02 — warmed. s1=' + s1 + '. Now adding z to all objects...', 'info');
+  for (var i = 0; i < objs.length; i++) objs[i].z = i * 3;
+  var s2 = 0;
+  for (var i = 0; i < objs.length; i++) s2 += readXY(objs[i]);
+  log('JIT-02 — post-shape-transition s2=' + s2 + ' (should equal s1)', s1 === s2 ? 'ok' : 'warn');
+  if (s1 !== s2) { alert('JIT-02: Shape transition changed sum!\ns1=' + s1 + ' s2=' + s2); mark('jit2','warn'); }
+}
+
+// ─── JIT-03 arguments aliasing ────────────────────────────────────────────────
+function runJIT3() {
+  mark('jit3','ran');
+  log('JIT-03 — arguments/params aliasing via setter...', 'info');
+  var results = [];
+  function victim(x) {
+    Object.defineProperty(arguments, 0, {
+      get: function() { return x * 2; },
+      set: function(v) { x = v; }
+    });
+    var a = arguments[0]; // reads via getter
+    x = 999;              // modifies x, should affect getter
+    var b = arguments[0]; // should now return 999*2
+    results.push([a, b]);
+    return a + b;
+  }
+  var total = 0;
+  for (var i = 0; i < 1000; i++) total += victim(i);
+  alert('JIT-03: arguments aliasing test\nSample [a,b]: ' + results[0] + ', ' + results[1] + '\ntotal=' + total + '\nExpected b = 2*999 = 1998 in each call');
+  log('JIT-03 — sample: ' + results[0] + ' total=' + total, 'warn');
+  mark('jit3','warn');
+}
+
+// ─── JIT-04 eval() em Loop Hot ────────────────────────────────────────────────
+function runJIT4() {
+  mark('jit4','ran');
+  log('JIT-04 — eval() with varying code in hot loop...', 'info');
+  var results = [];
+  var t0 = Date.now();
+  for (var i = 0; i < 500; i++) {
+    try {
+      var r = eval('(function(){var x=' + i + ';return x*x + ' + (i%7) + ';})()');
+      results.push(r);
+    } catch(e) { results.push(-1); }
+  }
+  log('JIT-04 — 500 unique eval() in loop: ' + (Date.now()-t0) + 'ms. Last=' + results[results.length-1], 'ok');
+}
+
+// ─── JIT-05 Megamorphic Call Site ─────────────────────────────────────────────
+function runJIT5() {
+  mark('jit5','ran');
+  log('JIT-05 — Megamorphic call site with 100+ object shapes...', 'info');
+  function call(obj) { return obj.getValue ? obj.getValue() : obj.value; }
+  var sum = 0;
+  for (var i = 0; i < 100; i++) {
+    var o = { value: i };
+    // Each object gets a unique extra property to force different shape
+    o['unique_' + i] = true;
+    o.getValue = function() { return this.value; };
+    // Call 1000 times per shape to trigger JIT per shape
+    for (var j = 0; j < 1000; j++) sum += call(o);
+  }
+  log('JIT-05 — 100 shapes × 1000 calls. sum=' + sum, 'ok');
+}
+
+// ─── EX-01 throw em Symbol.toPrimitive em Comparação ─────────────────────────
+function runEX1() {
+  mark('ex1','ran');
+  log('EX-01 — throw inside Symbol.toPrimitive during comparison...', 'info');
+  var chaos = {
+    [Symbol.toPrimitive](hint) {
+      if (hint === 'number') throw new TypeError('toPrimitive refused!');
+      return 'string-fallback';
+    }
+  };
+  var results = [];
+  var ops = [
+    function() { return chaos > 5; },
+    function() { return chaos < 5; },
+    function() { return chaos == 5; },
+    function() { return chaos + 5; },
+    function() { return chaos - 5; },
+    function() { return +chaos; }
+  ];
+  ops.forEach(function(op, idx) {
+    try { results.push('op' + idx + '=' + op()); }
+    catch(e) { results.push('op' + idx + '=ERR:' + e.message); }
+  });
+  alert('EX-01 comparison results with throwing toPrimitive:\n' + results.join('\n'));
+  log('EX-01 — ' + results.length + ' ops tested.', 'warn');
+  mark('ex1','warn');
+}
+
+// ─── EX-02 Proxy construct Trap throw ─────────────────────────────────────────
+function runEX2() {
+  mark('ex2','ran');
+  log('EX-02 — Proxy construct trap throws...', 'info');
+  function Base() { this.x = 1; }
+  var ProxiedBase = new Proxy(Base, {
+    construct: function(target, args) {
+      if (args[0] === 'evil') throw new Error('construct-trap-throw');
+      return new target(...args);
+    },
+    apply: function(target, thisArg, args) {
+      throw new Error('apply-trap-throw');
+    }
+  });
+  var results = [];
+  try { results.push('new normal: x=' + new ProxiedBase('safe').x); } catch(e) { results.push('new normal ERR: ' + e.message); }
+  try { results.push('new evil: ' + new ProxiedBase('evil')); } catch(e) { results.push('new evil ERR: ' + e.message); }
+  try { results.push('call: ' + ProxiedBase('test')); } catch(e) { results.push('call ERR: ' + e.message); }
+  alert('EX-02 Proxy construct/apply:\n' + results.join('\n'));
+  log('EX-02 — ' + results.join(' | '), 'ok');
+}
+
+// ─── EX-03 Promise.reject + FinalizationRegistry Error ───────────────────────
+function runEX3() {
+  mark('ex3','ran');
+  log('EX-03 — Unhandled Promise.reject + FinalizationRegistry throw...', 'info');
+  if (typeof FinalizationRegistry === 'undefined') { log('EX-03 — FinalizationRegistry not available.', 'warn'); return; }
+  var registry = new FinalizationRegistry(function(v) {
+    log('EX-03 — finalizer ran: ' + v, 'warn');
+    // Throw from finalizer — what happens?
+    try { throw new Error('finalizer-explosion'); } catch(e) { log('EX-03 — finalizer error caught: ' + e.message, 'ok'); }
+  });
+  (function() {
+    var obj = { big: new ArrayBuffer(1024*1024*5) };
+    registry.register(obj, 'doomed-object');
+  })();
+  // Also fire unhandled rejection simultaneously
+  Promise.reject(new Error('unhandled-chaos'));
+  log('EX-03 — unhandled rejection + orphan object queued.', 'ok');
+}
+
+// ─── EX-04 toString Recursivo ─────────────────────────────────────────────────
+function runEX4() {
+  mark('ex4','ran');
+  log('EX-04 — Recursive toString via template literal...', 'info');
+  var depth = 0;
+  var MAX_DEPTH = 100;
+  var orig = Object.prototype.toString;
+  Object.prototype.toString = function() {
+    depth++;
+    if (depth < MAX_DEPTH) return `[obj:${this}]`; // triggers toString again
+    Object.prototype.toString = orig;
+    return '[MAX-DEPTH]';
+  };
+  try {
+    var result = '' + {};
+    log('EX-04 — toString depth reached: ' + depth + ' result: ' + result.slice(0,50), 'warn');
+    alert('EX-04: Recursive toString depth=' + depth + '\nResult: ' + result.slice(0,100));
+    mark('ex4','warn');
+  } catch(e) {
+    alert('EX-04 threw at depth ' + depth + ': ' + e.message);
+    log('EX-04 threw at depth=' + depth + ': ' + e.message, 'warn'); mark('ex4','warn');
+  } finally {
+    Object.prototype.toString = orig;
+  }
+}
+
+// ─── COMBO-01 Proxy + TypedArray + Async + DOM ────────────────────────────────
+function runCOMBO1() {
+  mark('combo1','ran');
+  log('COMBO-01 — Proxy + TypedArray + Async + MutationObserver...', 'info');
+  var scratch = document.getElementById('dom-scratch');
+  var ab = new ArrayBuffer(1024);
+  var ta = new Uint8Array(ab);
+  var asyncCount = 0;
+  var mutCount = 0;
+  var obs = new MutationObserver(function() {
+    mutCount++;
+    if (mutCount < 20) ta[mutCount % 1024] = mutCount;
+  });
+  obs.observe(scratch, {childList:true, subtree:true});
+  var p = new Proxy(ta, {
+    get: function(target, prop) {
+      if (prop === 'length') {
+        (async function() {
+          asyncCount++;
+          await Promise.resolve();
+          var el = document.createElement('span');
+          scratch.appendChild(el);
+        })();
+      }
+      return target[prop];
+    }
+  });
+  var sum = 0;
+  for (var i = 0; i < 50; i++) sum += p.length;
+  setTimeout(function() {
+    obs.disconnect();
+    scratch.innerHTML = '';
+    log('COMBO-01 — sum=' + sum + ' asyncLaunched=' + asyncCount + ' mutations=' + mutCount, 'ok');
+  }, 500);
+}
+
+// ─── COMBO-02 Generator + Worker + Canvas + History ───────────────────────────
+function runCOMBO2() {
+  mark('combo2','ran');
+  log('COMBO-02 — Generator controls Canvas; Worker updates History...', 'info');
+  var canvas = document.getElementById('cv-a');
+  var ctx = canvas.getContext('2d');
+  var wb = new Blob(['self.onmessage=function(e){history.pushState({f:e.data},"","#combo2-"+e.data);self.postMessage("ok-"+e.data);}'], {type:'application/javascript'});
+  // Worker can't call history directly, but we can relay
+  var wb2 = new Blob(['self.onmessage=function(e){self.postMessage(e.data);}'], {type:'application/javascript'});
+  var w = new Worker(URL.createObjectURL(wb2));
+  function* frameGen() {
+    for (var i = 0; i < 100; i++) yield i;
+  }
+  var gen = frameGen();
+  w.onmessage = function(e) {
+    try { history.pushState({f:e.data},'','#combo2-'+e.data); } catch(ex){}
+  };
+  function tick() {
+    var n = gen.next();
+    if (!n.done) {
+      ctx.fillStyle = 'hsl('+(n.value*3.6)+',80%,50%)';
+      ctx.fillRect(0,0,512,512);
+      w.postMessage(n.value);
+      requestAnimationFrame(tick);
+    } else {
+      w.terminate();
+      log('COMBO-02 — 100 frames: canvas+worker+history done.', 'ok');
+    }
+  }
+  requestAnimationFrame(tick);
+}
+
+// ─── COMBO-03 FinalizationRegistry + Proxy + Promise + Blob ──────────────────
+function runCOMBO3() {
+  mark('combo3','ran');
+  log('COMBO-03 — GC → Proxy → Promise → Blob chain...', 'info');
+  if (typeof FinalizationRegistry === 'undefined') { log('COMBO-03 — FR not available', 'warn'); return; }
+  var registry = new FinalizationRegistry(function(key) {
+    log('COMBO-03 — GC collected ' + key + ' — starting Proxy→Promise→Blob chain', 'warn');
+    var blobData = new Blob([new ArrayBuffer(1024*512)]);
+    var p = new Proxy(blobData, {
+      get: function(t, k) {
+        if (k === 'size') {
+          return new Promise(function(res) {
+            res(t.size);
+          });
+        }
+        return t[k];
+      }
+    });
+    p.size.then(function(s) {
+      alert('COMBO-03: GC→Proxy→Promise→Blob chain completed!\nBlob size via Proxy Promise: ' + s);
+      log('COMBO-03 — chain resolved. size=' + s, 'ok');
+    });
+  });
+  (function() {
+    var victim = { data: new ArrayBuffer(1024*1024*8) };
+    registry.register(victim, 'combo3-victim');
+  })();
+  log('COMBO-03 — victim registered. Awaiting GC...', 'ok');
+}
+
+// ─── COMBO-04 AudioContext + SAB + Worker + History ───────────────────────────
+function runCOMBO4() {
+  mark('combo4','ran');
+  log('COMBO-04 — AudioContext + SharedArrayBuffer + Worker race...', 'info');
+  if (typeof SharedArrayBuffer === 'undefined') {
+    log('COMBO-04 — SharedArrayBuffer not available. Skipping.', 'warn');
+    alert('COMBO-04: SharedArrayBuffer disabled. Test skipped.');
+    mark('combo4','warn'); return;
+  }
+  var sab = new SharedArrayBuffer(4096);
+  var view = new Int32Array(sab);
+  var wCode = 'var v=new Int32Array(' +
+    'new SharedArrayBuffer(0)' + // placeholder
+    ');self.onmessage=function(e){var sab=e.data;var view=new Int32Array(sab);' +
+    'for(var i=0;i<100;i++){Atomics.add(view,0,1);}self.postMessage(view[0]);}';
+  var wb = new Blob([
+    'self.onmessage=function(e){var view=new Int32Array(e.data);for(var i=0;i<1000;i++){Atomics.add(view,0,1);}self.postMessage(Atomics.load(view,0));}'
+  ], {type:'application/javascript'});
+  var w = new Worker(URL.createObjectURL(wb));
+  w.onmessage = function(e) {
+    log('COMBO-04 — Worker atomic result: ' + e.data + ' Main view[0]: ' + view[0], 'warn');
+    alert('COMBO-04: SharedArrayBuffer atomic race result:\nWorker reported: ' + e.data + '\nMain thread view[0]: ' + view[0]);
+    try { history.pushState({sab: e.data}, '', '#combo4-' + e.data); } catch(ex){}
+    w.terminate();
+  };
+  w.postMessage(sab);
+  // Also write from main thread simultaneously
+  for (var i = 0; i < 1000; i++) Atomics.add(view, 0, 1);
+  log('COMBO-04 — main thread wrote 1000. Worker running concurrently.', 'ok');
+}
+
+// ─── COMBO-05 Proxy Array com Todos os Traps + sort() ─────────────────────────
+function runCOMBO5() {
+  mark('combo5','ran');
+  log('COMBO-05 — Proxy array all traps + sort() chaos...', 'info');
+  var raw = [];
+  for (var i = 0; i < 200; i++) raw.push(Math.floor(Math.random() * 1000));
+  var ops = { get:0, set:0, has:0, del:0 };
+  var proxied = new Proxy(raw, {
+    get: function(t, k) {
+      ops.get++;
+      // During sort access, secretly swap random elements
+      if (typeof k === 'string' && !isNaN(k) && ops.get % 50 === 0) {
+        var ri = Math.floor(Math.random() * t.length);
+        var rj = Math.floor(Math.random() * t.length);
+        var tmp = t[ri]; t[ri] = t[rj]; t[rj] = tmp;
+      }
+      return t[k];
+    },
+    set: function(t, k, v) {
+      ops.set++;
+      t[k] = v;
+      return true;
+    },
+    has: function(t, k) { ops.has++; return k in t; },
+    deleteProperty: function(t, k) { ops.del++; return delete t[k]; }
+  });
+  try {
+    proxied.sort(function(a, b) { return a - b; });
+    var sorted = Array.from(proxied);
+    var isSorted = sorted.every(function(v,i) { return i===0 || sorted[i-1] <= v; });
+    alert('COMBO-05: sort() on fully-trapped Proxy array completed!\nget=' + ops.get + ' set=' + ops.set + '\nResult is sorted: ' + isSorted + '\nFirst 10: ' + sorted.slice(0,10).join(','));
+    log('COMBO-05 — sort done. ops=' + JSON.stringify(ops) + ' sorted=' + isSorted, isSorted ? 'ok' : 'warn');
+    if (!isSorted) mark('combo5','warn');
+  } catch(e) {
+    alert('COMBO-05 CRASH: ' + e.message);
+    log('COMBO-05 threw: ' + e.message, 'warn'); mark('combo5','warn');
+  }
+}
+</script>
+</body>
+</html>

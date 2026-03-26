@@ -1,0 +1,1328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PS4 Browser Vuln Triage</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+
+  :root {
+    --green: #00ff88;
+    --red: #ff2d55;
+    --yellow: #ffd60a;
+    --blue: #0af;
+    --bg: #040a06;
+    --panel: #080f0a;
+    --border: #0d2b14;
+    --dim: #1a3a20;
+    --text: #a0ffb8;
+    --muted: #3a6b45;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    min-height: 100vh;
+    padding: 20px;
+    background-image:
+      repeating-linear-gradient(0deg, transparent, transparent 39px, var(--border) 39px, var(--border) 40px),
+      repeating-linear-gradient(90deg, transparent, transparent 39px, var(--border) 39px, var(--border) 40px);
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 28px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--dim);
+  }
+
+  header h1 {
+    font-family: 'Orbitron', monospace;
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 6px;
+    color: var(--green);
+    text-shadow: 0 0 20px #00ff8866, 0 0 60px #00ff8822;
+    margin-bottom: 6px;
+  }
+
+  header p {
+    color: var(--muted);
+    letter-spacing: 2px;
+    font-size: 11px;
+  }
+
+  #log-panel {
+    background: var(--panel);
+    border: 1px solid var(--dim);
+    border-left: 3px solid var(--green);
+    padding: 12px 16px;
+    margin-bottom: 24px;
+    height: 140px;
+    overflow-y: auto;
+    font-size: 12px;
+    line-height: 1.7;
+    position: relative;
+  }
+
+  #log-panel::before {
+    content: 'OUTPUT LOG';
+    position: absolute;
+    top: -9px;
+    left: 12px;
+    background: var(--bg);
+    padding: 0 6px;
+    font-size: 10px;
+    color: var(--green);
+    letter-spacing: 3px;
+    font-family: 'Orbitron', monospace;
+  }
+
+  .log-ok   { color: var(--green); }
+  .log-warn { color: var(--yellow); }
+  .log-err  { color: var(--red); }
+  .log-info { color: var(--blue); }
+
+  #clear-log {
+    float: right;
+    background: transparent;
+    border: 1px solid var(--muted);
+    color: var(--muted);
+    padding: 2px 10px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 10px;
+    letter-spacing: 2px;
+    margin-top: -2px;
+  }
+  #clear-log:hover { border-color: var(--red); color: var(--red); }
+
+  .section-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    letter-spacing: 4px;
+    color: var(--muted);
+    margin: 24px 0 10px;
+    padding-left: 4px;
+    border-left: 2px solid var(--dim);
+    padding-left: 10px;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+
+  .test-card {
+    background: var(--panel);
+    border: 1px solid var(--dim);
+    padding: 14px 16px;
+    position: relative;
+    transition: border-color 0.15s;
+  }
+
+  .test-card:hover { border-color: var(--green); }
+
+  .test-card .test-id {
+    font-size: 9px;
+    color: var(--muted);
+    letter-spacing: 2px;
+    margin-bottom: 4px;
+  }
+
+  .test-card .test-name {
+    color: var(--green);
+    font-size: 13px;
+    margin-bottom: 5px;
+    font-weight: bold;
+  }
+
+  .test-card .test-desc {
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.5;
+    margin-bottom: 12px;
+  }
+
+  .test-card button {
+    background: transparent;
+    border: 1px solid var(--green);
+    color: var(--green);
+    padding: 6px 16px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 2px;
+    width: 100%;
+    transition: background 0.15s, color 0.15s;
+    text-transform: uppercase;
+  }
+
+  .test-card button:hover {
+    background: var(--green);
+    color: var(--bg);
+  }
+
+  .test-card button:active { opacity: 0.7; }
+
+  .test-card .status-dot {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--dim);
+  }
+  .test-card.ran    .status-dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .test-card.warn   .status-dot { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); }
+  .test-card.crashed .status-dot { background: var(--red);   box-shadow: 0 0 6px var(--red); }
+
+  footer {
+    margin-top: 32px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 10px;
+    letter-spacing: 3px;
+    border-top: 1px solid var(--dim);
+    padding-top: 14px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>PS4 WEBKIT // VULN TRIAGE</h1>
+  <p>BROWSER ATTACK SURFACE EXPLORATION — NO WebGL / No WebAssembly</p>
+</header>
+
+<div id="log-panel">
+  <button id="clear-log" onclick="clearLog()">CLEAR</button>
+  <div id="log-output"><span class="log-info">[READY] — Execute tests and monitor output below.</span></div>
+</div>
+
+<!-- ─── SECTION 1: WORKERS ──────────────────────────────────────────────── -->
+<div class="section-title">01 / WEB WORKERS &amp; SHARED WORKERS</div>
+<div class="grid">
+
+  <div class="test-card" id="card-sw1">
+    <div class="status-dot"></div>
+    <div class="test-id">SW-01</div>
+    <div class="test-name">SharedWorker Port Flood</div>
+    <div class="test-desc">Abre 200 conexões ao mesmo SharedWorker simultaneamente via múltiplos iframes.</div>
+    <button onclick="runSW1(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-sw2">
+    <div class="status-dot"></div>
+    <div class="test-id">SW-02</div>
+    <div class="test-name">Worker PostMessage Transferable Loop</div>
+    <div class="test-desc">Transfere ArrayBuffers entre worker e main thread em loop rápido — testa use-after-transfer.</div>
+    <button onclick="runSW2(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-sw3">
+    <div class="status-dot"></div>
+    <div class="test-id">SW-03</div>
+    <div class="test-name">Worker Spawn Bomb</div>
+    <div class="test-desc">Instancia 500 Workers inline (Blob URL) em sequência rápida para stressar o scheduler.</div>
+    <button onclick="runSW3(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-sw4">
+    <div class="status-dot"></div>
+    <div class="test-id">SW-04</div>
+    <div class="test-name">SharedWorker Close/Reconnect Race</div>
+    <div class="test-desc">Fecha e reabre porta do SharedWorker em alta frequência — race condition no GC.</div>
+    <button onclick="runSW4(this)">RUN</button>
+  </div>
+
+</div>
+
+<!-- ─── SECTION 2: ARRAYBUFFER / TYPED ARRAYS ─────────────────────────── -->
+<div class="section-title">02 / ARRAYBUFFER &amp; TYPED ARRAYS</div>
+<div class="grid">
+
+  <div class="test-card" id="card-ab1">
+    <div class="status-dot"></div>
+    <div class="test-id">AB-01</div>
+    <div class="test-name">ArrayBuffer Max Alloc</div>
+    <div class="test-desc">Aloca buffers de tamanho crescente até encontrar o limite real ou falha de OOM.</div>
+    <button onclick="runAB1(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-ab2">
+    <div class="status-dot"></div>
+    <div class="test-id">AB-02</div>
+    <div class="test-name">DataView OOB Read Probe</div>
+    <div class="test-desc">Tenta leituras além do byteLength via DataView com offsets calculados — loga valores lidos.</div>
+    <button onclick="runAB2(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-ab3">
+    <div class="status-dot"></div>
+    <div class="test-id">AB-03</div>
+    <div class="test-name">TypedArray Detach Race</div>
+    <div class="test-desc">Transfere o buffer para worker enquanto itera sobre ele na main thread.</div>
+    <button onclick="runAB3(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-ab4">
+    <div class="status-dot"></div>
+    <div class="test-id">AB-04</div>
+    <div class="test-name">SharedArrayBuffer + Atomics</div>
+    <div class="test-desc">Verifica se SharedArrayBuffer está ativo e testa Atomics.wait/notify — SAB pode indicar Spectre mitigation ausente.</div>
+    <button onclick="runAB4(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-ab5">
+    <div class="status-dot"></div>
+    <div class="test-id">AB-05</div>
+    <div class="test-name">TypedArray Subarray Chain</div>
+    <div class="test-desc">Cria subarray de subarray em 10k níveis de profundidade — testa stack overflow no engine.</div>
+    <button onclick="runAB5(this)">RUN</button>
+  </div>
+
+</div>
+
+<!-- ─── SECTION 3: HISTORY / NAVIGATION ───────────────────────────────── -->
+<div class="section-title">03 / HISTORY API &amp; NAVIGATION</div>
+<div class="grid">
+
+  <div class="test-card" id="card-hs1">
+    <div class="status-dot"></div>
+    <div class="test-id">HS-01</div>
+    <div class="test-name">pushState Overflow (Clássico)</div>
+    <div class="test-desc">Reproduz o finding original: pushState em loop até crash ou limite inesperado.</div>
+    <button onclick="runHS1(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-hs2">
+    <div class="status-dot"></div>
+    <div class="test-id">HS-02</div>
+    <div class="test-name">pushState + replaceState Interleaved</div>
+    <div class="test-desc">Alterna pushState e replaceState em alta frequência — testa integridade da stack.</div>
+    <button onclick="runHS2(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-hs3">
+    <div class="status-dot"></div>
+    <div class="test-id">HS-03</div>
+    <div class="test-name">pushState com State Object Grande</div>
+    <div class="test-desc">Serializa state objects de 1MB+ para testar limites de serialização do History.</div>
+    <button onclick="runHS3(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-hs4">
+    <div class="status-dot"></div>
+    <div class="test-id">HS-04</div>
+    <div class="test-name">history.go() Race com pushState</div>
+    <div class="test-desc">Chama history.go(-1/+1) enquanto pushState está em loop — race condition no navigation stack.</div>
+    <button onclick="runHS4(this)">RUN</button>
+  </div>
+
+</div>
+
+<!-- ─── SECTION 4: DOM / CSS ───────────────────────────────────────────── -->
+<div class="section-title">04 / DOM &amp; CSS ENGINE</div>
+<div class="grid">
+
+  <div class="test-card" id="card-dom1">
+    <div class="status-dot"></div>
+    <div class="test-id">DOM-01</div>
+    <div class="test-name">Deep DOM Tree</div>
+    <div class="test-desc">Cria árvore DOM de 50.000 nós aninhados e força reflow — testa recursão no layout engine.</div>
+    <button onclick="runDOM1(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-dom2">
+    <div class="status-dot"></div>
+    <div class="test-id">DOM-02</div>
+    <div class="test-name">CSS Animation + DOM Remove Race</div>
+    <div class="test-desc">Remove elementos do DOM durante animação CSS ativa — clássico vetor de use-after-free.</div>
+    <button onclick="runDOM2(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-dom3">
+    <div class="status-dot"></div>
+    <div class="test-id">DOM-03</div>
+    <div class="test-name">MutationObserver Storm</div>
+    <div class="test-desc">Registra 1000 MutationObservers e dispara mutações em massa — testa fila de microtasks.</div>
+    <button onclick="runDOM3(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-dom4">
+    <div class="status-dot"></div>
+    <div class="test-id">DOM-04</div>
+    <div class="test-name">CSS Custom Properties Circular</div>
+    <div class="test-desc">Define variáveis CSS que referenciam umas às outras em ciclo e mede se o engine trava.</div>
+    <button onclick="runDOM4(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-dom5">
+    <div class="status-dot"></div>
+    <div class="test-id">DOM-05</div>
+    <div class="test-name">innerHTML Injection Stress</div>
+    <div class="test-desc">Seta innerHTML com strings de 2MB+ repetidamente, alternando com leituras.</div>
+    <button onclick="runDOM5(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-dom6">
+    <div class="status-dot"></div>
+    <div class="test-id">DOM-06</div>
+    <div class="test-name">Event Listener Leak Probe</div>
+    <div class="test-desc">Adiciona 100k listeners sem remover — mede crescimento de memória via performance.memory.</div>
+    <button onclick="runDOM6(this)">RUN</button>
+  </div>
+
+</div>
+
+<!-- ─── SECTION 5: WEB AUDIO ───────────────────────────────────────────── -->
+<div class="section-title">05 / WEB AUDIO API</div>
+<div class="grid">
+
+  <div class="test-card" id="card-wa1">
+    <div class="status-dot"></div>
+    <div class="test-id">WA-01</div>
+    <div class="test-name">AudioContext Node Chain</div>
+    <div class="test-desc">Encadeia 10.000 nós de áudio (GainNode) em série — testa profundidade do grafo de áudio.</div>
+    <button onclick="runWA1(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-wa2">
+    <div class="status-dot"></div>
+    <div class="test-id">WA-02</div>
+    <div class="test-name">AudioBuffer OOB Channels</div>
+    <div class="test-desc">Cria AudioBuffer com número extremo de canais (255) e buffers gigantes.</div>
+    <button onclick="runWA2(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-wa3">
+    <div class="status-dot"></div>
+    <div class="test-id">WA-03</div>
+    <div class="test-name">AudioContext Close/Reopen Loop</div>
+    <div class="test-desc">Fecha e recria AudioContext 500x para testar limpeza de recursos de hardware.</div>
+    <button onclick="runWA3(this)">RUN</button>
+  </div>
+
+</div>
+
+<!-- ─── SECTION 6: BLOB / URL / FETCH ─────────────────────────────────── -->
+<div class="section-title">06 / BLOB, OBJECT URL &amp; FETCH</div>
+<div class="grid">
+
+  <div class="test-card" id="card-bl1">
+    <div class="status-dot"></div>
+    <div class="test-id">BL-01</div>
+    <div class="test-name">Blob URL Leak</div>
+    <div class="test-desc">Cria e revoga 10.000 Blob URLs sem liberar entre criações — testa vazamento de handles.</div>
+    <button onclick="runBL1(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-bl2">
+    <div class="status-dot"></div>
+    <div class="test-id">BL-02</div>
+    <div class="test-name">Fetch com URLs Malformadas</div>
+    <div class="test-desc">Faz fetch de URLs com esquemas inválidos, nulos e com caracteres de controle.</div>
+    <button onclick="runBL2(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-bl3">
+    <div class="status-dot"></div>
+    <div class="test-id">BL-03</div>
+    <div class="test-name">Blob Giant Slice Chain</div>
+    <div class="test-desc">Cria Blob de 50MB e encadeia .slice() recursivamente, lendo cada fragmento.</div>
+    <button onclick="runBL3(this)">RUN</button>
+  </div>
+
+</div>
+
+<!-- ─── SECTION 7: CANVAS 2D ───────────────────────────────────────────── -->
+<div class="section-title">07 / CANVAS 2D</div>
+<div class="grid">
+
+  <div class="test-card" id="card-cv1">
+    <div class="status-dot"></div>
+    <div class="test-id">CV-01</div>
+    <div class="test-name">Canvas getImageData OOB</div>
+    <div class="test-desc">Chama getImageData com coordenadas negativas e tamanhos que excedem o canvas.</div>
+    <button onclick="runCV1(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-cv2">
+    <div class="status-dot"></div>
+    <div class="test-id">CV-02</div>
+    <div class="test-name">Canvas Resize Loop</div>
+    <div class="test-desc">Altera width/height do canvas 10.000x enquanto desenha — testa realloc do backing store.</div>
+    <button onclick="runCV2(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-cv3">
+    <div class="status-dot"></div>
+    <div class="test-id">CV-03</div>
+    <div class="test-name">Canvas toBlob Memory Probe</div>
+    <div class="test-desc">Chama toBlob() em canvas de 4096x4096 em loop — testa acúmulo de memória assíncrona.</div>
+    <button onclick="runCV3(this)">RUN</button>
+  </div>
+
+</div>
+
+<!-- ─── SECTION 8: STORAGE / MISC ─────────────────────────────────────── -->
+<div class="section-title">08 / STORAGE &amp; MISC JS ENGINE</div>
+<div class="grid">
+
+  <div class="test-card" id="card-st1">
+    <div class="status-dot"></div>
+    <div class="test-id">ST-01</div>
+    <div class="test-name">localStorage Quota Bomb</div>
+    <div class="test-desc">Escreve chaves em localStorage até QuotaExceededError — loga o limite real do PS4.</div>
+    <button onclick="runST1(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-st2">
+    <div class="status-dot"></div>
+    <div class="test-id">ST-02</div>
+    <div class="test-name">JSON.stringify Deep Object</div>
+    <div class="test-desc">Serializa objeto com 100k níveis de aninhamento — testa stack overflow no parser JSON.</div>
+    <button onclick="runST2(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-st3">
+    <div class="status-dot"></div>
+    <div class="test-id">ST-03</div>
+    <div class="test-name">RegExp Catastrophic Backtrack</div>
+    <div class="test-desc">Executa regex com backtracking exponencial contra string longa — ReDoS no engine.</div>
+    <button onclick="runST3(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-st4">
+    <div class="status-dot"></div>
+    <div class="test-id">ST-04</div>
+    <div class="test-name">Proxy Handler Trap Chain</div>
+    <div class="test-desc">Cria cadeia de Proxies de 10k camadas e acessa propriedade — testa recursão no engine.</div>
+    <button onclick="runST4(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-st5">
+    <div class="status-dot"></div>
+    <div class="test-id">ST-05</div>
+    <div class="test-name">Symbol Registry Flood</div>
+    <div class="test-desc">Registra 500k símbolos globais via Symbol.for() — testa crescimento do global symbol table.</div>
+    <button onclick="runST5(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-st6">
+    <div class="status-dot"></div>
+    <div class="test-id">ST-06</div>
+    <div class="test-name">Promise Chain Storm</div>
+    <div class="test-desc">Encadeia 100k Promises resolvidas em sequência — testa microtask queue e stack.</div>
+    <button onclick="runST6(this)">RUN</button>
+  </div>
+
+</div>
+
+<!-- ─── SECTION 9: MEDIA SOURCE EXTENSIONS ────────────────────────────── -->
+<div class="section-title">09 / MEDIASOURCE EXTENSIONS (MSE)</div>
+<div class="grid">
+
+  <div class="test-card" id="card-ms1">
+    <div class="status-dot"></div>
+    <div class="test-id">MS-01</div>
+    <div class="test-name">MSE Support Probe</div>
+    <div class="test-desc">Detecta suporte a MSE e MIME types aceitos — loga capacidades para direcionar testes.</div>
+    <button onclick="runMS1(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-ms2">
+    <div class="status-dot"></div>
+    <div class="test-id">MS-02</div>
+    <div class="test-name">SourceBuffer appendBuffer Race</div>
+    <div class="test-desc">Chama appendBuffer() antes do updating terminar — spec proíbe mas pode crashar impl. frágil.</div>
+    <button onclick="runMS2(this)">RUN</button>
+  </div>
+
+  <div class="test-card" id="card-ms3">
+    <div class="status-dot"></div>
+    <div class="test-id">MS-03</div>
+    <div class="test-name">MediaSource Open/End/Close Loop</div>
+    <div class="test-desc">Cicla MediaSource por readyState open→ended→closed 1000x testando transições inválidas.</div>
+    <button onclick="runMS3(this)">RUN</button>
+  </div>
+
+</div>
+
+<footer>PS4 WEBKIT TRIAGE TOOL — USE ONLY IN AUTHORIZED BUG BOUNTY SCOPE</footer>
+
+<canvas id="offscreen-canvas" width="4096" height="4096" style="display:none"></canvas>
+<div id="dom-target" style="display:none"></div>
+
+<script>
+// ─── LOGGER ──────────────────────────────────────────────────────────────────
+function log(msg, type) {
+  var el = document.getElementById('log-output');
+  var line = document.createElement('div');
+  line.className = 'log-' + (type || 'ok');
+  line.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+  el.appendChild(line);
+  el.parentElement.scrollTop = el.parentElement.scrollHeight;
+}
+function clearLog() {
+  document.getElementById('log-output').innerHTML = '';
+}
+function markCard(id, state) {
+  var c = document.getElementById('card-' + id.toLowerCase());
+  if (c) { c.className = 'test-card ' + state; }
+}
+
+// ─── SW-01 SharedWorker Port Flood ───────────────────────────────────────────
+function runSW1(btn) {
+  markCard('sw1', 'ran');
+  log('SW-01 — Spawning 200 SharedWorker connections...', 'info');
+  var blob = new Blob(['self.onconnect=function(e){var p=e.ports[0];p.onmessage=function(m){p.postMessage("pong:"+m.data);};}'], {type:'application/javascript'});
+  var url = URL.createObjectURL(blob);
+  var alive = 0;
+  for (var i = 0; i < 200; i++) {
+    try {
+      var sw = new SharedWorker(url);
+      sw.port.start();
+      sw.port.postMessage('ping' + i);
+      sw.port.onmessage = function() { alive++; };
+      sw.onerror = function(e) { log('SW-01 error: ' + e.message, 'err'); };
+    } catch(e) { log('SW-01 spawn failed at i=' + i + ': ' + e.message, 'warn'); break; }
+  }
+  setTimeout(function() {
+    log('SW-01 — alive ports responding: ' + alive + '/200', alive === 200 ? 'ok' : 'warn');
+    URL.revokeObjectURL(url);
+  }, 2000);
+}
+
+// ─── SW-02 Transferable Loop ──────────────────────────────────────────────────
+function runSW2(btn) {
+  markCard('sw2', 'ran');
+  log('SW-02 — Transferable ArrayBuffer bounce test...', 'info');
+  var code = 'self.onmessage=function(e){var ab=e.data;self.postMessage(ab,[ab]);};';
+  var blob = new Blob([code], {type:'application/javascript'});
+  var w = new Worker(URL.createObjectURL(blob));
+  var count = 0;
+  var buf = new ArrayBuffer(1024 * 1024); // 1MB
+  w.onmessage = function(e) {
+    count++;
+    if (count < 100) {
+      try { var nb = e.data; w.postMessage(nb, [nb]); }
+      catch(ex) { log('SW-02 use-after-transfer at count=' + count + ': ' + ex.message, 'warn'); markCard('sw2','warn'); w.terminate(); return; }
+    } else {
+      log('SW-02 — 100 transfers completed, buffer intact. byteLength=' + e.data.byteLength, 'ok');
+      w.terminate();
+    }
+  };
+  w.postMessage(buf, [buf]);
+}
+
+// ─── SW-03 Worker Spawn Bomb ──────────────────────────────────────────────────
+function runSW3(btn) {
+  markCard('sw3', 'ran');
+  log('SW-03 — Spawning 500 inline Workers...', 'info');
+  var blob = new Blob(['self.postMessage("ok");self.close();'], {type:'application/javascript'});
+  var url = URL.createObjectURL(blob);
+  var ok = 0, fail = 0;
+  for (var i = 0; i < 500; i++) {
+    try {
+      var w = new Worker(url);
+      w.onmessage = function() { ok++; };
+      w.onerror = function() { fail++; };
+    } catch(e) { fail++; }
+  }
+  URL.revokeObjectURL(url);
+  setTimeout(function() {
+    log('SW-03 — ok:' + ok + ' fail:' + fail, fail > 0 ? 'warn' : 'ok');
+    if (fail > 0) markCard('sw3', 'warn');
+  }, 3000);
+}
+
+// ─── SW-04 SharedWorker Close/Reconnect Race ──────────────────────────────────
+function runSW4(btn) {
+  markCard('sw4', 'ran');
+  log('SW-04 — SharedWorker close/reconnect race...', 'info');
+  var blob = new Blob(['self.onconnect=function(e){var p=e.ports[0];p.start();p.onmessage=function(){p.postMessage("ok");};}'], {type:'application/javascript'});
+  var url = URL.createObjectURL(blob);
+  var errors = 0;
+  for (var i = 0; i < 300; i++) {
+    try {
+      var sw = new SharedWorker(url);
+      sw.port.start();
+      sw.port.postMessage('x');
+      sw.port.close();
+    } catch(e) { errors++; }
+  }
+  setTimeout(function() {
+    log('SW-04 — 300 cycles done. Errors: ' + errors, errors > 0 ? 'warn' : 'ok');
+    if (errors > 0) markCard('sw4', 'warn');
+    URL.revokeObjectURL(url);
+  }, 1500);
+}
+
+// ─── AB-01 ArrayBuffer Max Alloc ──────────────────────────────────────────────
+function runAB1(btn) {
+  markCard('ab1', 'ran');
+  log('AB-01 — Probing max ArrayBuffer size...', 'info');
+  var sizes = [512, 1024, 2048, 4096, 8192, 16384, 32768, 65536]; // MB
+  var maxOk = 0;
+  for (var i = 0; i < sizes.length; i++) {
+    try {
+      var ab = new ArrayBuffer(sizes[i] * 1024 * 1024);
+      maxOk = sizes[i];
+      ab = null;
+    } catch(e) {
+      log('AB-01 — limit reached at ' + sizes[i] + 'MB. Max OK: ' + maxOk + 'MB', 'warn');
+      alert('AB-01: Max ArrayBuffer = ' + maxOk + 'MB. Fails at ' + sizes[i] + 'MB');
+      return;
+    }
+  }
+  log('AB-01 — Allocated up to ' + maxOk + 'MB without error.', 'ok');
+}
+
+// ─── AB-02 DataView OOB Read Probe ────────────────────────────────────────────
+function runAB2(btn) {
+  markCard('ab2', 'ran');
+  log('AB-02 — DataView OOB probe...', 'info');
+  var ab = new ArrayBuffer(16);
+  var dv = new DataView(ab);
+  var interesting = [];
+  var offsets = [-1, -4, 13, 14, 15, 16, 17, 32, 255, 65535, 2147483647, -2147483648];
+  for (var i = 0; i < offsets.length; i++) {
+    try {
+      var v = dv.getUint32(offsets[i], true);
+      interesting.push('offset=' + offsets[i] + ' => 0x' + v.toString(16));
+    } catch(e) {
+      log('AB-02 offset=' + offsets[i] + ' threw: ' + e.name, 'warn');
+    }
+  }
+  if (interesting.length > 0) {
+    alert('AB-02 OOB reads succeeded:\n' + interesting.join('\n'));
+    log('AB-02 — OOB reads succeeded: ' + interesting.length, 'warn');
+    markCard('ab2', 'warn');
+  } else {
+    log('AB-02 — All OOB reads correctly threw exceptions.', 'ok');
+  }
+}
+
+// ─── AB-03 TypedArray Detach Race ─────────────────────────────────────────────
+function runAB3(btn) {
+  markCard('ab3', 'ran');
+  log('AB-03 — TypedArray detach race...', 'info');
+  var ab = new ArrayBuffer(1024 * 1024 * 4);
+  var ta = new Uint8Array(ab);
+  var code = 'self.onmessage=function(e){self.postMessage("detached");}';
+  var w = new Worker(URL.createObjectURL(new Blob([code], {type:'application/javascript'})));
+  var raceHit = false;
+  w.onmessage = function() {
+    log('AB-03 — detach confirmed from worker side.', 'ok');
+    w.terminate();
+  };
+  w.postMessage(ab, [ab]);
+  // Try to read after transfer
+  try {
+    var val = ta[0]; // Should be 0 from detached buffer
+    if (ta.byteLength === 0) {
+      log('AB-03 — buffer detached correctly, byteLength=0.', 'ok');
+    } else {
+      alert('AB-03: Buffer NOT detached after transfer! byteLength=' + ta.byteLength + ' val[0]=' + val);
+      log('AB-03 — POTENTIAL BUG: buffer still accessible post-transfer!', 'warn');
+      markCard('ab3', 'warn');
+    }
+  } catch(e) { log('AB-03 — threw on detached access: ' + e.message, 'ok'); }
+}
+
+// ─── AB-04 SharedArrayBuffer ──────────────────────────────────────────────────
+function runAB4(btn) {
+  markCard('ab4', 'ran');
+  log('AB-04 — Checking SharedArrayBuffer availability...', 'info');
+  if (typeof SharedArrayBuffer === 'undefined') {
+    log('AB-04 — SharedArrayBuffer NOT available (Spectre mitigated or disabled).', 'ok');
+    alert('AB-04: SharedArrayBuffer is DISABLED. Spectre mitigations likely active.');
+  } else {
+    try {
+      var sab = new SharedArrayBuffer(1024);
+      var view = new Int32Array(sab);
+      log('AB-04 — SharedArrayBuffer IS available! byteLength=' + sab.byteLength, 'warn');
+      alert('AB-04 INTERESTING: SharedArrayBuffer available — Spectre mitigation may be absent!\nbyteLength=' + sab.byteLength);
+      markCard('ab4', 'warn');
+    } catch(e) {
+      log('AB-04 — SAB creation threw: ' + e.message, 'ok');
+    }
+  }
+}
+
+// ─── AB-05 TypedArray Subarray Chain ─────────────────────────────────────────
+function runAB5(btn) {
+  markCard('ab5', 'ran');
+  log('AB-05 — Chaining 10k subarray calls...', 'info');
+  try {
+    var ta = new Uint8Array(1024 * 1024);
+    for (var i = 0; i < 10000; i++) {
+      ta = ta.subarray(0, Math.max(ta.length - 1, 1));
+    }
+    log('AB-05 — 10k subarrays chained. Final length: ' + ta.length, 'ok');
+  } catch(e) {
+    alert('AB-05 CRASH/THROW after subarray chain: ' + e.message);
+    log('AB-05 — threw: ' + e.message, 'warn');
+    markCard('ab5', 'warn');
+  }
+}
+
+// ─── HS-01 pushState Overflow ─────────────────────────────────────────────────
+function runHS1(btn) {
+  markCard('hs1', 'ran');
+  log('HS-01 — Classic pushState overflow test (10000 entries)...', 'info');
+  var count = 0;
+  var errors = 0;
+  for (var i = 0; i < 10000; i++) {
+    try {
+      history.pushState({i:i}, '', '#ps-' + i);
+      count++;
+    } catch(e) {
+      errors++;
+      log('HS-01 threw at i=' + i + ': ' + e.message, 'warn');
+      markCard('hs1', 'warn');
+      break;
+    }
+  }
+  log('HS-01 — pushState count=' + count + ' errors=' + errors, errors ? 'warn' : 'ok');
+  alert('HS-01: pushState completed ' + count + ' entries. Errors: ' + errors);
+}
+
+// ─── HS-02 pushState + replaceState Interleaved ───────────────────────────────
+function runHS2(btn) {
+  markCard('hs2', 'ran');
+  log('HS-02 — Interleaved pushState/replaceState...', 'info');
+  var errors = 0;
+  for (var i = 0; i < 5000; i++) {
+    try {
+      if (i % 2 === 0) history.pushState({n:i}, '', '#rs-' + i);
+      else history.replaceState({n:i}, '', '#rs-' + i);
+    } catch(e) { errors++; break; }
+  }
+  log('HS-02 — done. Errors: ' + errors + ' Length: ' + history.length, errors ? 'warn' : 'ok');
+  alert('HS-02: history.length=' + history.length + ' errors=' + errors);
+}
+
+// ─── HS-03 pushState Big State ────────────────────────────────────────────────
+function runHS3(btn) {
+  markCard('hs3', 'ran');
+  log('HS-03 — pushState with 1MB state objects...', 'info');
+  var bigArr = new Array(100000).fill('AAAAAAAAA');
+  var errors = 0;
+  for (var i = 0; i < 50; i++) {
+    try {
+      history.pushState({data: bigArr, idx: i}, '', '#big-' + i);
+    } catch(e) {
+      log('HS-03 failed at i=' + i + ': ' + e.message, 'warn');
+      alert('HS-03 threw at iteration ' + i + ':\n' + e.message);
+      errors++;
+      markCard('hs3', 'warn');
+      break;
+    }
+  }
+  if (!errors) log('HS-03 — 50 × big-state pushState OK.', 'ok');
+}
+
+// ─── HS-04 history.go() Race ──────────────────────────────────────────────────
+function runHS4(btn) {
+  markCard('hs4', 'ran');
+  log('HS-04 — history.go() race with pushState...', 'info');
+  var i = 0;
+  var interval = setInterval(function() {
+    history.pushState({x:i}, '', '#race-' + i);
+    i++;
+    if (i > 200) { clearInterval(interval); log('HS-04 — race done. length=' + history.length, 'ok'); }
+  }, 0);
+  for (var j = 0; j < 50; j++) {
+    setTimeout(function() { try { history.go(-(Math.floor(Math.random()*5)+1)); } catch(e){} }, j * 5);
+  }
+}
+
+// ─── DOM-01 Deep DOM Tree ─────────────────────────────────────────────────────
+function runDOM1(btn) {
+  markCard('dom1', 'ran');
+  log('DOM-01 — Building 50k nested DOM nodes...', 'info');
+  var target = document.getElementById('dom-target');
+  target.innerHTML = '';
+  try {
+    var current = target;
+    for (var i = 0; i < 50000; i++) {
+      var child = document.createElement('div');
+      current.appendChild(child);
+      current = child;
+    }
+    log('DOM-01 — 50k nodes built. Triggering reflow...', 'info');
+    var h = target.offsetHeight; // Force reflow
+    log('DOM-01 — Reflow done. offsetHeight=' + h, 'ok');
+    target.innerHTML = '';
+  } catch(e) {
+    alert('DOM-01 threw: ' + e.message);
+    log('DOM-01 error: ' + e.message, 'warn');
+    markCard('dom1', 'warn');
+  }
+}
+
+// ─── DOM-02 CSS Animation + Remove Race ──────────────────────────────────────
+function runDOM2(btn) {
+  markCard('dom2', 'ran');
+  log('DOM-02 — CSS animation + DOM remove race...', 'info');
+  var style = document.createElement('style');
+  style.textContent = '@keyframes spin2{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}';
+  document.head.appendChild(style);
+  var target = document.getElementById('dom-target');
+  var errors = 0;
+  for (var i = 0; i < 500; i++) {
+    var el = document.createElement('div');
+    el.style.animation = 'spin2 0.1s infinite';
+    target.appendChild(el);
+    setTimeout((function(e) { return function() { try { e.parentNode && e.parentNode.removeChild(e); } catch(ex) { errors++; } }; })(el), Math.random() * 50);
+  }
+  setTimeout(function() {
+    log('DOM-02 — animation/remove race done. errors=' + errors, errors ? 'warn' : 'ok');
+    target.innerHTML = '';
+    document.head.removeChild(style);
+  }, 500);
+}
+
+// ─── DOM-03 MutationObserver Storm ───────────────────────────────────────────
+function runDOM3(btn) {
+  markCard('dom3', 'ran');
+  log('DOM-03 — Registering 1000 MutationObservers...', 'info');
+  var target = document.getElementById('dom-target');
+  var observers = [];
+  var fired = 0;
+  for (var i = 0; i < 1000; i++) {
+    var obs = new MutationObserver(function() { fired++; });
+    obs.observe(target, {childList:true, subtree:true, attributes:true, characterData:true});
+    observers.push(obs);
+  }
+  // Fire mutations
+  for (var j = 0; j < 100; j++) {
+    var el = document.createElement('span');
+    target.appendChild(el);
+  }
+  setTimeout(function() {
+    log('DOM-03 — mutations fired across all observers: ' + fired, fired > 0 ? 'ok' : 'warn');
+    observers.forEach(function(o) { o.disconnect(); });
+    target.innerHTML = '';
+  }, 500);
+}
+
+// ─── DOM-04 CSS Custom Properties Circular ───────────────────────────────────
+function runDOM4(btn) {
+  markCard('dom4', 'ran');
+  log('DOM-04 — Setting circular CSS custom properties...', 'info');
+  var el = document.getElementById('dom-target');
+  el.style.setProperty('--a', 'var(--b)');
+  el.style.setProperty('--b', 'var(--c)');
+  el.style.setProperty('--c', 'var(--a)');
+  el.style.color = 'var(--a)';
+  var computed = getComputedStyle(el).color;
+  log('DOM-04 — computed color with circular var: "' + computed + '"', 'ok');
+  alert('DOM-04: Circular CSS var resolved to: "' + computed + '"');
+}
+
+// ─── DOM-05 innerHTML Stress ──────────────────────────────────────────────────
+function runDOM5(btn) {
+  markCard('dom5', 'ran');
+  log('DOM-05 — innerHTML 2MB stress...', 'info');
+  var big = '<span>' + new Array(200000).join('X') + '</span>';
+  var target = document.getElementById('dom-target');
+  try {
+    for (var i = 0; i < 20; i++) {
+      target.innerHTML = big;
+      var len = target.firstChild ? target.firstChild.textContent.length : 0;
+    }
+    log('DOM-05 — 20 × 2MB innerHTML OK. Last textLength=' + len, 'ok');
+    target.innerHTML = '';
+  } catch(e) {
+    alert('DOM-05 threw: ' + e.message);
+    log('DOM-05 error: ' + e.message, 'warn');
+    markCard('dom5', 'warn');
+  }
+}
+
+// ─── DOM-06 Event Listener Leak ───────────────────────────────────────────────
+function runDOM6(btn) {
+  markCard('dom6', 'ran');
+  log('DOM-06 — Adding 100k event listeners without removal...', 'info');
+  var target = document.getElementById('dom-target');
+  var memBefore = (window.performance && performance.memory) ? performance.memory.usedJSHeapSize : null;
+  for (var i = 0; i < 100000; i++) {
+    target.addEventListener('click', function(){});
+  }
+  var memAfter = (window.performance && performance.memory) ? performance.memory.usedJSHeapSize : null;
+  if (memBefore && memAfter) {
+    var delta = ((memAfter - memBefore) / 1024 / 1024).toFixed(2);
+    alert('DOM-06: Heap delta after 100k listeners: ' + delta + 'MB\nBefore=' + (memBefore/1024/1024).toFixed(2) + 'MB After=' + (memAfter/1024/1024).toFixed(2) + 'MB');
+    log('DOM-06 — heap delta: +' + delta + 'MB', 'warn');
+    markCard('dom6', 'warn');
+  } else {
+    log('DOM-06 — performance.memory not available. Listeners added (no crash = ok).', 'ok');
+  }
+}
+
+// ─── WA-01 AudioContext Node Chain ────────────────────────────────────────────
+function runWA1(btn) {
+  markCard('wa1', 'ran');
+  log('WA-01 — AudioContext 10k GainNode chain...', 'info');
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var prev = ctx.destination;
+    var t0 = Date.now();
+    for (var i = 0; i < 10000; i++) {
+      var gain = ctx.createGain();
+      gain.connect(prev);
+      prev = gain;
+    }
+    log('WA-01 — chain built in ' + (Date.now()-t0) + 'ms. Closing context.', 'ok');
+    ctx.close();
+  } catch(e) {
+    alert('WA-01 threw: ' + e.message);
+    log('WA-01 error: ' + e.message, 'warn');
+    markCard('wa1', 'warn');
+  }
+}
+
+// ─── WA-02 AudioBuffer Extreme Channels ──────────────────────────────────────
+function runWA2(btn) {
+  markCard('wa2', 'ran');
+  log('WA-02 — AudioBuffer extreme channels...', 'info');
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var extremes = [32, 64, 128, 255, 256];
+    var results = [];
+    for (var i = 0; i < extremes.length; i++) {
+      try {
+        var buf = ctx.createBuffer(extremes[i], 4096, ctx.sampleRate);
+        results.push('ch=' + extremes[i] + ' OK');
+      } catch(e2) {
+        results.push('ch=' + extremes[i] + ' ERR:' + e2.name);
+      }
+    }
+    alert('WA-02 results:\n' + results.join('\n'));
+    log('WA-02 — ' + results.join(' | '), 'ok');
+    ctx.close();
+  } catch(e) {
+    log('WA-02 — AudioContext not available: ' + e.message, 'warn');
+    markCard('wa2', 'warn');
+  }
+}
+
+// ─── WA-03 AudioContext Close/Reopen ─────────────────────────────────────────
+function runWA3(btn) {
+  markCard('wa3', 'ran');
+  log('WA-03 — AudioContext close/reopen 500x...', 'info');
+  var count = 0;
+  var errors = 0;
+  function cycle() {
+    if (count >= 500) {
+      log('WA-03 — 500 cycles done. errors=' + errors, errors ? 'warn' : 'ok');
+      return;
+    }
+    try {
+      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      ctx.close().then(function() { count++; cycle(); }).catch(function(e) { errors++; count++; cycle(); });
+    } catch(e) { errors++; count++; cycle(); }
+  }
+  cycle();
+}
+
+// ─── BL-01 Blob URL Leak ──────────────────────────────────────────────────────
+function runBL1(btn) {
+  markCard('bl1', 'ran');
+  log('BL-01 — Creating 10k Blob URLs without revoking...', 'info');
+  var urls = [];
+  var t0 = Date.now();
+  for (var i = 0; i < 10000; i++) {
+    var b = new Blob(['test' + i], {type:'text/plain'});
+    urls.push(URL.createObjectURL(b));
+  }
+  log('BL-01 — 10k URLs created in ' + (Date.now()-t0) + 'ms. Now revoking...', 'info');
+  for (var j = 0; j < urls.length; j++) URL.revokeObjectURL(urls[j]);
+  log('BL-01 — revoked all. No crash = OK.', 'ok');
+}
+
+// ─── BL-02 Fetch Malformed URLs ───────────────────────────────────────────────
+function runBL2(btn) {
+  markCard('bl2', 'ran');
+  log('BL-02 — Fetching malformed URLs...', 'info');
+  var urls = [
+    'javascript:void(0)',
+    'data:text/html,<h1>test</h1>',
+    'file:///etc/passwd',
+    'blob:invalid',
+    'http://0.0.0.0/',
+    'http://[::1]/',
+    '\x00http://example.com',
+    'http://example.com\x00.evil.com'
+  ];
+  var results = [];
+  var pending = urls.length;
+  urls.forEach(function(u) {
+    fetch(u).then(function(r) {
+      results.push(u.slice(0,30) + ' => ' + r.status);
+      if (--pending === 0) { alert('BL-02:\n' + results.join('\n')); log('BL-02 — fetch results logged.', 'warn'); markCard('bl2','warn'); }
+    }).catch(function(e) {
+      results.push(u.slice(0,30) + ' => ERR:' + e.name);
+      if (--pending === 0) { log('BL-02 — all fetches errored/done.', 'ok'); }
+    });
+  });
+}
+
+// ─── BL-03 Blob Giant Slice Chain ─────────────────────────────────────────────
+function runBL3(btn) {
+  markCard('bl3', 'ran');
+  log('BL-03 — Blob 50MB slice chain...', 'info');
+  try {
+    var big = new Blob([new ArrayBuffer(50 * 1024 * 1024)]);
+    var slices = [];
+    var b = big;
+    for (var i = 0; i < 50; i++) {
+      b = b.slice(0, Math.floor(b.size / 2));
+      slices.push(b.size);
+    }
+    log('BL-03 — 50 slices. Final size: ' + b.size + '. Sizes: ' + slices.slice(0,5).join(',') + '...', 'ok');
+  } catch(e) {
+    alert('BL-03 threw: ' + e.message);
+    log('BL-03 error: ' + e.message, 'warn');
+    markCard('bl3', 'warn');
+  }
+}
+
+// ─── CV-01 Canvas getImageData OOB ────────────────────────────────────────────
+function runCV1(btn) {
+  markCard('cv1', 'ran');
+  log('CV-01 — Canvas getImageData OOB probing...', 'info');
+  var canvas = document.getElementById('offscreen-canvas');
+  var ctx = canvas.getContext('2d');
+  var tests = [
+    [-1, -1, 10, 10], [-1000, -1000, 10, 10],
+    [0, 0, 99999, 99999], [4090, 4090, 100, 100],
+    [0, 0, -1, -1], [2147483647, 2147483647, 1, 1]
+  ];
+  var results = [];
+  tests.forEach(function(t) {
+    try {
+      var d = ctx.getImageData(t[0], t[1], t[2], t[3]);
+      results.push('(' + t + ') => len=' + d.data.length);
+    } catch(e) {
+      results.push('(' + t + ') => ERR:' + e.name);
+    }
+  });
+  alert('CV-01 getImageData results:\n' + results.join('\n'));
+  log('CV-01 — probing complete.', results.some(function(r){return r.indexOf('len=') > -1 && r.indexOf('99999') > -1;}) ? 'warn' : 'ok');
+}
+
+// ─── CV-02 Canvas Resize Loop ─────────────────────────────────────────────────
+function runCV2(btn) {
+  markCard('cv2', 'ran');
+  log('CV-02 — Canvas resize 10k times...', 'info');
+  var canvas = document.getElementById('offscreen-canvas');
+  var t0 = Date.now();
+  for (var i = 0; i < 10000; i++) {
+    canvas.width = 100 + (i % 900);
+    canvas.height = 100 + (i % 900);
+    var ctx = canvas.getContext('2d');
+    ctx.fillRect(0, 0, 10, 10);
+  }
+  log('CV-02 — 10k resize+draw in ' + (Date.now()-t0) + 'ms.', 'ok');
+  canvas.width = 4096; canvas.height = 4096;
+}
+
+// ─── CV-03 Canvas toBlob Loop ─────────────────────────────────────────────────
+function runCV3(btn) {
+  markCard('cv3', 'ran');
+  log('CV-03 — Canvas toBlob 100x on 4096² canvas...', 'info');
+  var canvas = document.getElementById('offscreen-canvas');
+  var done = 0;
+  for (var i = 0; i < 100; i++) {
+    canvas.toBlob(function(b) {
+      done++;
+      if (done === 100) log('CV-03 — 100 toBlob() calls resolved. Last size: ' + (b ? b.size : 'null'), 'ok');
+    }, 'image/png');
+  }
+}
+
+// ─── ST-01 localStorage Quota Bomb ────────────────────────────────────────────
+function runST1(btn) {
+  markCard('st1', 'ran');
+  log('ST-01 — localStorage quota bomb...', 'info');
+  localStorage.clear();
+  var chunk = new Array(1025).join('X'); // ~1KB
+  var kb = 0;
+  try {
+    for (var i = 0; i < 100000; i++) {
+      localStorage.setItem('k' + i, chunk);
+      kb++;
+    }
+    log('ST-01 — no quota error at ' + kb + 'KB!', 'warn');
+    alert('ST-01: No QuotaExceededError! Stored ' + kb + 'KB');
+    markCard('st1', 'warn');
+  } catch(e) {
+    alert('ST-01: Quota limit = ~' + kb + 'KB (' + (kb/1024).toFixed(1) + 'MB)\nError: ' + e.name);
+    log('ST-01 — quota exceeded at ~' + kb + 'KB', 'ok');
+    localStorage.clear();
+  }
+}
+
+// ─── ST-02 JSON Deep Object ───────────────────────────────────────────────────
+function runST2(btn) {
+  markCard('st2', 'ran');
+  log('ST-02 — Building 50k-deep nested object...', 'info');
+  try {
+    var depth = 50000;
+    var obj = {};
+    var cur = obj;
+    for (var i = 0; i < depth; i++) { cur.child = {}; cur = cur.child; }
+    log('ST-02 — object built. Serializing...', 'info');
+    var s = JSON.stringify(obj);
+    log('ST-02 — JSON.stringify done. Length: ' + s.length, 'ok');
+  } catch(e) {
+    alert('ST-02 threw: ' + e.message);
+    log('ST-02 error: ' + e.message, 'warn');
+    markCard('st2', 'warn');
+  }
+}
+
+// ─── ST-03 ReDoS ──────────────────────────────────────────────────────────────
+function runST3(btn) {
+  markCard('st3', 'ran');
+  log('ST-03 — ReDoS regex test (may freeze briefly)...', 'info');
+  var t0 = Date.now();
+  try {
+    var re = /^(a+)+$/;
+    var str = new Array(25).join('a') + 'b'; // Triggers catastrophic backtracking
+    var res = re.test(str);
+    var elapsed = Date.now() - t0;
+    log('ST-03 — result=' + res + ' time=' + elapsed + 'ms', elapsed > 500 ? 'warn' : 'ok');
+    if (elapsed > 500) alert('ST-03: ReDoS triggered! Took ' + elapsed + 'ms (potential DoS)');
+  } catch(e) {
+    log('ST-03 error: ' + e.message, 'warn');
+  }
+}
+
+// ─── ST-04 Proxy Chain ────────────────────────────────────────────────────────
+function runST4(btn) {
+  markCard('st4', 'ran');
+  log('ST-04 — Building 10k-deep Proxy chain...', 'info');
+  try {
+    var obj = {value: 42};
+    for (var i = 0; i < 10000; i++) {
+      obj = new Proxy(obj, {get: function(t,k) { return t[k]; }});
+    }
+    var v = obj.value;
+    log('ST-04 — 10k proxies traversed. value=' + v, 'ok');
+  } catch(e) {
+    alert('ST-04 threw after proxy chain: ' + e.message);
+    log('ST-04 error: ' + e.message, 'warn');
+    markCard('st4', 'warn');
+  }
+}
+
+// ─── ST-05 Symbol Registry Flood ─────────────────────────────────────────────
+function runST5(btn) {
+  markCard('st5', 'ran');
+  log('ST-05 — Registering 500k global Symbols...', 'info');
+  var t0 = Date.now();
+  for (var i = 0; i < 500000; i++) Symbol.for('sym_' + i);
+  log('ST-05 — 500k symbols in ' + (Date.now()-t0) + 'ms.', 'ok');
+}
+
+// ─── ST-06 Promise Storm ──────────────────────────────────────────────────────
+function runST6(btn) {
+  markCard('st6', 'ran');
+  log('ST-06 — Chaining 100k resolved Promises...', 'info');
+  var t0 = Date.now();
+  var p = Promise.resolve();
+  for (var i = 0; i < 100000; i++) p = p.then(function() {});
+  p.then(function() {
+    log('ST-06 — 100k promise chain resolved in ' + (Date.now()-t0) + 'ms.', 'ok');
+  }).catch(function(e) {
+    log('ST-06 error: ' + e.message, 'warn');
+    markCard('st6', 'warn');
+  });
+}
+
+// ─── MS-01 MSE Support Probe ──────────────────────────────────────────────────
+function runMS1(btn) {
+  markCard('ms1', 'ran');
+  log('MS-01 — MediaSource support probe...', 'info');
+  if (typeof MediaSource === 'undefined') {
+    log('MS-01 — MediaSource NOT available.', 'warn');
+    alert('MS-01: MediaSource API not available on this browser.');
+    markCard('ms1', 'warn');
+    return;
+  }
+  var mimes = [
+    'video/mp4; codecs="avc1.42E01E"',
+    'video/mp4; codecs="avc1.4D401E"',
+    'video/webm; codecs="vp8"',
+    'video/webm; codecs="vp9"',
+    'audio/mpeg',
+    'audio/mp4; codecs="mp4a.40.2"'
+  ];
+  var results = mimes.map(function(m) {
+    return m.split(';')[0].split('/')[1].split('"')[0] + ': ' + MediaSource.isTypeSupported(m);
+  });
+  alert('MS-01 MSE Support:\n' + results.join('\n'));
+  log('MS-01 — MSE available. Types logged.', 'ok');
+}
+
+// ─── MS-02 SourceBuffer appendBuffer Race ─────────────────────────────────────
+function runMS2(btn) {
+  markCard('ms2', 'ran');
+  log('MS-02 — SourceBuffer appendBuffer race...', 'info');
+  if (typeof MediaSource === 'undefined') { log('MS-02 — MSE not available.', 'warn'); return; }
+  var ms = new MediaSource();
+  var video = document.createElement('video');
+  video.src = URL.createObjectURL(ms);
+  ms.addEventListener('sourceopen', function() {
+    try {
+      var mime = 'audio/mp4; codecs="mp4a.40.2"';
+      if (!MediaSource.isTypeSupported(mime)) { log('MS-02 — MIME not supported, skip.', 'warn'); return; }
+      var sb = ms.addSourceBuffer(mime);
+      var buf1 = new ArrayBuffer(512);
+      var buf2 = new ArrayBuffer(512);
+      sb.appendBuffer(buf1);
+      try {
+        sb.appendBuffer(buf2); // Should throw InvalidStateError
+        log('MS-02 — double appendBuffer did NOT throw (potential bug!)', 'warn');
+        alert('MS-02: Double appendBuffer succeeded — expected InvalidStateError!');
+        markCard('ms2', 'warn');
+      } catch(e2) {
+        log('MS-02 — correctly threw on double append: ' + e2.name, 'ok');
+      }
+    } catch(e) { log('MS-02 error: ' + e.message, 'warn'); }
+  });
+}
+
+// ─── MS-03 MediaSource State Loop ─────────────────────────────────────────────
+function runMS3(btn) {
+  markCard('ms3', 'ran');
+  log('MS-03 — MediaSource state transition loop...', 'info');
+  var errors = 0;
+  for (var i = 0; i < 1000; i++) {
+    try {
+      var ms = new MediaSource();
+      var video = document.createElement('video');
+      video.src = URL.createObjectURL(ms);
+      // Force GC pressure — don't attach to DOM
+    } catch(e) { errors++; }
+  }
+  setTimeout(function() {
+    log('MS-03 — 1000 MediaSource instances created. errors=' + errors, errors ? 'warn' : 'ok');
+  }, 500);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,1842 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1280">
+<title>PS4 — Chaos Test Suite v4</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Oxanium:wght@400;600;800&display=swap');
+:root{
+  --bg:#040507;--bg2:#090c14;--bg3:#0f1320;--bg4:#161c2e;
+  --ln:#1a2235;--ln2:#253050;
+  --r1:#ff2244;--r2:#cc0022;
+  --g1:#22ff88;--g2:#009944;
+  --y1:#ffdd00;--y2:#997700;
+  --c1:#00ddff;--c2:#007799;
+  --p1:#dd88ff;--p2:#7722cc;
+  --o1:#ff8800;--o2:#994400;
+  --tx:#9ab0c8;--tx2:#3a5060;--tx3:#1a2530;
+  --mono:'Share Tech Mono',monospace;
+  --sans:'Oxanium',sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--tx);font-family:var(--sans);font-size:13px}
+
+.shell{display:grid;grid-template-rows:48px 1fr;height:100vh}
+
+/* TOPBAR */
+.bar{background:var(--bg2);border-bottom:1px solid var(--ln);display:flex;align-items:center;padding:0 16px;gap:12px}
+.brand{font-family:var(--mono);font-size:12px;color:var(--r1);letter-spacing:3px;white-space:nowrap}
+.brand b{color:var(--tx2);font-weight:400}
+.bar-center{flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--tx2)}
+.btn{font-family:var(--sans);font-size:11px;font-weight:600;border:none;border-radius:5px;padding:6px 14px;cursor:pointer;transition:all .15s;white-space:nowrap}
+.btn-r{background:var(--r2);color:#fff}.btn-r:hover{background:var(--r1)}
+.btn-g{background:var(--g2);color:#fff}.btn-g:hover{background:var(--g1);color:#000}
+.btn-c{background:var(--c2);color:#fff}.btn-c:hover{opacity:.8}
+.btn-dim{background:var(--bg3);border:1px solid var(--ln2);color:var(--tx)}.btn-dim:hover{background:var(--bg4)}
+
+/* LAYOUT */
+.body{display:grid;grid-template-columns:200px 1fr 240px;height:100%;overflow:hidden}
+
+/* SIDEBAR */
+aside{background:var(--bg2);border-right:1px solid var(--ln);overflow-y:auto;padding:8px 0}
+.ng{padding:8px 12px 2px;font-size:9px;font-weight:600;letter-spacing:2px;color:var(--tx2);text-transform:uppercase;margin-top:6px}
+.nb{display:flex;align-items:center;gap:6px;width:100%;padding:6px 12px;background:none;border:none;border-left:2px solid transparent;color:var(--tx2);font-family:var(--sans);font-size:11px;cursor:pointer;text-align:left;transition:all .1s}
+.nb:hover{background:var(--bg3);color:var(--tx)}
+.nb.on{color:var(--r1);border-left-color:var(--r1);background:rgba(255,34,68,.04)}
+.nc{margin-left:auto;font-family:var(--mono);font-size:9px;background:var(--bg3);border:1px solid var(--ln);border-radius:6px;padding:1px 5px}
+.nc.ran{color:var(--g1);border-color:rgba(34,255,136,.3)}
+.nc.fail{color:var(--r1);border-color:rgba(255,34,68,.3)}
+.nc.warn{color:var(--y1);border-color:rgba(255,221,0,.3)}
+
+/* MAIN */
+main{overflow-y:auto;padding:16px}
+.panel{display:none}.panel.on{display:block}
+.ph{margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--ln)}
+.pt{font-size:17px;font-weight:800;color:#fff;margin-bottom:3px;font-family:var(--sans)}
+.ps{color:var(--tx2);font-size:11px;line-height:1.6;max-width:580px}
+
+/* TEST CARDS */
+.test-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+.tc{background:var(--bg2);border:1px solid var(--ln);border-radius:8px;overflow:hidden;transition:border-color .2s}
+.tc:hover{border-color:var(--ln2)}
+.tc.running{border-color:var(--y1);animation:pulse .6s infinite alternate}
+.tc.passed {border-color:rgba(34,255,136,.4)}
+.tc.failed {border-color:rgba(255,34,68,.4)}
+.tc.weird  {border-color:rgba(221,136,255,.4)}
+@keyframes pulse{from{box-shadow:none}to{box-shadow:0 0 12px rgba(255,221,0,.2)}}
+
+.tc-head{padding:10px 12px;border-bottom:1px solid var(--ln);display:flex;align-items:flex-start;gap:8px}
+.tc-num{font-family:var(--mono);font-size:9px;color:var(--tx2);min-width:24px;margin-top:2px}
+.tc-title{font-size:12px;font-weight:600;color:#fff;line-height:1.4;flex:1}
+.tc-badge{font-size:8px;font-weight:600;padding:2px 7px;border-radius:6px;white-space:nowrap;letter-spacing:.5px;text-transform:uppercase;flex-shrink:0}
+.b-crash{background:rgba(255,34,68,.12);color:var(--r1);border:1px solid rgba(255,34,68,.25)}
+.b-weird{background:rgba(221,136,255,.1);color:var(--p1);border:1px solid rgba(221,136,255,.2)}
+.b-race {background:rgba(255,136,0,.1);color:var(--o1);border:1px solid rgba(255,136,0,.2)}
+.b-mem  {background:rgba(0,221,255,.08);color:var(--c1);border:1px solid rgba(0,221,255,.15)}
+.b-dom  {background:rgba(34,255,136,.08);color:var(--g1);border:1px solid rgba(34,255,136,.15)}
+
+.tc-body{padding:10px 12px}
+.tc-desc{font-size:10px;color:var(--tx2);line-height:1.6;margin-bottom:10px;font-family:var(--mono)}
+.tc-run{width:100%;padding:7px;background:var(--bg3);border:1px solid var(--ln2);border-radius:5px;color:var(--tx);font-family:var(--sans);font-size:11px;font-weight:600;cursor:pointer;transition:all .15s;letter-spacing:.3px}
+.tc-run:hover{background:var(--bg4);border-color:var(--r1);color:var(--r1)}
+.tc-result{margin-top:8px;padding:7px 10px;background:var(--bg);border:1px solid var(--ln);border-radius:5px;font-family:var(--mono);font-size:9px;min-height:28px;color:var(--tx2);display:none;white-space:pre-wrap;word-break:break-all;max-height:80px;overflow-y:auto}
+.tc-result.show{display:block}
+.tc-result.ok  {color:var(--g1);border-color:rgba(34,255,136,.25)}
+.tc-result.err {color:var(--r1);border-color:rgba(255,34,68,.25)}
+.tc-result.wow {color:var(--p1);border-color:rgba(221,136,255,.25)}
+.tc-result.warn{color:var(--y1);border-color:rgba(255,221,0,.25)}
+
+/* LOG */
+.logp{background:var(--bg2);border-left:1px solid var(--ln);display:flex;flex-direction:column}
+.lh{padding:8px 12px;border-bottom:1px solid var(--ln);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.ll{font-size:9px;font-weight:600;letter-spacing:2px;color:var(--tx2);text-transform:uppercase}
+.lc{background:none;border:none;font-family:var(--sans);font-size:10px;color:var(--tx2);cursor:pointer}
+.lc:hover{color:var(--r1)}
+#log{flex:1;overflow-y:auto;padding:8px 12px;font-family:var(--mono);font-size:9px;line-height:1.8}
+.lg{display:block}
+.lok{color:var(--g1)}.lwarn{color:var(--y1)}.lerr{color:var(--r1)}.linfo{color:var(--c1)}.ldim{color:var(--tx2)}.lwow{color:var(--p1)}
+
+/* counter bar */
+.counter-bar{display:flex;gap:12px;padding:10px 16px;background:var(--bg2);border-bottom:1px solid var(--ln);font-family:var(--mono);font-size:10px;flex-shrink:0}
+.ctr{display:flex;align-items:center;gap:5px}
+.ctr-dot{width:8px;height:8px;border-radius:50%}
+
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--ln2);border-radius:2px}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<div class="bar">
+  <div class="brand">PS4 <b>//</b> CHAOS TEST <b>v4</b></div>
+  <div class="bar-center" id="ua-bar">—</div>
+  <button class="btn btn-r" onclick="runAll()">Executar TODOS</button>
+  <button class="btn btn-dim" onclick="resetAll()">Reset</button>
+</div>
+
+<div class="body">
+<aside>
+  <div class="ng">Categorias</div>
+  <button class="nb on" data-p="iframe"    onclick="nav('iframe',this)">iframe Chaos <span class="nc" id="cnt-iframe">—</span></button>
+  <button class="nb" data-p="fullscreen"   onclick="nav('fullscreen',this)">Fullscreen Absurdo <span class="nc" id="cnt-fullscreen">—</span></button>
+  <button class="nb" data-p="dialogs"      onclick="nav('dialogs',this)">Dialog Insanidade <span class="nc" id="cnt-dialogs">—</span></button>
+  <button class="nb" data-p="domwrite"     onclick="nav('domwrite',this)">document.write Caos <span class="nc" id="cnt-domwrite">—</span></button>
+  <button class="nb" data-p="memory"       onclick="nav('memory',this)">Memory Stress <span class="nc" id="cnt-memory">—</span></button>
+  <button class="nb" data-p="events"       onclick="nav('events',this)">Event Hell <span class="nc" id="cnt-events">—</span></button>
+  <button class="nb" data-p="timer"        onclick="nav('timer',this)">Timer Warfare <span class="nc" id="cnt-timer">—</span></button>
+  <button class="nb" data-p="proto"        onclick="nav('proto',this)">Prototype Poisoning <span class="nc" id="cnt-proto">—</span></button>
+  <button class="nb" data-p="css"          onclick="nav('css',this)">CSS Nuclear <span class="nc" id="cnt-css">—</span></button>
+  <button class="nb" data-p="storage"      onclick="nav('storage',this)">Storage Torture <span class="nc" id="cnt-storage">—</span></button>
+  <button class="nb" data-p="scope"        onclick="nav('scope',this)">Scope Madness <span class="nc" id="cnt-scope">—</span></button>
+  <button class="nb" data-p="combined"     onclick="nav('combined',this)">Combinados Insanos <span class="nc" id="cnt-combined">—</span></button>
+</aside>
+
+<main id="main">
+
+<!-- ─────────────────────────────────────── IFRAME CHAOS ─ -->
+<div class="panel on" id="p-iframe">
+  <div class="ph"><div class="pt">iframe Chaos</div><div class="ps">iframes aninhados, cross-origin attempts, document.write dentro de iframes, notificações de dentro de iframes e operações sem sentido sobre o contexto do iframe.</div></div>
+  <div class="test-grid" id="grid-iframe"></div>
+</div>
+
+<!-- ─────────────────────────────────────── FULLSCREEN ─ -->
+<div class="panel" id="p-fullscreen">
+  <div class="ph"><div class="pt">Fullscreen Absurdo</div><div class="ps">Requisitar saída de fullscreen sem estar em fullscreen, entrar em fullscreen de dentro de um iframe, fullscreen + alert simultâneo, e outras combinações que o PS4 não espera.</div></div>
+  <div class="test-grid" id="grid-fullscreen"></div>
+</div>
+
+<!-- ─────────────────────────────────────── DIALOGS ─ -->
+<div class="panel" id="p-dialogs">
+  <div class="ph"><div class="pt">Dialog Insanidade</div><div class="ps">Abrir alert durante eventos, chamar confirm dentro de requestAnimationFrame, prompt dentro de outros prompts via callbacks, e chains impossíveis de diálogos.</div></div>
+  <div class="test-grid" id="grid-dialogs"></div>
+</div>
+
+<!-- ─────────────────────────────────────── DOCUMENT.WRITE ─ -->
+<div class="panel" id="p-domwrite">
+  <div class="ph"><div class="pt">document.write Caos</div><div class="ps">document.write após DOMContentLoaded, dentro de iframes, com scripts embutidos, combinado com innerHTML e outros métodos proibidos.</div></div>
+  <div class="test-grid" id="grid-domwrite"></div>
+</div>
+
+<!-- ─────────────────────────────────────── MEMORY ─ -->
+<div class="panel" id="p-memory">
+  <div class="ph"><div class="pt">Memory Stress</div><div class="ps">Alocações extremas, closures em loops infinitos, WeakRef com GC forçado, ArrayBuffers gigantes, e referências circulares em massa.</div></div>
+  <div class="test-grid" id="grid-memory"></div>
+</div>
+
+<!-- ─────────────────────────────────────── EVENTS ─ -->
+<div class="panel" id="p-events">
+  <div class="ph"><div class="pt">Event Hell</div><div class="ps">Adicionar milhares de listeners, disparar eventos sintéticos em cascata, remover listener dentro do próprio listener, e eventos em elementos inexistentes.</div></div>
+  <div class="test-grid" id="grid-events"></div>
+</div>
+
+<!-- ─────────────────────────────────────── TIMERS ─ -->
+<div class="panel" id="p-timer">
+  <div class="ph"><div class="pt">Timer Warfare</div><div class="ps">setInterval dentro de setTimeout dentro de requestAnimationFrame, timers com delay zero em loop, cancelar timer de dentro dele mesmo, e timing impossível.</div></div>
+  <div class="test-grid" id="grid-timer"></div>
+</div>
+
+<!-- ─────────────────────────────────────── PROTOTYPE ─ -->
+<div class="panel" id="p-proto">
+  <div class="ph"><div class="pt">Prototype Poisoning</div><div class="ps">Modificar protótipos nativos durante execução, sobrescrever Array.prototype.push, String.prototype.toString, e ver como o motor JS do PS4 reage.</div></div>
+  <div class="test-grid" id="grid-proto"></div>
+</div>
+
+<!-- ─────────────────────────────────────── CSS NUCLEAR ─ -->
+<div class="panel" id="p-css">
+  <div class="ph"><div class="pt">CSS Nuclear</div><div class="ps">Injetar CSS impossível, animações que se auto-referenciam, seletores absurdos, keyframes com valores inválidos e media queries recursivas.</div></div>
+  <div class="test-grid" id="grid-css"></div>
+</div>
+
+<!-- ─────────────────────────────────────── STORAGE ─ -->
+<div class="panel" id="p-storage">
+  <div class="ph"><div class="pt">Storage Torture</div><div class="ps">Ler/escrever localStorage em loop frenético, exceder o limite de forma controlada, cookies com nomes inválidos, e IndexedDB com operações simultâneas.</div></div>
+  <div class="test-grid" id="grid-storage"></div>
+</div>
+
+<!-- ─────────────────────────────────────── SCOPE ─ -->
+<div class="panel" id="p-scope">
+  <div class="ph"><div class="pt">Scope Madness</div><div class="ps">Variáveis que deveriam estar fora de escopo, eval em contextos impossíveis, with statement, arguments.callee em strict mode, e closures recursivos.</div></div>
+  <div class="test-grid" id="grid-scope"></div>
+</div>
+
+<!-- ─────────────────────────────────────── COMBINADOS ─ -->
+<div class="panel" id="p-combined">
+  <div class="ph"><div class="pt">Combinados Insanos</div><div class="ps">As combinações mais absurdas — iframe + fullscreen + alert + document.write + blur, tudo ao mesmo tempo. Aqui é onde o PS4 pode realmente travar.</div></div>
+  <div class="test-grid" id="grid-combined"></div>
+</div>
+
+</main>
+
+<!-- LOG -->
+<div class="logp">
+  <div class="lh"><span class="ll">Output</span><button class="lc" onclick="logEl.innerHTML=''">limpar</button></div>
+  <div class="counter-bar">
+    <div class="ctr"><div class="ctr-dot" style="background:var(--g1)"></div><span id="ct-ok">0</span> ok</div>
+    <div class="ctr"><div class="ctr-dot" style="background:var(--r1)"></div><span id="ct-err">0</span> erro</div>
+    <div class="ctr"><div class="ctr-dot" style="background:var(--p1)"></div><span id="ct-wow">0</span> weird</div>
+    <div class="ctr"><div class="ctr-dot" style="background:var(--y1)"></div><span id="ct-warn">0</span> warn</div>
+  </div>
+  <div id="log"></div>
+</div>
+</div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// CORE
+// ═══════════════════════════════════════════════════════════
+const logEl = document.getElementById('log');
+const counters = { ok:0, err:0, wow:0, warn:0 };
+
+function lg(m, t='dim') {
+  const s = document.createElement('span');
+  s.className = 'lg l' + t;
+  const ts = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  s.textContent = '[' + ts + '] ' + m;
+  logEl.appendChild(s);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function bumpCounter(t) {
+  if (counters[t] !== undefined) {
+    counters[t]++;
+    const el = document.getElementById('ct-' + t);
+    if (el) el.textContent = counters[t];
+  }
+}
+
+function nav(id, btn) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('on'));
+  document.querySelectorAll('.nb').forEach(b => b.classList.remove('on'));
+  const p = document.getElementById('p-' + id);
+  if (p) p.classList.add('on');
+  if (btn) btn.classList.add('on');
+  else { const b = document.querySelector('[data-p="'+id+'"]'); if(b) b.classList.add('on'); }
+}
+
+function setResult(card, msg, type) {
+  const res = card.querySelector('.tc-result');
+  const tc = card.closest ? card.closest('.tc') : card.parentElement;
+  if (res) {
+    res.textContent = msg;
+    res.className = 'tc-result show ' + type;
+  }
+  if (tc) {
+    tc.classList.remove('running','passed','failed','weird');
+    tc.classList.add(type === 'ok' ? 'passed' : type === 'err' ? 'failed' : type === 'wow' ? 'weird' : 'passed');
+  }
+  bumpCounter(type === 'ok' ? 'ok' : type === 'err' ? 'err' : type === 'wow' ? 'wow' : 'warn');
+}
+
+let testSeq = 0;
+
+function makeCard(gridId, num, title, badge, desc, fn) {
+  const grid = document.getElementById('grid-' + gridId);
+  if (!grid) return;
+  const id = 'tc-' + gridId + '-' + num;
+  const card = document.createElement('div');
+  card.className = 'tc';
+  card.id = id;
+  const badgeClass = { crash:'b-crash', weird:'b-weird', race:'b-race', mem:'b-mem', dom:'b-dom' }[badge] || 'b-weird';
+  card.innerHTML = `
+    <div class="tc-head">
+      <span class="tc-num">#${String(num).padStart(2,'0')}</span>
+      <span class="tc-title">${title}</span>
+      <span class="tc-badge ${badgeClass}">${badge}</span>
+    </div>
+    <div class="tc-body">
+      <div class="tc-desc">${desc}</div>
+      <button class="tc-run" onclick="runSingle('${id}')">Executar</button>
+      <div class="tc-result"></div>
+    </div>`;
+  grid.appendChild(card);
+  card._testFn = fn;
+  return card;
+}
+
+function runSingle(id) {
+  const card = document.getElementById(id);
+  if (!card || !card._testFn) return;
+  card.classList.add('running');
+  const res = card.querySelector('.tc-result');
+  if (res) { res.textContent = 'executando...'; res.className = 'tc-result show warn'; }
+  lg('[RUN] ' + card.querySelector('.tc-title').textContent, 'info');
+  try {
+    const r = card._testFn(card);
+    if (r && r.then) {
+      r.then(msg => {
+        card.classList.remove('running');
+        setResult(card, msg || 'ok (async)', 'ok');
+        lg('[OK] ' + card.querySelector('.tc-title').textContent + ': ' + (msg||'').substring(0,60), 'ok');
+      }).catch(e => {
+        card.classList.remove('running');
+        setResult(card, 'ERRO: ' + e.message, 'err');
+        lg('[ERR] ' + e.message, 'err');
+      });
+    } else {
+      card.classList.remove('running');
+      if (r !== undefined) setResult(card, String(r), typeof r === 'string' && r.startsWith('WEIRD') ? 'wow' : typeof r === 'string' && r.startsWith('ERRO') ? 'err' : 'ok');
+    }
+  } catch(e) {
+    card.classList.remove('running');
+    setResult(card, 'EXCEPTION: ' + e.message, 'err');
+    lg('[EXCEPTION] ' + e.message, 'err');
+  }
+}
+
+function setCount(id, n) {
+  const el = document.getElementById('cnt-' + id);
+  if (el) { el.textContent = n; el.className = 'nc ran'; }
+}
+
+async function runAll() {
+  lg('══ CHAOS TEST — TODOS OS TESTES ══', 'info');
+  const all = document.querySelectorAll('.tc');
+  for (const card of all) {
+    await new Promise(res => setTimeout(res, 80));
+    runSingle(card.id);
+  }
+}
+
+function resetAll() {
+  counters.ok = counters.err = counters.wow = counters.warn = 0;
+  ['ct-ok','ct-err','ct-wow','ct-warn'].forEach(id => { const e=document.getElementById(id); if(e) e.textContent='0'; });
+  document.querySelectorAll('.tc').forEach(c => { c.classList.remove('running','passed','failed','weird'); const r=c.querySelector('.tc-result'); if(r){r.className='tc-result';r.textContent='';} });
+  logEl.innerHTML = '';
+  lg('reset completo', 'dim');
+}
+
+function safeEval(code) { try { return eval(code); } catch(e) { return 'ERRO: ' + e.message; } }
+
+// ═══════════════════════════════════════════════════════════
+// ██ IFRAME CHAOS
+// ═══════════════════════════════════════════════════════════
+let n = 1;
+
+makeCard('iframe', n++, 'iframe + notificação + exitFullscreen sem FS + document.write', 'weird',
+`iframe criado → dentro dele: Notification.requestPermission() → exitFullscreen() sem estar em FS → document.write() fecha o iframe`,
+card => new Promise(resolve => {
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:absolute;top:-9999px;width:1px;height:1px;border:none';
+  document.body.appendChild(iframe);
+  try {
+    const d = iframe.contentDocument || iframe.contentWindow.document;
+    // Write initial content
+    d.open();
+    d.write(`<html><body><script>
+      var log = [];
+      try { Notification.requestPermission().then(function(r){ log.push('notif:'+r); }); } catch(e){ log.push('notif-err:'+e.message); }
+      try { document.exitFullscreen && document.exitFullscreen().catch(function(){}); log.push('exitFS-called'); } catch(e){ log.push('exitFS-err:'+e.message); }
+      window.testResult = log;
+      document.write('<p>doc.write dentro de iframe chaos</p>');
+    <\/script></body></html>`);
+    d.close();
+    setTimeout(() => {
+      let result = 'iframe criado sem crash';
+      try {
+        const w = iframe.contentWindow;
+        if (w && w.testResult) result += ' | log: ' + w.testResult.join(', ');
+      } catch(e) { result += ' | cross-origin: ' + e.message; }
+      document.body.removeChild(iframe);
+      resolve('OK — ' + result);
+    }, 800);
+  } catch(e) {
+    try { document.body.removeChild(iframe); } catch(_){}
+    resolve('ERRO mas não crashou: ' + e.message);
+  }
+}));
+
+makeCard('iframe', n++, 'iframe dentro de iframe dentro de iframe (3 níveis) + blur em cada', 'weird',
+`Cria iframe → dentro cria outro iframe → dentro cria outro → blur forçado em cada nível simultaneamente`,
+card => new Promise(resolve => {
+  const outer = document.createElement('iframe');
+  outer.style.cssText = 'position:absolute;top:-9999px;width:200px;height:200px;border:none';
+  document.body.appendChild(outer);
+  try {
+    const d1 = outer.contentDocument;
+    d1.open();
+    d1.write(`<html><body>
+      <iframe id="mid" style="width:100px;height:100px;border:none"></iframe>
+      <script>
+        var mid = document.getElementById('mid');
+        var d2 = mid.contentDocument; d2.open();
+        d2.write('<html><body><iframe id="inner"></iframe><script>window.innerReady=true;<\/script></body></html>');
+        d2.close();
+        window.blur(); mid.contentWindow.blur();
+        window.level1done = true;
+      <\/script>
+    </body></html>`);
+    d1.close();
+    setTimeout(() => {
+      let msg = '3-level iframe: ';
+      try { msg += outer.contentWindow.level1done ? 'L1=ok ' : 'L1=no '; } catch(e) { msg += 'L1=err '; }
+      document.body.removeChild(outer);
+      resolve('OK — ' + msg);
+    }, 1000);
+  } catch(e) {
+    try { document.body.removeChild(outer); } catch(_){}
+    resolve('WEIRD — ' + e.message);
+  }
+}));
+
+makeCard('iframe', n++, 'iframe com src=javascript: + eval() + setTimeout dentro', 'crash',
+`src="javascript:..." para injetar código diretamente, depois eval() e setTimeout no contexto do iframe`,
+card => new Promise(resolve => {
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:absolute;top:-9999px;width:1px;height:1px';
+  document.body.appendChild(iframe);
+  try {
+    iframe.src = 'javascript:void(document.write("<p>js-src iframe</p>"))';
+    setTimeout(() => {
+      try {
+        const w = iframe.contentWindow;
+        if (w) {
+          w.eval && w.eval('window.__chaos = setTimeout(function(){ window.__done=true; }, 10)');
+        }
+      } catch(e) {}
+      setTimeout(() => {
+        resolve('OK — javascript:src iframe sobreviveu');
+        try { document.body.removeChild(iframe); } catch(_){}
+      }, 300);
+    }, 200);
+  } catch(e) {
+    try { document.body.removeChild(iframe); } catch(_){}
+    resolve('WEIRD: ' + e.message);
+  }
+}));
+
+makeCard('iframe', n++, 'Remover iframe ENQUANTO está carregando + acessar contentDocument depois', 'crash',
+`Cria iframe → remove imediatamente → tenta acessar contentDocument do elemento removido`,
+card => {
+  const iframe = document.createElement('iframe');
+  document.body.appendChild(iframe);
+  document.body.removeChild(iframe);
+  let result = '';
+  try {
+    const d = iframe.contentDocument;
+    result = 'contentDocument após remoção: ' + (d ? d.readyState : 'null');
+  } catch(e) {
+    result = 'ERRO esperado: ' + e.message;
+  }
+  setResult(card, 'OK — ' + result, 'ok');
+  return undefined;
+});
+
+makeCard('iframe', n++, 'postMessage de iframe para parent em loop infinito', 'race',
+`iframe envia postMessage → parent responde → iframe responde → loop até 50 iterações`,
+card => new Promise(resolve => {
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:absolute;top:-9999px;width:1px;height:1px;border:none';
+  document.body.appendChild(iframe);
+  let count = 0;
+  const handler = e => {
+    if (e.data && e.data.type === 'ping') {
+      count++;
+      if (count < 50) {
+        try { e.source && e.source.postMessage({ type: 'pong', n: count }, '*'); } catch(_){}
+      } else {
+        window.removeEventListener('message', handler);
+        document.body.removeChild(iframe);
+        resolve('OK — ' + count + ' mensagens trocadas sem crash');
+      }
+    }
+  };
+  window.addEventListener('message', handler);
+  const d = iframe.contentDocument; d.open();
+  d.write(`<html><body><script>
+    window.addEventListener('message', function(e){
+      if(e.data&&e.data.type==='pong') parent.postMessage({type:'ping',n:e.data.n},'*');
+    });
+    parent.postMessage({type:'ping',n:0},'*');
+  <\/script></body></html>`);
+  d.close();
+  setTimeout(() => {
+    window.removeEventListener('message', handler);
+    try { document.body.removeChild(iframe); } catch(_){}
+    resolve('TIMEOUT — ' + count + ' msgs em 3s');
+  }, 3000);
+}));
+
+makeCard('iframe', n++, 'iframe.contentWindow.location = "about:blank" em loop', 'crash',
+`Muda o location do iframe 20 vezes rapidamente e tenta ler o DOM a cada mudança`,
+card => new Promise(resolve => {
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:absolute;top:-9999px;width:1px;height:1px;border:none';
+  document.body.appendChild(iframe);
+  let i = 0, errors = 0;
+  const iv = setInterval(() => {
+    try {
+      iframe.contentWindow.location.href = 'about:blank';
+      const _ = iframe.contentDocument.title;
+    } catch(e) { errors++; }
+    i++;
+    if (i >= 20) {
+      clearInterval(iv);
+      try { document.body.removeChild(iframe); } catch(_){}
+      resolve('OK — 20x location change, ' + errors + ' erros');
+    }
+  }, 50);
+}));
+
+setCount('iframe', n - 1);
+
+// ═══════════════════════════════════════════════════════════
+// ██ FULLSCREEN ABSURDO
+// ═══════════════════════════════════════════════════════════
+n = 1;
+
+makeCard('fullscreen', n++, 'exitFullscreen() SEM estar em fullscreen', 'weird',
+`Chama document.exitFullscreen() mesmo sem estar em fullscreen e captura o que acontece`,
+card => {
+  const fsActive = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  const results = [];
+  results.push('fsActive=' + fsActive);
+  try {
+    const fn = document.exitFullscreen || document.webkitExitFullscreen;
+    if (fn) {
+      fn.call(document).then(() => results.push('resolve:ok')).catch(e => results.push('reject:' + e.message));
+      results.push('promise-retornou');
+    } else results.push('exitFS=undefined');
+  } catch(e) { results.push('exception:' + e.message); }
+  setResult(card, 'OK — ' + results.join(' | '), 'ok');
+  lg('[FS] exitFS sem estar em FS: ' + results.join(', '), 'ok');
+  return undefined;
+});
+
+makeCard('fullscreen', n++, 'requestFullscreen em elemento DETACHED (não está no DOM)', 'crash',
+`Cria um div, NÃO adiciona ao DOM, chama requestFullscreen() nele`,
+card => new Promise(resolve => {
+  const div = document.createElement('div');
+  // Deliberately NOT appending to DOM
+  try {
+    const fn = div.requestFullscreen || div.webkitRequestFullscreen;
+    if (fn) {
+      fn.call(div)
+        .then(() => { exitFS(); resolve('WEIRD — FS em elemento detached funcionou!'); })
+        .catch(e => resolve('OK (esperado) — rejeição: ' + e.message));
+    } else resolve('sem requestFullscreen disponível');
+  } catch(e) {
+    resolve('OK — exception: ' + e.message);
+  }
+}));
+
+makeCard('fullscreen', n++, 'Entrar em FS + mudar display:none imediatamente + sair', 'weird',
+`Entra em fullscreen → muda display:none no elemento → tenta sair do FS`,
+card => new Promise(resolve => {
+  const div = document.createElement('div');
+  div.style.cssText = 'width:100px;height:100px;background:red';
+  document.body.appendChild(div);
+  const fn = div.requestFullscreen || div.webkitRequestFullscreen;
+  if (!fn) { document.body.removeChild(div); return resolve('sem FS API'); }
+  fn.call(div).then(() => {
+    div.style.display = 'none';
+    setTimeout(() => {
+      const exitFn = document.exitFullscreen || document.webkitExitFullscreen;
+      if (exitFn) exitFn.call(document).catch(() => {});
+      document.body.removeChild(div);
+      resolve('OK — FS com display:none e saída forçada');
+    }, 200);
+  }).catch(e => { document.body.removeChild(div); resolve('rejeição: ' + e.message); });
+}));
+
+makeCard('fullscreen', n++, 'Chamar requestFullscreen() 10x rapidamente no mesmo elemento', 'race',
+`Dispara requestFullscreen 10 vezes sem esperar cada uma resolver`,
+card => new Promise(resolve => {
+  const div = document.createElement('div');
+  div.style.cssText = 'position:absolute;top:-9999px;width:100px;height:100px';
+  document.body.appendChild(div);
+  const fn = div.requestFullscreen || div.webkitRequestFullscreen;
+  if (!fn) { document.body.removeChild(div); return resolve('sem FS API'); }
+  const promises = [];
+  for (let i = 0; i < 10; i++) promises.push(fn.call(div).catch(e => 'rej:'+e.message.substring(0,20)));
+  Promise.allSettled(promises).then(results => {
+    const ok = results.filter(r => r.status === 'fulfilled').length;
+    const exitFn = document.exitFullscreen || document.webkitExitFullscreen;
+    if (exitFn) exitFn.call(document).catch(() => {});
+    document.body.removeChild(div);
+    resolve('OK — ' + ok + '/10 resolvidas, ' + (10-ok) + ' rejeitadas');
+  });
+}));
+
+makeCard('fullscreen', n++, 'FS de dentro de iframe + tentar controlar do parent', 'weird',
+`iframe entra em fullscreen → parent tenta chamar exitFullscreen → ver quem controla`,
+card => new Promise(resolve => {
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:absolute;top:-9999px;width:100px;height:100px;border:none';
+  document.body.appendChild(iframe);
+  const d = iframe.contentDocument; d.open();
+  d.write(`<html><body><div id="x" style="width:50px;height:50px;background:blue"></div><script>
+    var el = document.getElementById('x');
+    var fn = el.requestFullscreen || el.webkitRequestFullscreen;
+    if(fn){ fn.call(el).then(function(){ parent.postMessage('fs-ok','*'); }).catch(function(e){ parent.postMessage('fs-rej:'+e.message,'*'); }); }
+    else { parent.postMessage('fs-na','*'); }
+  <\/script></body></html>`);
+  d.close();
+  window.addEventListener('message', function handler(e) {
+    if (typeof e.data === 'string' && e.data.startsWith('fs')) {
+      window.removeEventListener('message', handler);
+      // now parent tries to exit FS
+      const exitFn = document.exitFullscreen || document.webkitExitFullscreen;
+      if (exitFn) exitFn.call(document).catch(() => {});
+      document.body.removeChild(iframe);
+      resolve('OK — iframe FS result: ' + e.data);
+    }
+  });
+  setTimeout(() => {
+    window.removeEventListener('message', e => {});
+    try { document.body.removeChild(iframe); } catch(_){}
+    resolve('TIMEOUT — iframe FS test');
+  }, 2000);
+}));
+
+makeCard('fullscreen', n++, 'requestFullscreen + alert() simultâneos via Promise.all', 'weird',
+`Executa requestFullscreen e agenda alert(0ms) no mesmo tick via Promise`,
+card => new Promise(resolve => {
+  const div = document.createElement('div');
+  div.style.cssText = 'position:absolute;top:-9999px;width:100px;height:100px';
+  document.body.appendChild(div);
+  const fn = div.requestFullscreen || div.webkitRequestFullscreen;
+  if (!fn) { document.body.removeChild(div); return resolve('sem FS'); }
+  let alertCalled = false;
+  const fsPromise = fn.call(div).catch(e => 'fs-rej:'+e.message);
+  const alertPromise = new Promise(r => { setTimeout(() => { alertCalled = true; r('alert-done'); }, 0); });
+  Promise.race([fsPromise, alertPromise]).then(winner => {
+    const exitFn = document.exitFullscreen || document.webkitExitFullscreen;
+    if (exitFn) exitFn.call(document).catch(() => {});
+    document.body.removeChild(div);
+    resolve('OK — winner: ' + winner + ' alertCalled: ' + alertCalled);
+  });
+}));
+
+setCount('fullscreen', n - 1);
+
+// ═══════════════════════════════════════════════════════════
+// ██ DIALOG INSANIDADE
+// ═══════════════════════════════════════════════════════════
+n = 1;
+
+makeCard('dialogs', n++, 'confirm() dentro de requestAnimationFrame', 'weird',
+`Abre confirm() de dentro do callback de requestAnimationFrame — bloqueia o compositor?`,
+card => new Promise(resolve => {
+  let rafResult = 'não chamado';
+  requestAnimationFrame(() => {
+    const t0 = performance.now();
+    const r = confirm('confirm() dentro de rAF — o frame ficou suspenso?');
+    rafResult = 'r=' + r + ' durou=' + (performance.now()-t0).toFixed(0) + 'ms';
+    resolve('OK — ' + rafResult);
+  });
+  setTimeout(() => resolve('TIMEOUT — rAF confirm demorou demais'), 10000);
+}));
+
+makeCard('dialogs', n++, 'alert() dentro de MutationObserver callback', 'weird',
+`Observa uma mutação no DOM e abre alert() dentro do callback do MutationObserver`,
+card => new Promise(resolve => {
+  const div = document.createElement('div');
+  document.body.appendChild(div);
+  const t0 = performance.now();
+  const obs = new MutationObserver(() => {
+    obs.disconnect();
+    alert('alert() dentro de MutationObserver! durou: ' + (performance.now()-t0).toFixed(0) + 'ms');
+    resolve('OK — alert em MutationObserver em ' + (performance.now()-t0).toFixed(0) + 'ms');
+    document.body.removeChild(div);
+  });
+  obs.observe(div, { childList: true });
+  div.appendChild(document.createElement('span')); // trigger mutation
+  setTimeout(() => { obs.disconnect(); try{document.body.removeChild(div);}catch(_){} resolve('TIMEOUT'); }, 5000);
+}));
+
+makeCard('dialogs', n++, 'prompt() dentro de oncopy event', 'weird',
+`Usuário copia texto → oncopy abre prompt() → resultado vai para clipboard`,
+card => {
+  const div = document.createElement('div');
+  div.textContent = 'Copie este texto (Ctrl+C) para disparar o teste';
+  div.style.cssText = 'padding:8px;border:1px dashed var(--ln2);border-radius:4px;font-family:var(--mono);font-size:10px;color:var(--c1);margin:8px 0;cursor:text';
+  div.oncopy = () => {
+    const r = prompt('prompt() dentro de oncopy!\nO que você quer copiar?', 'valor substituído');
+    lg('[Dialog] prompt em oncopy retornou: ' + r, 'ok');
+    setResult(card, 'oncopy + prompt OK — retornou: ' + r, 'ok');
+  };
+  const body = card.querySelector('.tc-body');
+  body.insertBefore(div, body.querySelector('.tc-run'));
+  setResult(card, 'Copie o texto acima para disparar o teste', 'warn');
+  bumpCounter('warn');
+  return undefined;
+});
+
+makeCard('dialogs', n++, 'alert() dentro de onerror global + throw Error', 'weird',
+`Configura window.onerror → dispara um throw → onerror abre alert()`,
+card => new Promise(resolve => {
+  const prev = window.onerror;
+  let called = false;
+  window.onerror = (msg, src, line) => {
+    if (called) return true;
+    called = true;
+    window.onerror = prev;
+    alert('alert() dentro de window.onerror!\nErro: ' + msg);
+    resolve('OK — onerror+alert funcional, erro: ' + msg.substring(0,40));
+    return true;
+  };
+  setTimeout(() => { throw new Error('PS4 chaos onerror test'); }, 0);
+  setTimeout(() => { if(!called){ window.onerror=prev; resolve('TIMEOUT — onerror não disparou'); } }, 3000);
+}));
+
+makeCard('dialogs', n++, 'confirm() 5x em sequência sem aguardar', 'race',
+`5 confirms disparados em setTimeout(0) — o PS4 enfileira ou descarta?`,
+card => new Promise(resolve => {
+  let count = 0, results = [];
+  for (let i = 0; i < 5; i++) {
+    setTimeout(() => {
+      const r = confirm('Confirm #' + (i+1) + ' de 5');
+      results.push('#' + (i+1) + '=' + r);
+      count++;
+      if (count === 5) resolve('OK — 5 confirms: ' + results.join(', '));
+    }, 0);
+  }
+  setTimeout(() => resolve('TIMEOUT/parcial — ' + count + '/5 confirmados: ' + results.join(',')), 30000);
+}));
+
+makeCard('dialogs', n++, 'prompt() dentro de blur handler', 'weird',
+`Campo perde foco (blur) → prompt() abre → o campo volta a ter foco?`,
+card => new Promise(resolve => {
+  const inp = document.createElement('input');
+  inp.placeholder = 'Clique aqui depois em outro lugar';
+  inp.style.cssText = 'width:100%;background:var(--bg3);border:1px solid var(--ln2);border-radius:4px;padding:6px;color:var(--tx);font-family:var(--mono);font-size:10px;outline:none;margin:6px 0';
+  let triggered = false;
+  inp.onblur = () => {
+    if (triggered) return;
+    triggered = true;
+    const focused = document.activeElement;
+    const r = prompt('prompt() aberto pelo onblur!\nActiveElement antes: ' + (focused ? focused.tagName : 'null'));
+    const focusedAfter = document.activeElement;
+    resolve('OK — blur+prompt: r="' + r + '" focus após: ' + (focusedAfter ? focusedAfter.tagName : 'null'));
+    inp.remove();
+  };
+  const body = card.querySelector('.tc-body');
+  body.insertBefore(inp, body.querySelector('.tc-run'));
+  inp.focus();
+  setResult(card, 'Campo focado — clique fora para disparar blur+prompt', 'warn');
+  bumpCounter('warn');
+  return undefined;
+}));
+
+setCount('dialogs', n - 1);
+
+// ═══════════════════════════════════════════════════════════
+// ██ DOCUMENT.WRITE CAOS
+// ═══════════════════════════════════════════════════════════
+n = 1;
+
+makeCard('domwrite', n++, 'document.write() após DOMContentLoaded (reescreve a página)', 'crash',
+`Chama document.write() após o carregamento — isso apaga toda a página no Chrome. O PS4 faz o mesmo?`,
+card => {
+  const results = [];
+  const prevBody = document.body.innerHTML.substring(0, 20);
+  try {
+    // Don't actually rewrite the whole page — test on iframe instead
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:absolute;top:-9999px;width:200px;height:100px;border:none';
+    document.body.appendChild(iframe);
+    const d = iframe.contentDocument; d.open(); d.write('<html><body><p id="t">original</p></body></html>'); d.close();
+    const orig = iframe.contentDocument.getElementById('t');
+    results.push('original: ' + (orig ? orig.textContent : 'null'));
+    // Now call write AFTER close (simulates post-DOMContentLoaded)
+    iframe.contentDocument.write('<p>REESCRITO após close()</p>');
+    results.push('após write: body=' + iframe.contentDocument.body.textContent.substring(0,30));
+    document.body.removeChild(iframe);
+  } catch(e) {
+    results.push('ERRO: ' + e.message);
+  }
+  setResult(card, 'OK — ' + results.join(' | '), 'ok');
+  return undefined;
+});
+
+makeCard('domwrite', n++, 'document.write() com <script> embutido + eval()', 'crash',
+`Escreve uma tag script via document.write que por sua vez executa eval() com mais código`,
+card => new Promise(resolve => {
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:absolute;top:-9999px;width:200px;height:100px;border:none';
+  document.body.appendChild(iframe);
+  try {
+    const d = iframe.contentDocument; d.open();
+    d.write(`<html><body>
+      <script>
+        window.result1 = 'script-exec-1';
+        document.write('<p>write-from-script</p>');
+        eval('window.result2 = "eval-inside-dw-script"');
+        document.write('<scr' + 'ipt>window.result3="nested-script-via-dw"<\/scr' + 'ipt>');
+      <\/script>
+    </body></html>`);
+    d.close();
+    setTimeout(() => {
+      let r = [];
+      try {
+        r.push('r1=' + iframe.contentWindow.result1);
+        r.push('r2=' + iframe.contentWindow.result2);
+        r.push('r3=' + iframe.contentWindow.result3);
+      } catch(e) { r.push('cross-origin: ' + e.message); }
+      document.body.removeChild(iframe);
+      resolve('OK — ' + r.join(' | '));
+    }, 500);
+  } catch(e) {
+    try { document.body.removeChild(iframe); } catch(_){}
+    resolve('ERRO: ' + e.message);
+  }
+}));
+
+makeCard('domwrite', n++, 'document.write() dentro de setTimeout(0) em iframe', 'weird',
+`Cria iframe → espera DOMContentLoaded do iframe → chama document.write via setTimeout(0)`,
+card => new Promise(resolve => {
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:absolute;top:-9999px;width:200px;height:100px;border:none';
+  document.body.appendChild(iframe);
+  const d = iframe.contentDocument; d.open();
+  d.write(`<html><body><p id="p1">inicial</p><script>
+    window.addEventListener('DOMContentLoaded', function(){
+      setTimeout(function(){
+        try {
+          document.write('<p>escrito via setTimeout(0) após DOMContentLoaded</p>');
+          parent.postMessage('dw-ok:'+document.body.textContent.substring(0,30),'*');
+        } catch(e) { parent.postMessage('dw-err:'+e.message,'*'); }
+      }, 0);
+    });
+  <\/script></body></html>`);
+  d.close();
+  const handler = e => {
+    if (typeof e.data === 'string' && e.data.startsWith('dw-')) {
+      window.removeEventListener('message', handler);
+      document.body.removeChild(iframe);
+      resolve('OK — setTimeout dw result: ' + e.data);
+    }
+  };
+  window.addEventListener('message', handler);
+  setTimeout(() => { window.removeEventListener('message', handler); try{document.body.removeChild(iframe);}catch(_){} resolve('TIMEOUT'); }, 3000);
+}));
+
+makeCard('domwrite', n++, 'innerHTML + document.write alternados 50x', 'crash',
+`Alterna entre innerHTML e document.write em um iframe 50 vezes medindo o tempo`,
+card => new Promise(resolve => {
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:absolute;top:-9999px;width:200px;height:100px;border:none';
+  document.body.appendChild(iframe);
+  const d = iframe.contentDocument; d.open(); d.write('<html><body><div id="c"></div></body></html>'); d.close();
+  const t0 = performance.now();
+  let errors = 0;
+  for (let i = 0; i < 50; i++) {
+    try {
+      if (i % 2 === 0) {
+        const c = iframe.contentDocument.getElementById('c');
+        if (c) c.innerHTML = '<span>innerHTML #' + i + '</span>';
+      } else {
+        iframe.contentDocument.write('<p>dw #' + i + '</p>');
+      }
+    } catch(e) { errors++; }
+  }
+  const ms = (performance.now() - t0).toFixed(2);
+  document.body.removeChild(iframe);
+  resolve('OK — 50 alternâncias em ' + ms + 'ms, ' + errors + ' erros');
+}));
+
+makeCard('domwrite', n++, 'document.write com conteúdo malformado (tags não fechadas)', 'weird',
+`Escreve HTML malformado propositalmente — como o PS4 parser reage?`,
+card => {
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:absolute;top:-9999px;width:200px;height:100px;border:none';
+  document.body.appendChild(iframe);
+  const malformed = '<div><p><span><b>NUNCA FECHADO <div style="color:red"><table><tr><td>célula <strong>';
+  const d = iframe.contentDocument; d.open();
+  try {
+    d.write('<html><body>' + malformed + '</body></html>');
+    d.close();
+    const bodyText = iframe.contentDocument.body ? iframe.contentDocument.body.innerHTML.length : 0;
+    document.body.removeChild(iframe);
+    setResult(card, 'OK — HTML malformado: body.innerHTML.length=' + bodyText, 'ok');
+  } catch(e) {
+    try { document.body.removeChild(iframe); } catch(_){}
+    setResult(card, 'ERRO: ' + e.message, 'err');
+  }
+  return undefined;
+});
+
+setCount('domwrite', n - 1);
+
+// ═══════════════════════════════════════════════════════════
+// ██ MEMORY STRESS
+// ═══════════════════════════════════════════════════════════
+n = 1;
+
+makeCard('memory', n++, '1 milhão de objetos JS alocados e descartados', 'mem',
+`Aloca 1.000.000 de pequenos objetos em array → descarta → mede tempo`,
+card => {
+  const t0 = performance.now();
+  let arr = [];
+  for (let i = 0; i < 1000000; i++) arr.push({ id: i, v: Math.random() });
+  const allocated = (performance.now() - t0).toFixed(2);
+  arr = null;
+  const freed = (performance.now() - t0).toFixed(2);
+  setResult(card, 'OK — 1M objetos: alloc=' + allocated + 'ms total=' + freed + 'ms', 'ok');
+  return undefined;
+});
+
+makeCard('memory', n++, 'Closures aninhados 1000 níveis de profundidade', 'mem',
+`Cria função que retorna função que retorna função... 1000 vezes e executa a cadeia`,
+card => {
+  const t0 = performance.now();
+  let fn = () => 'base';
+  for (let i = 0; i < 1000; i++) {
+    const captured = fn;
+    fn = () => captured() + i;
+  }
+  let result;
+  try { result = String(fn()).length + ' chars'; } catch(e) { result = 'stack overflow: ' + e.message; }
+  const ms = (performance.now() - t0).toFixed(2);
+  setResult(card, (result.includes('overflow') ? 'WEIRD — ' : 'OK — ') + 'closure-chain 1000: ' + result + ' em ' + ms + 'ms', result.includes('overflow') ? 'wow' : 'ok');
+  return undefined;
+});
+
+makeCard('memory', n++, 'ArrayBuffer de 512MB (ou máximo possível)', 'mem',
+`Tenta alocar ArrayBuffers crescentes até falhar — descobre o limite do PS4`,
+card => {
+  const sizes = [1, 16, 64, 128, 256, 512];
+  let last = 0, lastFail = 0;
+  for (const mb of sizes) {
+    try {
+      const buf = new ArrayBuffer(mb * 1024 * 1024);
+      last = mb;
+    } catch(e) { lastFail = mb; break; }
+  }
+  setResult(card, 'OK — max ArrayBuffer: ' + last + 'MB | falhou em: ' + (lastFail || '>512') + 'MB', 'ok');
+  return undefined;
+});
+
+makeCard('memory', n++, 'String de 100MB concatenada via + em loop', 'crash',
+`Concatena string em loop até 100MB ou crash — mede velocidade do PS4`,
+card => {
+  const t0 = performance.now();
+  let s = 'x';
+  let size = 1;
+  try {
+    while (size < 100 * 1024 * 1024) {
+      s = s + s;
+      size *= 2;
+      if (performance.now() - t0 > 3000) break; // 3s timeout
+    }
+  } catch(e) {
+    setResult(card, 'LIMITE: ' + (size / 1024 / 1024).toFixed(1) + 'MB — ' + e.message, 'warn');
+    bumpCounter('warn');
+    return undefined;
+  }
+  const ms = (performance.now() - t0).toFixed(0);
+  setResult(card, 'OK — ' + (size/1024/1024).toFixed(0) + 'MB em ' + ms + 'ms', 'ok');
+  return undefined;
+});
+
+makeCard('memory', n++, 'WeakRef + FinalizationRegistry + forçar GC', 'weird',
+`Cria objeto → WeakRef para ele → FinalizationRegistry → tenta forçar GC → verifica deref()`,
+card => {
+  if (!window.WeakRef || !window.FinalizationRegistry) {
+    setResult(card, 'WeakRef/FinalizationRegistry não disponíveis no PS4', 'warn');
+    bumpCounter('warn');
+    return undefined;
+  }
+  let finalized = false;
+  const registry = new FinalizationRegistry(() => { finalized = true; });
+  let obj = { big: new Array(10000).fill('data') };
+  const ref = new WeakRef(obj);
+  registry.register(obj, 'collected');
+  obj = null; // remove strong reference
+  // Try to trigger GC via heavy allocation
+  try { new Array(5000000).fill(0); } catch(e) {}
+  const alive = ref.deref();
+  setResult(card, 'OK — WeakRef: deref=' + (alive ? 'ainda vivo' : 'coletado') + ' finalized=' + finalized, alive ? 'ok' : 'wow');
+  return undefined;
+});
+
+makeCard('memory', n++, 'Referência circular profunda + JSON.stringify', 'weird',
+`Cria estrutura com referências circulares 100 níveis → tenta JSON.stringify`,
+card => {
+  const root = { id: 0, children: [] };
+  let current = root;
+  for (let i = 1; i < 100; i++) {
+    const next = { id: i, parent: current, children: [] };
+    current.children.push(next);
+    current = next;
+  }
+  current.circular = root; // create the circular reference
+  let result;
+  try {
+    JSON.stringify(root);
+    result = 'WEIRD — circular reference não detectada!';
+  } catch(e) {
+    result = 'OK — circular detectada: ' + e.message.substring(0,40);
+  }
+  setResult(card, result, result.startsWith('WEIRD') ? 'wow' : 'ok');
+  return undefined;
+});
+
+setCount('memory', n - 1);
+
+// ═══════════════════════════════════════════════════════════
+// ██ EVENT HELL
+// ═══════════════════════════════════════════════════════════
+n = 1;
+
+makeCard('events', n++, '10.000 event listeners no mesmo elemento', 'crash',
+`Adiciona 10.000 listeners de click no mesmo elemento — mede impacto no disparo`,
+card => {
+  const div = document.createElement('div');
+  document.body.appendChild(div);
+  const t0 = performance.now();
+  let count = 0;
+  for (let i = 0; i < 10000; i++) div.addEventListener('click', () => count++);
+  const addTime = (performance.now() - t0).toFixed(2);
+  const t1 = performance.now();
+  div.click();
+  const fireTime = (performance.now() - t1).toFixed(2);
+  document.body.removeChild(div);
+  setResult(card, 'OK — 10k listeners: add=' + addTime + 'ms fire=' + fireTime + 'ms count=' + count, 'ok');
+  return undefined;
+});
+
+makeCard('events', n++, 'Listener que remove a si mesmo durante disparo', 'weird',
+`Listener de click remove a si mesmo usando removeEventListener com a mesma referência`,
+card => {
+  const div = document.createElement('div');
+  document.body.appendChild(div);
+  let callCount = 0;
+  function selfRemovingHandler() {
+    callCount++;
+    div.removeEventListener('click', selfRemovingHandler);
+    div.click(); // click again after removal — should NOT call handler
+    callCount; // just access
+  }
+  div.addEventListener('click', selfRemovingHandler);
+  div.click(); // first click → handler runs → removes itself → clicks again → handler does NOT run
+  document.body.removeChild(div);
+  setResult(card, 'OK — handler chamado ' + callCount + 'x (esperado: 1)', callCount === 1 ? 'ok' : 'wow');
+  return undefined;
+});
+
+makeCard('events', n++, 'dispatchEvent sintético em cascata 1000 níveis', 'crash',
+`Evento sintético dispara outro evento que dispara outro... 1000 vezes`,
+card => {
+  const div = document.createElement('div');
+  document.body.appendChild(div);
+  let depth = 0;
+  const MAX = 1000;
+  div.addEventListener('customevt', () => {
+    depth++;
+    if (depth < MAX) div.dispatchEvent(new Event('customevt'));
+  });
+  const t0 = performance.now();
+  try {
+    div.dispatchEvent(new Event('customevt'));
+    const ms = (performance.now() - t0).toFixed(2);
+    document.body.removeChild(div);
+    setResult(card, 'OK — ' + depth + '/' + MAX + ' níveis em ' + ms + 'ms', depth >= MAX ? 'ok' : 'wow');
+  } catch(e) {
+    document.body.removeChild(div);
+    setResult(card, 'STACK: ' + depth + ' níveis — ' + e.message, 'err');
+    bumpCounter('err');
+  }
+  return undefined;
+});
+
+makeCard('events', n++, 'addEventListener com useCapture + stopPropagation em ambas fases', 'weird',
+`Adiciona listener na fase de captura E borbulhamento, chama stopPropagation em ambos`,
+card => {
+  const outer = document.createElement('div');
+  const inner = document.createElement('div');
+  outer.appendChild(inner);
+  document.body.appendChild(outer);
+  const log = [];
+  outer.addEventListener('click', () => log.push('outer-bubble'), false);
+  outer.addEventListener('click', e => { log.push('outer-capture'); e.stopPropagation(); }, true);
+  inner.addEventListener('click', e => { log.push('inner-capture'); e.stopPropagation(); }, true);
+  inner.addEventListener('click', () => log.push('inner-bubble'), false);
+  inner.click();
+  document.body.removeChild(outer);
+  setResult(card, 'OK — ordem: [' + log.join(', ') + ']', 'ok');
+  return undefined;
+});
+
+makeCard('events', n++, 'CustomEvent com detalhe não serializável + postMessage', 'weird',
+`Cria CustomEvent com circular ref no detail → postMessage com o mesmo objeto`,
+card => {
+  const circ = { a: 1 }; circ.self = circ;
+  let evtResult = '', msgResult = '';
+  try {
+    const evt = new CustomEvent('test', { detail: circ });
+    evtResult = 'CustomEvent criado, detail.a=' + evt.detail.a;
+  } catch(e) { evtResult = 'CustomEvent erro: ' + e.message; }
+  try {
+    window.postMessage(circ, '*');
+    msgResult = 'postMessage com circular — enviou sem erro síncrono';
+  } catch(e) { msgResult = 'postMessage erro: ' + e.message; }
+  setResult(card, 'CustomEvent: ' + evtResult + '\npostMsg: ' + msgResult, 'ok');
+  return undefined;
+});
+
+setCount('events', n - 1);
+
+// ═══════════════════════════════════════════════════════════
+// ██ TIMER WARFARE
+// ═══════════════════════════════════════════════════════════
+n = 1;
+
+makeCard('timer', n++, 'setTimeout(fn, 0) 10.000x — quantos executam por segundo no PS4', 'race',
+`Agenda 10.000 timeouts de 0ms e mede quantos completaram em 1 segundo`,
+card => new Promise(resolve => {
+  let done = 0;
+  const t0 = performance.now();
+  for (let i = 0; i < 10000; i++) setTimeout(() => done++, 0);
+  setTimeout(() => {
+    const ms = (performance.now() - t0).toFixed(0);
+    resolve('OK — ' + done + '/10000 completados em ' + ms + 'ms');
+  }, 2000);
+}));
+
+makeCard('timer', n++, 'setInterval dentro de requestAnimationFrame dentro de setTimeout', 'weird',
+`Triple-nested: setTimeout → rAF → setInterval → mede o timing resultante`,
+card => new Promise(resolve => {
+  const results = [];
+  const t0 = performance.now();
+  setTimeout(() => {
+    results.push('setTimeout:' + (performance.now()-t0).toFixed(1));
+    requestAnimationFrame(() => {
+      results.push('rAF:' + (performance.now()-t0).toFixed(1));
+      let rafCount = 0;
+      const iv = setInterval(() => {
+        rafCount++;
+        results.push('interval#'+rafCount+':' + (performance.now()-t0).toFixed(1));
+        if (rafCount >= 3) {
+          clearInterval(iv);
+          resolve('OK — timing: ' + results.join(' | '));
+        }
+      }, 0);
+    });
+  }, 0);
+}));
+
+makeCard('timer', n++, 'clearTimeout de dentro do próprio setTimeout', 'weird',
+`setTimeout que armazena seu próprio ID e cancela a si mesmo antes de executar`,
+card => new Promise(resolve => {
+  let id;
+  let ran = false;
+  id = setTimeout(() => {
+    ran = true;
+    clearTimeout(id); // cancel itself AFTER running (no-op but interesting)
+    resolve('OK — self-clear após execução: ran=' + ran);
+  }, 10);
+  // Also try to cancel before it runs
+  setTimeout(() => {
+    // by now the first timer should have run
+    resolve('OK — id=' + id + ' ran=' + ran);
+  }, 50);
+}));
+
+makeCard('timer', n++, 'Promise microtask vs setTimeout macrotask — ordem no PS4', 'weird',
+`Mede se Promise.resolve executa ANTES do setTimeout(0) como especificado`,
+card => new Promise(resolve => {
+  const order = [];
+  Promise.resolve().then(() => order.push('microtask-1'));
+  setTimeout(() => order.push('macrotask-1'), 0);
+  Promise.resolve().then(() => order.push('microtask-2'));
+  setTimeout(() => order.push('macrotask-2'), 0);
+  Promise.resolve().then(() => {
+    order.push('microtask-3');
+    setTimeout(() => {
+      const expected = 'microtask-1,microtask-2,microtask-3,macrotask-1,macrotask-2';
+      const got = order.join(',');
+      resolve((got === expected ? 'OK' : 'WEIRD') + ' — ordem: [' + got + ']');
+    }, 50);
+  });
+}));
+
+makeCard('timer', n++, 'queueMicrotask vs Promise.then — qual vem primeiro', 'weird',
+`Compara a ordem entre queueMicrotask() e Promise.resolve().then()`,
+card => new Promise(resolve => {
+  if (!window.queueMicrotask) return resolve('queueMicrotask não disponível no PS4');
+  const order = [];
+  Promise.resolve().then(() => order.push('promise'));
+  queueMicrotask(() => order.push('queueMicrotask'));
+  setTimeout(() => resolve('OK — ordem: [' + order.join(',') + '] esperado: [promise,queueMicrotask] ou [queueMicrotask,promise]'), 10);
+}));
+
+setCount('timer', n - 1);
+
+// ═══════════════════════════════════════════════════════════
+// ██ PROTOTYPE POISONING
+// ═══════════════════════════════════════════════════════════
+n = 1;
+
+makeCard('proto', n++, 'Sobrescrever Array.prototype.push temporariamente', 'weird',
+`Substitui Array.prototype.push por versão que conta chamadas, executa código, restaura`,
+card => {
+  const origPush = Array.prototype.push;
+  let pushCount = 0;
+  Array.prototype.push = function(...args) { pushCount++; return origPush.apply(this, args); };
+  const arr = []; arr.push(1); arr.push(2); [3,4].forEach(x => arr.push(x));
+  Array.prototype.push = origPush; // restore
+  setResult(card, 'OK — push interceptado ' + pushCount + 'x, arr.length=' + arr.length, 'ok');
+  return undefined;
+});
+
+makeCard('proto', n++, 'Sobrescrever String.prototype.toString + usar em template literal', 'weird',
+`Muda toString de String → usa em template literal → restaura → vê o resultado`,
+card => {
+  const orig = String.prototype.toString;
+  String.prototype.toString = function() { return '[POISONED:' + orig.call(this) + ']'; };
+  const s = 'hello';
+  const result1 = s.toString();
+  const result2 = `${s}`;  // template literal usa Symbol.toPrimitive, não toString
+  const result3 = '' + s;  // concatenação
+  String.prototype.toString = orig;
+  setResult(card, 'toString(): ' + result1 + '\n`${s}`: ' + result2 + '\n""+s: ' + result3, 'ok');
+  return undefined;
+});
+
+makeCard('proto', n++, 'Adicionar getter no Object.prototype que dispara em todo acesso de propriedade', 'crash',
+`Define Object.prototype.__chaos via defineProperty — afeta TODOS os objetos`,
+card => {
+  let accessCount = 0;
+  try {
+    Object.defineProperty(Object.prototype, '__chaos_test__', {
+      get() { accessCount++; return undefined; },
+      configurable: true,
+    });
+    const obj = { a: 1, b: 2 };
+    const _ = obj.__chaos_test__; // trigger
+    const arr = [1, 2, 3];
+    const __ = arr.__chaos_test__; // trigger on array too
+    delete Object.prototype.__chaos_test__; // cleanup
+    setResult(card, 'OK — getter global: ' + accessCount + ' acessos em Object.prototype', 'ok');
+  } catch(e) {
+    try { delete Object.prototype.__chaos_test__; } catch(_) {}
+    setResult(card, 'ERRO: ' + e.message, 'err');
+    bumpCounter('err');
+  }
+  return undefined;
+});
+
+makeCard('proto', n++, 'Symbol.toPrimitive sobrescrito em classe + coerção', 'weird',
+`Classe com Symbol.toPrimitive customizado usado em operações numéricas e string`,
+card => {
+  class Chaos {
+    constructor(v) { this.v = v; }
+    [Symbol.toPrimitive](hint) {
+      if (hint === 'number') return -999;
+      if (hint === 'string') return 'CHAOS_STRING';
+      return true; // default
+    }
+  }
+  const c = new Chaos(42);
+  const num = +c;
+  const str = `${c}`;
+  const bool = c + '';
+  const compare = c > 0;
+  setResult(card, 'number: ' + num + '\nstring: ' + str + '\nbool: ' + bool + '\nc>0: ' + compare, 'ok');
+  return undefined;
+});
+
+makeCard('proto', n++, 'Prototype chain de 100 níveis + instanceof check', 'weird',
+`Cria cadeia de protótipos 100 níveis de profundidade e verifica instanceof`,
+card => {
+  let obj = {};
+  const root = obj;
+  for (let i = 0; i < 100; i++) {
+    const next = Object.create(obj);
+    next.__depth = i;
+    obj = next;
+  }
+  const t0 = performance.now();
+  let depth = 0;
+  let current = obj;
+  while (current !== null) { depth++; current = Object.getPrototypeOf(current); }
+  const ms = (performance.now() - t0).toFixed(3);
+  setResult(card, 'OK — chain de ' + depth + ' níveis, traversal=' + ms + 'ms', 'ok');
+  return undefined;
+});
+
+setCount('proto', n - 1);
+
+// ═══════════════════════════════════════════════════════════
+// ██ CSS NUCLEAR
+// ═══════════════════════════════════════════════════════════
+n = 1;
+
+makeCard('css', n++, 'Injetar 50.000 regras CSS via CSSStyleSheet', 'crash',
+`Cria uma stylesheet e adiciona 50.000 regras via insertRule — mede o impacto no PS4`,
+card => {
+  const style = document.createElement('style');
+  document.head.appendChild(style);
+  const sheet = style.sheet;
+  const t0 = performance.now();
+  let inserted = 0;
+  try {
+    for (let i = 0; i < 50000; i++) {
+      sheet.insertRule(`.ps4-chaos-${i}{color:hsl(${i%360},50%,50%);margin:${i%20}px}`, 0);
+      inserted++;
+    }
+  } catch(e) { /* hit rule limit */ }
+  const ms = (performance.now() - t0).toFixed(0);
+  document.head.removeChild(style);
+  setResult(card, 'OK — ' + inserted + ' regras em ' + ms + 'ms', 'ok');
+  return undefined;
+});
+
+makeCard('css', n++, 'animation com keyframe que referencia outro keyframe (chaining)', 'weird',
+`@keyframes com calc() e variáveis CSS que se auto-referenciam via animação`,
+card => {
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes chaos-anim {
+      0%   { transform: rotate(0deg) scale(var(--s, 1)); opacity: var(--o, 1); }
+      50%  { transform: rotate(var(--r, 180deg)) scale(calc(var(--s, 1) * 2)); }
+      100% { transform: rotate(360deg) scale(var(--s, 1)); opacity: var(--o, 1); }
+    }
+    .chaos-el {
+      --s: 1; --o: 0.5; --r: 180deg;
+      animation: chaos-anim 0.1s linear infinite;
+      width: 10px; height: 10px; position: absolute; top: -9999px;
+    }`;
+  document.head.appendChild(style);
+  const div = document.createElement('div');
+  div.className = 'chaos-el';
+  document.body.appendChild(div);
+  const cs = window.getComputedStyle(div);
+  const animName = cs.animationName;
+  document.body.removeChild(div);
+  document.head.removeChild(style);
+  setResult(card, 'OK — animationName: ' + animName, 'ok');
+  return undefined;
+});
+
+makeCard('css', n++, 'content: counter() recursivo em :before e :after', 'weird',
+`CSS counter que se auto-incrementa em pseudo-elementos de forma recursiva`,
+card => {
+  const style = document.createElement('style');
+  style.textContent = `
+    .cnt-test { counter-reset: chaos 0; }
+    .cnt-test::before { counter-increment: chaos; content: counter(chaos) " "; }
+    .cnt-test::after  { counter-increment: chaos 10; content: counter(chaos) " "; }
+    .cnt-test .cnt-test::before { counter-increment: chaos 100; content: counter(chaos); }
+  `;
+  document.head.appendChild(style);
+  const outer = document.createElement('div'); outer.className = 'cnt-test';
+  const inner = document.createElement('div'); inner.className = 'cnt-test';
+  outer.appendChild(inner);
+  document.body.appendChild(outer);
+  const beforeContent = window.getComputedStyle(outer, '::before').content;
+  const afterContent  = window.getComputedStyle(outer, '::after').content;
+  document.body.removeChild(outer);
+  document.head.removeChild(style);
+  setResult(card, 'OK — ::before=' + beforeContent + ' ::after=' + afterContent, 'ok');
+  return undefined;
+});
+
+makeCard('css', n++, 'Media query impossível: @media (width: -1px)', 'weird',
+`Define regra CSS dentro de media query com valor inválido — o PS4 ignora ou aceita?`,
+card => {
+  const style = document.createElement('style');
+  style.textContent = `
+    @media (width: -1px) { .impossible { color: red; } }
+    @media (min-width: -999px) { .negative-min { color: blue; } }
+    @media (max-width: 0px) { .zero-max { color: green; } }
+  `;
+  document.head.appendChild(style);
+  const div = document.createElement('div');
+  div.className = 'impossible negative-min zero-max';
+  document.body.appendChild(div);
+  const cs = window.getComputedStyle(div);
+  const color = cs.color;
+  document.body.removeChild(div);
+  document.head.removeChild(style);
+  setResult(card, 'OK — media query inválida: color=' + color + ' (inherit = regra ignorada)', color.includes('0, 0') ? 'ok' : 'wow');
+  return undefined;
+});
+
+makeCard('css', n++, 'transform: matrix3d com NaN e Infinity', 'weird',
+`Aplica matrix3d com valores NaN e Infinity e mede o que o computedStyle retorna`,
+card => {
+  const div = document.createElement('div');
+  div.style.cssText = 'position:absolute;top:-9999px;width:10px;height:10px';
+  document.body.appendChild(div);
+  const transforms = [
+    'matrix3d(NaN,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1)',
+    'matrix3d(Infinity,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1)',
+    'matrix3d(1,0,0,0, 0,1,0,0, 0,0,1,0, NaN,Infinity,0,1)',
+  ];
+  const results = transforms.map(t => {
+    div.style.transform = t;
+    return window.getComputedStyle(div).transform.substring(0, 20);
+  });
+  document.body.removeChild(div);
+  setResult(card, 'OK — NaN/Inf matrix:\n' + results.join('\n'), 'ok');
+  return undefined;
+});
+
+setCount('css', n - 1);
+
+// ═══════════════════════════════════════════════════════════
+// ██ STORAGE TORTURE
+// ═══════════════════════════════════════════════════════════
+n = 1;
+
+makeCard('storage', n++, 'localStorage: escrever e ler 10.000x em loop', 'mem',
+`Alterna write/read do localStorage 10.000 vezes e mede a performance`,
+card => {
+  if (!window.localStorage) { setResult(card, 'localStorage não disponível', 'warn'); bumpCounter('warn'); return undefined; }
+  const t0 = performance.now();
+  let errors = 0;
+  for (let i = 0; i < 10000; i++) {
+    try {
+      localStorage.setItem('_ps4_torture_' + (i % 10), 'v' + i + '_'.repeat(100));
+      const v = localStorage.getItem('_ps4_torture_' + (i % 10));
+      if (!v) errors++;
+    } catch(e) { errors++; break; }
+  }
+  for (let i = 0; i < 10; i++) localStorage.removeItem('_ps4_torture_' + i);
+  const ms = (performance.now() - t0).toFixed(0);
+  setResult(card, 'OK — 10k r/w em ' + ms + 'ms, ' + errors + ' erros', 'ok');
+  return undefined;
+});
+
+makeCard('storage', n++, 'Cookie com nome contendo caracteres especiais', 'weird',
+`Tenta criar cookies com nomes e valores contendo chars especiais — o PS4 aceita?`,
+card => {
+  const tests = [
+    ['normal_cookie', 'valor normal'],
+    ['cookie with space', 'test'],  // inválido por spec
+    ['cookie=equals', 'test'],      // inválido
+    ['cookie;semi', 'test'],        // inválido
+    ['valid_name', 'valor com espaços e = e ; dentro'],
+    ['emoji_', 'valor_emoji'],
+  ];
+  const results = [];
+  tests.forEach(([name, val]) => {
+    try {
+      document.cookie = name + '=' + encodeURIComponent(val) + '; path=/; max-age=10';
+      const found = document.cookie.includes(name.split(' ')[0]);
+      results.push(name.substring(0,12) + ':' + found);
+    } catch(e) { results.push(name.substring(0,12) + ':ERR'); }
+  });
+  // cleanup
+  tests.forEach(([name]) => { document.cookie = name + '=; expires=Thu,01 Jan 1970 00:00:00 GMT; path=/'; });
+  setResult(card, 'OK — cookies: ' + results.join(' | '), 'ok');
+  return undefined;
+});
+
+makeCard('storage', n++, 'sessionStorage: preencher até o limite exato', 'mem',
+`Descobre o limite exato do sessionStorage por busca binária`,
+card => {
+  if (!window.sessionStorage) { setResult(card, 'sessionStorage não disponível', 'warn'); bumpCounter('warn'); return undefined; }
+  sessionStorage.clear();
+  let lo = 0, hi = 10 * 1024 * 1024, lim = 0;
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    try { sessionStorage.setItem('__limit__', 'x'.repeat(mid)); lim = mid; lo = mid + 1; }
+    catch(e) { hi = mid - 1; }
+  }
+  sessionStorage.removeItem('__limit__');
+  setResult(card, 'OK — sessionStorage limit: ~' + (lim/1024).toFixed(0) + 'KB (' + lim + ' bytes)', 'ok');
+  return undefined;
+});
+
+makeCard('storage', n++, 'IndexedDB: abrir, escrever, ler e deletar em sequência rápida', 'weird',
+`Opera o IndexedDB em sequência rápida sem esperar cada operação completar`,
+card => new Promise(resolve => {
+  if (!window.indexedDB) return resolve('IndexedDB não disponível');
+  const req = indexedDB.open('ps4chaos', 1);
+  req.onupgradeneeded = e => {
+    e.target.result.createObjectStore('data', { keyPath: 'id' });
+  };
+  req.onsuccess = e => {
+    const db = e.target.result;
+    const tx = db.transaction('data', 'readwrite');
+    const store = tx.objectStore('data');
+    for (let i = 0; i < 100; i++) store.put({ id: i, val: 'chaos' + i });
+    tx.oncomplete = () => {
+      const tx2 = db.transaction('data', 'readonly');
+      const req2 = tx2.objectStore('data').count();
+      req2.onsuccess = () => {
+        db.close();
+        indexedDB.deleteDatabase('ps4chaos');
+        resolve('OK — IDB: 100 escritas, count=' + req2.result);
+      };
+    };
+    tx.onerror = () => resolve('IDB tx error: ' + tx.error);
+  };
+  req.onerror = () => resolve('IDB open error');
+  setTimeout(() => resolve('IDB TIMEOUT'), 5000);
+}));
+
+setCount('storage', n - 1);
+
+// ═══════════════════════════════════════════════════════════
+// ██ SCOPE MADNESS
+// ═══════════════════════════════════════════════════════════
+n = 1;
+
+makeCard('scope', n++, 'arguments.callee em função normal (deprecado)', 'weird',
+`Usa arguments.callee para recursão — deprecado e proibido em strict mode`,
+card => {
+  let result;
+  try {
+    /* não usar strict mode aqui propositalmente */
+    result = (function factorial(n) {
+      if (n <= 1) return 1;
+      return n * arguments.callee(n - 1);
+    })(10);
+    setResult(card, 'OK — arguments.callee funcionou: 10!=' + result, 'ok');
+  } catch(e) {
+    setResult(card, 'BLOQUEADO (strict mode?): ' + e.message, 'warn');
+    bumpCounter('warn');
+  }
+  return undefined;
+});
+
+makeCard('scope', n++, 'with statement (deprecated) + eval', 'weird',
+`Usa "with" statement para modificar o escopo + eval dentro do with`,
+card => {
+  let result;
+  try {
+    const obj = { x: 42, y: 'hello', z: [1,2,3] };
+    // with is banned in strict mode — try non-strict
+    result = eval('(function(){ with(obj){ return x + " " + y + " len=" + z.length; } })(obj)');
+    setResult(card, 'OK — with funcionou: "' + result + '"', 'ok');
+  } catch(e) {
+    setResult(card, 'with bloqueado: ' + e.message, 'warn');
+    bumpCounter('warn');
+  }
+  return undefined;
+});
+
+makeCard('scope', n++, 'var hoisting em bloco condicional', 'weird',
+`var declarado dentro de if false — ainda é hoisted para o escopo da função?`,
+card => {
+  function testHoisting() {
+    const before = typeof hoisted; // should be 'undefined' due to hoisting
+    if (false) { var hoisted = 'never set'; }
+    const after = typeof hoisted; // still 'undefined' (not 'ReferenceError')
+    return { before, after, val: hoisted };
+  }
+  const r = testHoisting();
+  const expected = r.before === 'undefined' && r.after === 'undefined' && r.val === undefined;
+  setResult(card, (expected ? 'OK' : 'WEIRD') + ' — hoisting: before=' + r.before + ' after=' + r.after + ' val=' + r.val, expected ? 'ok' : 'wow');
+  return undefined;
+});
+
+makeCard('scope', n++, 'typeof de variável não declarada (não deveria lançar ReferenceError)', 'weird',
+`typeof em variável inexistente — não deve crashar, mas e o PS4?`,
+card => {
+  const results = [];
+  try { results.push('typeof undeclaredVar_PS4_test: ' + typeof undeclaredVar_PS4_test); } catch(e) { results.push('typeof lançou: ' + e.message); }
+  try { results.push('typeof null: ' + typeof null); } catch(e) { results.push('err'); }
+  try { results.push('typeof undefined: ' + typeof undefined); } catch(e) { results.push('err'); }
+  try { results.push('typeof window.naoExiste: ' + typeof window.naoExiste); } catch(e) { results.push('err'); }
+  setResult(card, 'OK — ' + results.join('\n'), 'ok');
+  return undefined;
+});
+
+makeCard('scope', n++, 'eval() que cria variáveis no escopo externo (eval direto vs indireto)', 'weird',
+`eval direto afeta escopo local; (0,eval) indireto afeta apenas o global`,
+card => {
+  let localVar = 'original';
+  function testEval() {
+    eval('localVar = "modificado pelo eval direto"');
+    return localVar;
+  }
+  function testIndirectEval() {
+    (0, eval)('window.__indirect_eval_test = "escopo global"');
+    return typeof indirectVar;
+  }
+  const direct = testEval();
+  const indirect = testIndirectEval();
+  const globalSet = window.__indirect_eval_test;
+  delete window.__indirect_eval_test;
+  setResult(card, 'direto: "' + direct + '"\nindireto: "' + indirect + '"\nglobal: "' + globalSet + '"', 'ok');
+  return undefined;
+});
+
+setCount('scope', n - 1);
+
+// ═══════════════════════════════════════════════════════════
+// ██ COMBINADOS INSANOS
+// ═══════════════════════════════════════════════════════════
+n = 1;
+
+makeCard('combined', n++, 'iframe + fullscreen + alert + document.write + blur (O CLÁSSICO)', 'crash',
+`O teste original: iframe → dentro notificação + exitFullscreen sem FS + alert → document.write fecha → blur no parent`,
+card => new Promise(resolve => {
+  const results = [];
+  // Step 1: focus something in parent
+  const inp = document.createElement('input');
+  inp.style.cssText = 'position:absolute;top:-9999px';
+  inp.onblur = () => results.push('parent-blur-fired');
+  document.body.appendChild(inp);
+  inp.focus();
+
+  // Step 2: create iframe
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:absolute;top:-9999px;width:200px;height:100px;border:none';
+  document.body.appendChild(iframe);
+  const d = iframe.contentDocument; d.open();
+  d.write(`<html><body><script>
+    var log = [];
+    // Try Notification
+    try { if(window.Notification) Notification.requestPermission().catch(function(){}); log.push('notif-called'); } catch(e){ log.push('notif-err'); }
+    // Try exitFullscreen without being in FS
+    try { var ef = document.exitFullscreen||document.webkitExitFullscreen; if(ef){ ef.call(document).catch(function(){}); log.push('exitFS-called'); } } catch(e){ log.push('exitFS-err'); }
+    // Post results
+    parent.postMessage({type:'iframe-chaos-done', log:log}, '*');
+    // Rewrite with document.write
+    document.write('<p>REESCRITO via document.write() após tudo</p>');
+  <\/script></body></html>`);
+  d.close();
+
+  const handler = e => {
+    if (e.data && e.data.type === 'iframe-chaos-done') {
+      window.removeEventListener('message', handler);
+      results.push('iframe-log: ' + e.data.log.join(','));
+      // Step 3: force blur on parent element
+      inp.blur();
+      results.push('blur-triggered');
+      // Cleanup
+      setTimeout(() => {
+        try { document.body.removeChild(iframe); } catch(_){}
+        try { document.body.removeChild(inp); } catch(_){}
+        resolve('OK — CHAOS COMPLETO: ' + results.join(' | '));
+      }, 200);
+    }
+  };
+  window.addEventListener('message', handler);
+  setTimeout(() => {
+    window.removeEventListener('message', handler);
+    try{document.body.removeChild(iframe);}catch(_){}
+    try{document.body.removeChild(inp);}catch(_){}
+    resolve('TIMEOUT/parcial — ' + results.join(' | '));
+  }, 4000);
+}));
+
+makeCard('combined', n++, 'requestAnimationFrame + MutationObserver + Proxy + 5000 listeners + alert', 'crash',
+`Tudo junto: rAF que modifica DOM → MutationObserver captura → Proxy intercepta → 5000 listeners → alert ao final`,
+card => new Promise(resolve => {
+  const div = document.createElement('div'); document.body.appendChild(div);
+  let mutCount = 0, proxyGet = 0;
+  const proxyDiv = new Proxy(div, { get(t,p) { proxyGet++; return Reflect.get(t,p); } });
+  const obs = new MutationObserver(() => mutCount++);
+  obs.observe(div, { childList: true, attributes: true });
+  for (let i = 0; i < 5000; i++) div.addEventListener('click', () => {});
+  requestAnimationFrame(() => {
+    proxyDiv.setAttribute('data-chaos', 'true');
+    proxyDiv.appendChild(document.createElement('span'));
+    const listenerCount = 5000;
+    alert('CHAOS FINAL!\nmutations: ' + mutCount + '\nproxyGets: ' + proxyGet + '\nlisteners: ' + listenerCount);
+    obs.disconnect();
+    document.body.removeChild(div);
+    resolve('OK — mut=' + mutCount + ' proxyGet=' + proxyGet);
+  });
+  setTimeout(() => { obs.disconnect(); try{document.body.removeChild(div);}catch(_){} resolve('TIMEOUT'); }, 10000);
+}));
+
+makeCard('combined', n++, 'localStorage flood + IndexedDB + Cookie tudo ao mesmo tempo', 'mem',
+`Escreve em localStorage, IndexedDB e Cookie simultaneamente em loops paralelos`,
+card => new Promise(resolve => {
+  const results = {};
+  // localStorage race
+  let lsOk = 0;
+  for (let i = 0; i < 1000; i++) {
+    try { localStorage.setItem('_c' + i % 20, i); lsOk++; } catch(e) { break; }
+  }
+  for (let i = 0; i < 20; i++) localStorage.removeItem('_c' + i);
+  results.ls = lsOk;
+  // Cookie parallel
+  let ckOk = 0;
+  for (let i = 0; i < 50; i++) {
+    document.cookie = '_ck' + i + '=v' + i + ';max-age=10;path=/';
+    if (document.cookie.includes('_ck' + i)) ckOk++;
+  }
+  for (let i = 0; i < 50; i++) document.cookie = '_ck' + i + '=;expires=Thu,01 Jan 1970 00:00:00 GMT;path=/';
+  results.ck = ckOk;
+  // IndexedDB
+  if (!window.indexedDB) { results.idb = 'N/A'; return resolve('OK — ls=' + results.ls + ' ck=' + results.ck + ' idb=N/A'); }
+  const req = indexedDB.open('ps4_parallel', 1);
+  req.onupgradeneeded = e => e.target.result.createObjectStore('d', { keyPath: 'k' });
+  req.onsuccess = e => {
+    const db = e.target.result;
+    const tx = db.transaction('d', 'readwrite');
+    for (let i = 0; i < 200; i++) tx.objectStore('d').put({ k: i, v: i * 2 });
+    tx.oncomplete = () => { db.close(); indexedDB.deleteDatabase('ps4_parallel'); results.idb = '200'; resolve('OK — ls=' + results.ls + ' ck=' + results.ck + ' idb=' + results.idb); };
+    tx.onerror = () => { results.idb = 'err'; resolve('OK/ERR — ' + JSON.stringify(results)); };
+  };
+  req.onerror = () => resolve('OK — ls=' + results.ls + ' ck=' + results.ck + ' idb=err');
+  setTimeout(() => resolve('TIMEOUT — ' + JSON.stringify(results)), 5000);
+}));
+
+makeCard('combined', n++, 'Prototype poison + eval + with + setTimeout(0) + Promise microtask', 'crash',
+`Cadeia: poisona protótipo → eval com with → schedula microtask + macrotask → restaura protótipo`,
+card => new Promise(resolve => {
+  const origToString = Object.prototype.toString;
+  let poisonCount = 0;
+  Object.prototype.toString = function() { poisonCount++; return origToString.call(this); };
+  const order = [];
+  try {
+    // eval in potentially poisoned context
+    const evalResult = eval('({"key": "value"}).toString()');
+    order.push('eval:' + evalResult.substring(0,20));
+    // microtask
+    Promise.resolve().then(() => order.push('microtask'));
+    // macrotask
+    setTimeout(() => {
+      order.push('macrotask');
+      Object.prototype.toString = origToString; // restore here
+      resolve('OK — poisonCount=' + poisonCount + ' order=[' + order.join(',') + ']');
+    }, 0);
+    order.push('sync');
+  } catch(e) {
+    Object.prototype.toString = origToString;
+    resolve('ERRO: ' + e.message + ' poisonCount=' + poisonCount);
+  }
+}));
+
+makeCard('combined', n++, 'iframe + MutationObserver + postMessage + WeakRef + FinalizationRegistry', 'weird',
+`iframe observa DOM via MutationObserver → postMessage → parent usa WeakRef/FinalizationRegistry no resultado`,
+card => new Promise(resolve => {
+  if (!window.WeakRef || !window.FinalizationRegistry) return resolve('WeakRef/FR não disponíveis');
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:absolute;top:-9999px;width:100px;height:50px;border:none';
+  document.body.appendChild(iframe);
+  let finalized = false;
+  const registry = new FinalizationRegistry(() => finalized = true);
+  const d = iframe.contentDocument; d.open();
+  d.write(`<html><body><div id="obs-target"></div><script>
+    var obs = new MutationObserver(function(muts){
+      parent.postMessage({type:'mutation',count:muts.length},'*');
+    });
+    obs.observe(document.getElementById('obs-target'),{childList:true});
+    document.getElementById('obs-target').appendChild(document.createElement('span'));
+  <\/script></body></html>`);
+  d.close();
+  const handler = e => {
+    if (e.data && e.data.type === 'mutation') {
+      window.removeEventListener('message', handler);
+      // Use WeakRef on the iframe's window
+      let ref = new WeakRef(iframe.contentWindow);
+      registry.register(iframe.contentWindow, 'iframe-window');
+      const alive = ref.deref();
+      document.body.removeChild(iframe);
+      // After removal, try deref
+      setTimeout(() => {
+        const afterRemoval = ref.deref();
+        resolve('OK — mutations=' + e.data.count + ' alive=' + !!alive + ' afterRemoval=' + !!afterRemoval + ' finalized=' + finalized);
+      }, 100);
+    }
+  };
+  window.addEventListener('message', handler);
+  setTimeout(() => { window.removeEventListener('message', handler); try{document.body.removeChild(iframe);}catch(_){} resolve('TIMEOUT'); }, 3000);
+}));
+
+makeCard('combined', n++, 'O teste mais absurdo: tudo + document.write final', 'crash',
+`Fullscreen exit sem FS + iframe com notif + prototype poison + 1000 listeners + alert + document.write no iframe`,
+card => new Promise(resolve => {
+  const log = [];
+  // 1: exitFullscreen without being in FS
+  const ef = document.exitFullscreen || document.webkitExitFullscreen;
+  if (ef) ef.call(document).catch(() => log.push('exitFS-rej'));
+  log.push('exitFS-called');
+  // 2: prototype poison temporary
+  const orig = Array.prototype.indexOf;
+  Array.prototype.indexOf = function() { log.push('indexOf-poisoned'); return orig.apply(this, arguments); };
+  ['a','b','c'].indexOf('b'); // trigger poisoned method
+  Array.prototype.indexOf = orig;
+  // 3: 1000 listeners on body
+  const listeners = [];
+  for (let i = 0; i < 1000; i++) {
+    const fn = () => {};
+    listeners.push(fn);
+    document.body.addEventListener('mousemove', fn);
+  }
+  listeners.forEach(fn => document.body.removeEventListener('mousemove', fn));
+  log.push('listeners-ok');
+  // 4: iframe + everything inside
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:absolute;top:-9999px;width:100px;height:50px;border:none';
+  document.body.appendChild(iframe);
+  const d = iframe.contentDocument; d.open();
+  d.write(`<html><body><script>
+    var l = [];
+    try{ Notification.requestPermission().catch(function(){}); l.push('notif'); }catch(e){ l.push('notif-err'); }
+    try{ var ef2=document.exitFullscreen||document.webkitExitFullscreen; if(ef2) ef2.call(document).catch(function(){}); l.push('exitFS2'); }catch(e){ l.push('exitFS2-err'); }
+    parent.postMessage({t:'chaos-done',l:l},'*');
+    document.write('<b>FINAL document.write</b>');
+  <\/script></body></html>`);
+  d.close();
+  const handler = e => {
+    if (e.data && e.data.t === 'chaos-done') {
+      window.removeEventListener('message', handler);
+      log.push(...e.data.l);
+      try { document.body.removeChild(iframe); } catch(_){}
+      resolve('OK — CAOS TOTAL: ' + log.join(' | '));
+    }
+  };
+  window.addEventListener('message', handler);
+  setTimeout(() => {
+    window.removeEventListener('message', handler);
+    try { document.body.removeChild(iframe); } catch(_){}
+    resolve('TIMEOUT/parcial — ' + log.join(' | '));
+  }, 4000);
+}));
+
+setCount('combined', n - 1);
+
+// ═══════════════════════════════════════════════════════════
+// INIT
+document.getElementById('ua-bar').textContent = navigator.userAgent.substring(0, 110);
+lg('Chaos Suite v4 pronta — ' + document.querySelectorAll('.tc').length + ' testes disponíveis', 'info');
+</script>
+</body>
+</html>
