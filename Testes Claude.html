@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>PS4 WebKit - Race Condition / FreeBSD Kernel Triage Tests</title>
+</head>
+<body>
+
+<h1>PS4 WebKit - Race Condition Triage Tests</h1>
+<p>Foco: concorrencia C++ WebKit &lt;-&gt; kernel FreeBSD (pthread / signal / TCB)</p>
+<hr>
+
+<pre id="log" style="height:200px;overflow:auto;border:1px solid black;padding:4px"></pre>
+<button onclick="document.getElementById('log').textContent=''">Limpar Log</button>
+<hr>
+
+<script>
+function log(msg) {
+  var el = document.getElementById('log');
+  el.textContent += msg + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+
+/* ─────────────────────────────────────────────────
+   UTIL: executa fn e captura crash / excecao
+   ───────────────────────────────────────────────── */
+function run(name, fn) {
+  try {
+    var r = fn();
+    if (r && typeof r.then === 'function') {
+      r.then(function(v){ log('[OK] ' + name + (v !== undefined ? ' => ' + v : '')); })
+       .catch(function(e){ log('[EX] ' + name + ' => ' + e); });
+    } else {
+      log('[OK] ' + name + (r !== undefined ? ' => ' + r : ''));
+    }
+  } catch(e) {
+    log('[EX] ' + name + ' => ' + e);
+  }
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 1 – SharedArrayBuffer / Atomics
+     Alvo: racing em memoria compartilhada entre
+     threads (Worker ↔ JS principal) → possivel
+     corrupcao de TCB se o WebKit usa o mesmo
+     buffer interno para estado de thread.
+     ═══════════════════════════════════════════════ -->
+
+<h2>1. SharedArrayBuffer – Atomics Race (2 workers vs main)</h2>
+<button onclick="test01()">Executar Teste 01</button>
+<script>
+function test01() {
+  var sab = new SharedArrayBuffer(4);
+  var view = new Int32Array(sab);
+  var code = `
+    var v = new Int32Array(self._sab);
+    for(var i=0;i<100000;i++){
+      Atomics.add(v, 0, 1);
+    }
+    postMessage('done');
+  `;
+  var blob = new Blob([code], {type:'application/javascript'});
+  var url  = URL.createObjectURL(blob);
+  var w1 = new Worker(url);
+  var w2 = new Worker(url);
+  w1._sab = sab; w2._sab = sab;
+  /* injeta sab via postMessage pois blob nao tem acesso direto */
+  var code2 = `
+    var sab;
+    onmessage = function(e){
+      sab = e.data;
+      var v = new Int32Array(sab);
+      for(var i=0;i<100000;i++){ Atomics.add(v,0,1); }
+      postMessage('done');
+    };
+  `;
+  var b2 = new Blob([code2],{type:'application/javascript'});
+  var u2 = URL.createObjectURL(b2);
+  var wa = new Worker(u2);
+  var wb = new Worker(u2);
+  var done = 0;
+  function finish(){ if(++done===2){ log('T01 valor final='+view[0]+' esperado=200000 delta='+(200000-view[0])); } }
+  wa.onmessage = finish; wb.onmessage = finish;
+  wa.postMessage(sab,[sab]); // transfere – detecta se WebKit permite transferencia dupla
+  try { wb.postMessage(sab); } catch(e){ log('T01 transferencia dupla bloqueada: '+e); finish(); finish(); }
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 2 – Worker + WeakRef GC racing
+     Alvo: WeakRef aponta para objeto sendo
+     coletado enquanto Worker tenta acessar
+     → UAF no coletor de lixo do WebKit (C++)
+     ═══════════════════════════════════════════════ -->
+
+<h2>2. WeakRef + GC Race (destruicao concorrente)</h2>
+<button onclick="test02()">Executar Teste 02</button>
+<script>
+function test02() {
+  run('T02-WeakRef-GC', function(){
+    var refs = [];
+    for(var i=0;i<5000;i++){
+      var obj = { data: new Array(100).fill(i) };
+      refs.push(new WeakRef(obj));
+      // descarta referencia forte imediatamente
+    }
+    // forca GC indiretamente via alocacao massiva
+    var pressure = [];
+    for(var j=0;j<1000;j++) pressure.push(new Array(1000).fill(j));
+    pressure = null;
+    // tenta ler WeakRefs apos GC
+    var vivos = refs.filter(function(r){ return r.deref() !== undefined; }).length;
+    return 'refs vivas apos GC pressure: ' + vivos + '/' + refs.length;
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 3 – FinalizationRegistry UAF
+     Alvo: callback de finalizacao executa apos
+     GC; se o WebKit reutiliza memoria antes do
+     callback, temos UAF classico.
+     ═══════════════════════════════════════════════ -->
+
+<h2>3. FinalizationRegistry – Callback UAF</h2>
+<button onclick="test03()">Executar Teste 03</button>
+<script>
+function test03() {
+  run('T03-FinalizationRegistry', function(){
+    if(typeof FinalizationRegistry === 'undefined') return 'FinalizationRegistry nao suportado';
+    var log3 = [];
+    var reg = new FinalizationRegistry(function(val){
+      log3.push('finalizado:' + val);
+    });
+    (function(){
+      var objs = [];
+      for(var i=0;i<200;i++){
+        var o = { id: i, buf: new ArrayBuffer(1024) };
+        reg.register(o, 'obj_'+i);
+        objs.push(o);
+      }
+      // sai do escopo → objs elegivel para GC
+    })();
+    // forca GC
+    var sink = [];
+    for(var i=0;i<500;i++) sink.push(new ArrayBuffer(4096));
+    sink = null;
+    return new Promise(function(resolve){
+      setTimeout(function(){ resolve('callbacks disparados: ' + log3.length); }, 500);
+    });
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 4 – ArrayBuffer Neutering Race
+     Alvo: transferir ArrayBuffer para Worker
+     e simultaneamente acessar na thread principal
+     → acesso a buffer "neutered" → crash C++
+     ═══════════════════════════════════════════════ -->
+
+<h2>4. ArrayBuffer Detach / Neutering Race</h2>
+<button onclick="test04()">Executar Teste 04</button>
+<script>
+function test04() {
+  run('T04-ArrayBuffer-Detach', function(){
+    var buf = new ArrayBuffer(1024*1024); // 1 MB
+    var view = new Uint8Array(buf);
+    view[0] = 0xAA;
+    var code = `onmessage=function(e){ var v=new Uint8Array(e.data); v[0]=0xBB; postMessage('ok'); };`;
+    var w = new Worker(URL.createObjectURL(new Blob([code],{type:'application/javascript'})));
+    w.postMessage(buf, [buf]); // transfere (neutra o buffer local)
+    // tenta acessar buffer apos transferencia
+    var result;
+    try { result = view[0]; } catch(e){ result = 'excecao: ' + e; }
+    return new Promise(function(res){
+      w.onmessage = function(){ res('acesso apos transfer: ' + result + ' byteLength: ' + buf.byteLength); };
+    });
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 5 – Proxy Trap Concurrency
+     Alvo: Proxy com traps lentos invocados
+     de Workers concorrentes via SAB signaling
+     → possivel corrupcao de estado interno do
+     objeto JSProxy no heap do WebKit
+     ═══════════════════════════════════════════════ -->
+
+<h2>5. Proxy Trap – Acesso Concorrente</h2>
+<button onclick="test05()">Executar Teste 05</button>
+<script>
+function test05() {
+  run('T05-Proxy-Concurrent', function(){
+    var accessCount = 0;
+    var target = {};
+    var proxy = new Proxy(target, {
+      get: function(t, prop) {
+        accessCount++;
+        // simula operacao lenta / yield
+        for(var i=0;i<1000;i++) Math.sqrt(i);
+        return t[prop];
+      },
+      set: function(t, prop, val) {
+        accessCount++;
+        t[prop] = val;
+        return true;
+      }
+    });
+    // acessa proxy intensamente a partir de promises paralelas
+    var promises = [];
+    for(var i=0;i<50;i++){
+      (function(idx){
+        promises.push(new Promise(function(res){
+          proxy['key'+idx] = idx;
+          res(proxy['key'+idx]);
+        }));
+      })(i);
+    }
+    return Promise.all(promises).then(function(vals){
+      return 'trap calls: ' + accessCount + ' valores: ' + vals.length;
+    });
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 6 – Generator Concurrent Resume
+     Alvo: tentar resumir o mesmo Generator de
+     dois contextos (via microtask interleaving)
+     → estado interno do JSGenerator corrompido
+     ═══════════════════════════════════════════════ -->
+
+<h2>6. Generator – Resume Concorrente via Microtasks</h2>
+<button onclick="test06()">Executar Teste 06</button>
+<script>
+function test06() {
+  run('T06-Generator-Race', function(){
+    function* gen() {
+      for(var i=0;;i++){
+        yield i;
+      }
+    }
+    var g = gen();
+    var results = [];
+    // dispara multiplos .next() via microtasks
+    var promises = [];
+    for(var i=0;i<1000;i++){
+      promises.push(Promise.resolve().then(function(){ return g.next().value; }));
+    }
+    return Promise.all(promises).then(function(vals){
+      var set = new Set(vals);
+      return 'total: '+vals.length+' unicos: '+set.size+' (duplicatas indicam race)';
+    });
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 7 – Async Iterator Race
+     Alvo: iterar async generator de multiplos
+     consumers concorrentes → iterator protocol
+     interno pode ser corrompido
+     ═══════════════════════════════════════════════ -->
+
+<h2>7. Async Iterator – Multiplos Consumers</h2>
+<button onclick="test07()">Executar Teste 07</button>
+<script>
+function test07() {
+  run('T07-AsyncIterator-Race', function(){
+    async function* asyncGen() {
+      for(var i=0;i<100;i++){
+        yield i;
+      }
+    }
+    var iter = asyncGen();
+    // 10 consumers competindo pelo mesmo iterator
+    var consumers = [];
+    for(var c=0;c<10;c++){
+      consumers.push((async function(){
+        var vals = [];
+        for(var i=0;i<5;i++){
+          var r = await iter.next();
+          if(!r.done) vals.push(r.value);
+        }
+        return vals;
+      })());
+    }
+    return Promise.all(consumers).then(function(all){
+      var flat = [].concat.apply([],all);
+      var set = new Set(flat);
+      return 'itens consumidos: '+flat.length+' unicos: '+set.size+' (duplicatas=race)';
+    });
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 8 – Symbol.toPrimitive Type Coercion Race
+     Alvo: Symbol.toPrimitive com side-effect
+     chamado em contexto de coercao implicita
+     concorrente → possivel UAF em JSValue
+     ═══════════════════════════════════════════════ -->
+
+<h2>8. Symbol.toPrimitive – Coercao Concorrente</h2>
+<button onclick="test08()">Executar Teste 08</button>
+<script>
+function test08() {
+  run('T08-toPrimitive-Race', function(){
+    var calls = 0;
+    var obj = {
+      [Symbol.toPrimitive]: function(hint) {
+        calls++;
+        // aloca durante a coercao para pressionar GC
+        var junk = new Array(10000).fill(hint);
+        return calls;
+      }
+    };
+    var results = [];
+    // coerce em loop com microtask intercalada
+    var p = Promise.resolve();
+    for(var i=0;i<500;i++){
+      p = p.then((function(o){ return function(){ return o + 1; }; })(obj));
+    }
+    return p.then(function(v){ return 'calls: '+calls+' ultimo: '+v; });
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 9 – RegExp exec() State Race
+     Alvo: RegExp com /g compartilhado entre
+     closures concorrentes → lastIndex corrompido
+     (semelhante a bug historico V8 / JSC)
+     ═══════════════════════════════════════════════ -->
+
+<h2>9. RegExp Shared State – lastIndex Race</h2>
+<button onclick="test09()">Executar Teste 09</button>
+<script>
+function test09() {
+  run('T09-RegExp-LastIndex', function(){
+    var re = /a/g; // lastIndex compartilhado
+    var str = 'aaaaaaaaaa';
+    var results = [];
+    // executa em loop com intercalamento de microtasks
+    var promises = [];
+    for(var i=0;i<200;i++){
+      promises.push(Promise.resolve().then((function(r,s){
+        return function(){
+          r.lastIndex = 0; // reset esperado
+          var m = r.exec(s);
+          return m ? m.index : -1;
+        };
+      })(re, str)));
+    }
+    return Promise.all(promises).then(function(vals){
+      var nonzero = vals.filter(function(v){ return v !== 0; });
+      return 'execucoes: '+vals.length+' lastIndex errado: '+nonzero.length;
+    });
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 10 – Error.stack Concurrent Capture
+     Alvo: Error.stack dispara unwinding de stack
+     C++ interno; se dois erros sao capturados
+     simultaneamente via promises pode haver
+     corrupcao do stack trace buffer
+     ═══════════════════════════════════════════════ -->
+
+<h2>10. Error.stack – Captura Concorrente</h2>
+<button onclick="test10()">Executar Teste 10</button>
+<script>
+function test10() {
+  run('T10-Error-Stack-Race', function(){
+    function deepStack(n) {
+      if(n <= 0) return new Error('deep');
+      return deepStack(n-1);
+    }
+    var errors = [];
+    var promises = [];
+    for(var i=0;i<100;i++){
+      promises.push(Promise.resolve().then(function(){
+        var e = deepStack(50);
+        return e.stack ? e.stack.split('\n').length : 0;
+      }));
+    }
+    return Promise.all(promises).then(function(lens){
+      var min = Math.min.apply(null,lens);
+      var max = Math.max.apply(null,lens);
+      return 'stacks capturados: '+lens.length+' linhas min/max: '+min+'/'+max;
+    });
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 11 – Worker Termination During Execution
+     Alvo: terminar Worker no meio de um loop
+     intensivo → pthread_cancel semantics no
+     FreeBSD; pode deixar mutex/lock interno preso
+     ═══════════════════════════════════════════════ -->
+
+<h2>11. Worker Terminate – Durante Execucao (pthread_cancel)</h2>
+<button onclick="test11()">Executar Teste 11</button>
+<script>
+function test11() {
+  run('T11-Worker-Kill-Mid', function(){
+    var code = `
+      // loop infinito simulando trabalho pesado
+      var i = 0;
+      while(true){
+        i++;
+        if(i % 100000 === 0) postMessage(i);
+      }
+    `;
+    var w = new Worker(URL.createObjectURL(new Blob([code],{type:'application/javascript'})));
+    var msgs = 0;
+    w.onmessage = function(){ msgs++; };
+    return new Promise(function(res){
+      setTimeout(function(){
+        w.terminate(); // equivale a pthread_cancel
+        res('worker terminado apos '+msgs+' mensagens');
+      }, 100);
+    });
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 12 – MessageChannel Port Close Race
+     Alvo: fechar MessagePort enquanto mensagem
+     esta em transito → JSMessagePort C++ pode
+     ser destruido antes do handler executar (UAF)
+     ═══════════════════════════════════════════════ -->
+
+<h2>12. MessagePort Close – Durante Transferencia</h2>
+<button onclick="test12()">Executar Teste 12</button>
+<script>
+function test12() {
+  run('T12-MessagePort-Close', function(){
+    var ch = new MessageChannel();
+    var received = 0;
+    ch.port2.onmessage = function(){ received++; };
+    ch.port2.start();
+    // envia rafaga de mensagens
+    for(var i=0;i<1000;i++) ch.port1.postMessage(i);
+    // fecha porta imediatamente apos envio
+    ch.port1.close();
+    ch.port2.close(); // fecha receptor com mensagens pendentes
+    return new Promise(function(res){
+      setTimeout(function(){ res('mensagens recebidas antes do close: '+received); }, 200);
+    });
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 13 – BroadcastChannel Concurrent Flood
+     Alvo: multiplos BroadcastChannels enviando
+     simultaneamente para o mesmo canal →
+     dispatcher interno do WebKit pode ter race
+     ═══════════════════════════════════════════════ -->
+
+<h2>13. BroadcastChannel – Flood Concorrente</h2>
+<button onclick="test13()">Executar Teste 13</button>
+<script>
+function test13() {
+  run('T13-BroadcastChannel-Flood', function(){
+    if(typeof BroadcastChannel === 'undefined') return 'BroadcastChannel nao suportado';
+    var received = 0;
+    var listener = new BroadcastChannel('test_ch');
+    listener.onmessage = function(){ received++; };
+    var senders = [];
+    for(var i=0;i<20;i++) senders.push(new BroadcastChannel('test_ch'));
+    // todos enviam ao mesmo tempo
+    senders.forEach(function(s,idx){
+      for(var j=0;j<50;j++) s.postMessage({sender:idx, seq:j});
+    });
+    senders.forEach(function(s){ s.close(); });
+    return new Promise(function(res){
+      setTimeout(function(){ listener.close(); res('esperado:1000 recebidos:'+received); }, 500);
+    });
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 14 – XMLHttpRequest Abort Race
+     Alvo: chamar abort() enquanto o response
+     handler esta processando → JSXMLHttpRequest
+     pode ser destruido no C++ (UAF classico)
+     ═══════════════════════════════════════════════ -->
+
+<h2>14. XHR Abort – Durante Response Handler</h2>
+<button onclick="test14()">Executar Teste 14</button>
+<script>
+function test14() {
+  run('T14-XHR-Abort-Race', function(){
+    return new Promise(function(res){
+      var xhr = new XMLHttpRequest();
+      var aborted = false;
+      xhr.open('GET', location.href);
+      xhr.onreadystatechange = function(){
+        if(xhr.readyState >= 2 && !aborted){
+          aborted = true;
+          xhr.abort(); // abort durante processamento
+        }
+      };
+      xhr.onabort = function(){ res('XHR abortado no estado: '+xhr.readyState); };
+      xhr.onerror = function(e){ res('erro: '+e.type); };
+      xhr.send();
+      // abort extra apos 5ms
+      setTimeout(function(){ if(!aborted){ aborted=true; xhr.abort(); } }, 5);
+    });
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 15 – history.pushState Flood + GC
+     Alvo: flood de pushState (relacionado ao
+     finding anterior HackerOne/Sony) combinado
+     com pressao de GC para tentar UAF em
+     JSHistory / HistoryItem C++
+     ═══════════════════════════════════════════════ -->
+
+<h2>15. history.pushState – Flood + GC Pressure</h2>
+<button onclick="test15()">Executar Teste 15</button>
+<script>
+function test15() {
+  run('T15-pushState-Flood', function(){
+    var before = performance.memory ? performance.memory.usedJSHeapSize : 0;
+    var i;
+    // flood de pushState
+    for(i=0;i<500;i++){
+      try {
+        history.pushState({idx:i, data:new Array(100).fill(i)}, '', '#s'+i);
+      } catch(e) {
+        return 'excecao no pushState['+i+']: '+e;
+      }
+    }
+    // pressao de GC durante estado corrompido
+    var junk = [];
+    for(i=0;i<200;i++) junk.push(new ArrayBuffer(65536));
+    junk = null;
+    var after = performance.memory ? performance.memory.usedJSHeapSize : 0;
+    history.replaceState({},'','#');
+    return 'pushStates: 500 heap delta: '+Math.round((after-before)/1024)+'KB';
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 16 – history.pushState Concorrente (Workers via SAB)
+     Alvo: sinalizar Workers via SAB para
+     chamarem history.pushState coordenadamente
+     → race na lista de entradas de historico C++
+     ═══════════════════════════════════════════════ -->
+
+<h2>16. history.pushState – Disparo Coordenado via SAB</h2>
+<button onclick="test16()">Executar Teste 16</button>
+<script>
+function test16() {
+  run('T16-pushState-SAB-Coord', function(){
+    // Workers nao tem acesso a history; simula via rafaga de microtasks
+    var count = 0;
+    var errors = 0;
+    var promises = [];
+    for(var i=0;i<200;i++){
+      promises.push(new Promise(function(res, rej){
+        var idx = count++;
+        // intercala com microtask para simular concorrencia
+        queueMicrotask(function(){
+          try {
+            history.pushState({n:idx},'','#m'+idx);
+            res(idx);
+          } catch(e) {
+            errors++;
+            res(-1);
+          }
+        });
+      }));
+    }
+    return Promise.all(promises).then(function(vals){
+      history.replaceState({},'','#');
+      return 'sucesso: '+(vals.filter(function(v){return v>=0;}).length)+' erros: '+errors;
+    });
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 17 – Blob + URL.createObjectURL Race
+     Alvo: criar e revogar URLs de Blob
+     concorrentemente enquanto um <img> tenta
+     carrega-la → UAF em BlobURL registry C++
+     ═══════════════════════════════════════════════ -->
+
+<h2>17. Blob URL – Create / Revoke Race</h2>
+<button onclick="test17()">Executar Teste 17</button>
+<script>
+function test17() {
+  run('T17-BlobURL-Race', function(){
+    var data = new Uint8Array(1024).fill(0xFF);
+    var blob = new Blob([data], {type:'application/octet-stream'});
+    var urls = [];
+    // cria multiplas URLs para o mesmo blob
+    for(var i=0;i<100;i++) urls.push(URL.createObjectURL(blob));
+    // revoga metade enquanto a outra metade ainda pode ser referenciada
+    var revoked = 0;
+    var promises = urls.map(function(url, idx){
+      return new Promise(function(res){
+        if(idx % 2 === 0){
+          URL.revokeObjectURL(url);
+          revoked++;
+          res('revoked');
+        } else {
+          // simula fetch de URL ativa
+          fetch(url).then(function(r){ res('fetched:'+r.status); }).catch(function(){ res('fetch-err'); });
+        }
+      });
+    });
+    return Promise.all(promises).then(function(results){
+      return 'revogadas:'+revoked+' fetch-ok:'+results.filter(function(r){return r.startsWith('fetched');}).length;
+    });
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 18 – Canvas getImageData Concurrent
+     Alvo: ler e escrever ImageData no mesmo
+     canvas de promises concorrentes →
+     possivel race em CanvasRenderingContext2D C++
+     ═══════════════════════════════════════════════ -->
+
+<h2>18. Canvas – getImageData/putImageData Race</h2>
+<button onclick="test18()">Executar Teste 18</button>
+<script>
+function test18() {
+  run('T18-Canvas-ImageData', function(){
+    var canvas = document.createElement('canvas');
+    canvas.width = 256; canvas.height = 256;
+    var ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ff0000';
+    ctx.fillRect(0,0,256,256);
+    var promises = [];
+    for(var i=0;i<50;i++){
+      promises.push(new Promise((function(c,x,idx){
+        return function(res){
+          var imgd = x.getImageData(0,0,256,256);
+          imgd.data[0] = idx & 0xFF;
+          x.putImageData(imgd,0,0);
+          var check = x.getImageData(128,128,1,1);
+          res(check.data[0]);
+        };
+      })(canvas, ctx, i)));
+    }
+    return Promise.all(promises).then(function(vals){
+      return 'leituras: '+vals.length+' valores unicos: '+new Set(vals).size;
+    });
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 19 – DOM Node Concurrent Mutation
+     Alvo: adicionar/remover filhos do mesmo no
+     de multiplas promises concorrentes →
+     corrupcao do linked-list interno de filhos
+     no WebKit DOM C++
+     ═══════════════════════════════════════════════ -->
+
+<h2>19. DOM – Mutacao Concorrente de Filhos</h2>
+<button onclick="test19()">Executar Teste 19</button>
+<script>
+function test19() {
+  run('T19-DOM-ConcurrentMutation', function(){
+    var parent = document.createElement('div');
+    document.body.appendChild(parent);
+    var tasks = [];
+    for(var i=0;i<200;i++){
+      tasks.push((function(idx){
+        return Promise.resolve().then(function(){
+          var child = document.createElement('span');
+          child.id = 'c'+idx;
+          parent.appendChild(child);
+          return child;
+        }).then(function(child){
+          // remove em microtask seguinte
+          if(parent.contains(child)) parent.removeChild(child);
+          return idx;
+        });
+      })(i));
+    }
+    return Promise.all(tasks).then(function(vals){
+      var remaining = parent.childNodes.length;
+      document.body.removeChild(parent);
+      return 'operacoes: '+vals.length+' filhos restantes: '+remaining;
+    });
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 20 – Event Dispatch + Listener Remove Race
+     Alvo: disparar evento enquanto listener esta
+     sendo removido → iterador de listeners C++
+     pode acessar lista invalidada (UAF)
+     ═══════════════════════════════════════════════ -->
+
+<h2>20. Event – Dispatch vs removeEventListener Race</h2>
+<button onclick="test20()">Executar Teste 20</button>
+<script>
+function test20() {
+  run('T20-Event-Remove-Race', function(){
+    var el = document.createElement('div');
+    document.body.appendChild(el);
+    var fired = 0;
+    var handlers = [];
+    for(var i=0;i<100;i++){
+      handlers.push((function(idx){
+        return function(){ fired++; };
+      })(i));
+    }
+    handlers.forEach(function(h){ el.addEventListener('click', h); });
+    var removed = 0;
+    // dispara evento e remove listeners ao mesmo tempo via microtasks
+    var removeTask = Promise.resolve().then(function(){
+      handlers.forEach(function(h){ el.removeEventListener('click', h); removed++; });
+    });
+    var dispatchTask = Promise.resolve().then(function(){
+      el.dispatchEvent(new Event('click'));
+    });
+    return Promise.all([removeTask, dispatchTask]).then(function(){
+      document.body.removeChild(el);
+      return 'fired: '+fired+' removed: '+removed;
+    });
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 21 – Promise Chain + GC Pressure
+     Alvo: cadeia longa de promises enquanto GC
+     corre → JSPromise pode ser coletado enquanto
+     ainda ha callbacks pendentes
+     ═══════════════════════════════════════════════ -->
+
+<h2>21. Promise Chain – GC Durante Resolucao</h2>
+<button onclick="test21()">Executar Teste 21</button>
+<script>
+function test21() {
+  run('T21-Promise-GC', function(){
+    // cria cadeia de 10000 promises
+    var p = Promise.resolve(0);
+    for(var i=0;i<10000;i++){
+      p = p.then(function(v){ return v+1; });
+    }
+    // pressao de GC enquanto a cadeia resolve
+    var junk;
+    var gcTimer = setInterval(function(){
+      junk = new Array(100000).fill(0);
+      junk = null;
+    }, 1);
+    return p.then(function(v){
+      clearInterval(gcTimer);
+      return 'resultado: '+v+' (esperado 10000)';
+    });
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 22 – setTimeout Flood + history API
+     Alvo: combinar flood de setTimeout com
+     pushState para saturar a fila de eventos
+     do FreeBSD (kqueue) e causar overflow
+     ═══════════════════════════════════════════════ -->
+
+<h2>22. setTimeout Flood + history.pushState</h2>
+<button onclick="test22()">Executar Teste 22</button>
+<script>
+function test22() {
+  run('T22-Timer-History-Flood', function(){
+    return new Promise(function(res){
+      var count = 0;
+      var errors = 0;
+      var total = 500;
+      for(var i=0;i<total;i++){
+        (function(idx){
+          setTimeout(function(){
+            try {
+              history.pushState({t:idx},'','#t'+idx);
+            } catch(e){ errors++; }
+            if(++count === total){
+              history.replaceState({},'','#');
+              res('timers: '+total+' erros: '+errors);
+            }
+          }, 0);
+        })(i);
+      }
+    });
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 23 – Object.defineProperty Concurrent
+     Alvo: redefine a mesma propriedade em loop
+     de microtasks → transicao de Shape/Structure
+     no motor JS pode ter race em modo JIT
+     ═══════════════════════════════════════════════ -->
+
+<h2>23. Object.defineProperty – Shape Transition Race</h2>
+<button onclick="test23()">Executar Teste 23</button>
+<script>
+function test23() {
+  run('T23-defineProperty-Race', function(){
+    var obj = {};
+    var conflicts = 0;
+    var promises = [];
+    for(var i=0;i<500;i++){
+      promises.push((function(idx){
+        return Promise.resolve().then(function(){
+          try {
+            Object.defineProperty(obj, 'x', {
+              value: idx,
+              writable: true,
+              configurable: true
+            });
+            return obj.x;
+          } catch(e) {
+            conflicts++;
+            return -1;
+          }
+        });
+      })(i));
+    }
+    return Promise.all(promises).then(function(vals){
+      return 'redefinicoes: '+vals.length+' conflitos: '+conflicts+' valor final: '+obj.x;
+    });
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 24 – Concurrent JSON Parse + Reviver
+     Alvo: JSON.parse com reviver que tem
+     side-effects; se WebKit paralleliza parse
+     internamente, o reviver pode ser chamado
+     com estado inconsistente
+     ═══════════════════════════════════════════════ -->
+
+<h2>24. JSON.parse – Reviver com Side-Effect Concorrente</h2>
+<button onclick="test24()">Executar Teste 24</button>
+<script>
+function test24() {
+  run('T24-JSON-Reviver-Race', function(){
+    var globalState = 0;
+    var reviverCalls = 0;
+    var payload = JSON.stringify(Array.from({length:100},function(_,i){return {id:i,val:i*i};}));
+    var promises = [];
+    for(var i=0;i<50;i++){
+      promises.push(Promise.resolve().then(function(){
+        return JSON.parse(payload, function(key, value){
+          reviverCalls++;
+          if(key === 'val') globalState += value; // side-effect compartilhado
+          return value;
+        });
+      }));
+    }
+    return Promise.all(promises).then(function(results){
+      return 'parses: '+results.length+' reviver calls: '+reviverCalls+' state: '+globalState;
+    });
+  });
+}
+</script>
+
+<!-- ═══════════════════════════════════════════════
+     BLOCO 25 – window.location + history Race (Chained)
+     Alvo: encadear location.hash assignments com
+     history.pushState/replaceState de forma
+     concorrente → NavigationController C++ pode
+     ter race entre os dois caminhos de navegacao;
+     potencial escalada do finding HackerOne/Sony.
+     ═══════════════════════════════════════════════ -->
+
+<h2>25. location.hash + history.pushState – Race Encadeado (Escalada)</h2>
+<button onclick="test25()">Executar Teste 25</button>
+<script>
+function test25() {
+  run('T25-Location-History-Chained', function(){
+    var ops = 0;
+    var errors = 0;
+    var promises = [];
+    for(var i=0;i<300;i++){
+      promises.push((function(idx){
+        return new Promise(function(res){
+          queueMicrotask(function(){
+            try {
+              if(idx % 3 === 0){
+                location.hash = 'h'+idx;              // via Location
+              } else if(idx % 3 === 1){
+                history.pushState({i:idx},'','#p'+idx); // via History (push)
+              } else {
+                history.replaceState({i:idx},'','#r'+idx); // via History (replace)
+              }
+              ops++;
+              res('ok');
+            } catch(e){
+              errors++;
+              res('err:'+e.message);
+            }
+          });
+        });
+      })(i));
+    }
+    return Promise.all(promises).then(function(results){
+      history.replaceState({},'','#');
+      location.hash = '';
+      return 'ops: '+ops+' erros: '+errors+
+             ' push:'  +results.filter(function(r){return r==='ok';}).length+
+             ' | hash/push/replace all concurrentes';
+    });
+  });
+}
+</script>
+
+<hr>
+<h2>Executar Todos os Testes</h2>
+<button onclick="
+  test01();test02();test03();test04();test05();
+  test06();test07();test08();test09();test10();
+  test11();test12();test13();test14();test15();
+  test16();test17();test18();test19();test20();
+  test21();test22();test23();test24();test25();
+">Executar Todos (25)</button>
+
+</body>
+</html>
