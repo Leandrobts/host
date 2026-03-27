@@ -38,6 +38,14 @@
     <button onclick="runTestS_GhostRouting()">[S] Ghost Routing (postMessage apos w.terminate)</button>
     <button onclick="runTestT_WebGLContextDriver()">[T] WebGL Driver Path (getContext('webgl') antes do transfer)</button>
 
+    <h2>OffscreenCanvas - 5 Testes de Isolamento (Kernel Panic)</h2>
+  
+    <button onclick="test1_Baseline()">1. BASELINE (original com timing fixo)</button>
+    <button onclick="test2_SemTerminate()">2. SEM terminate()  so transferencia</button>
+    <button onclick="test3_SemTransferToImageBitmap()">3. SEM transferToImageBitmap  envio normal</button>
+    <button onclick="test4_SemPostMessageWorker()">4. SEM postMessage no Worker</button>
+    <button onclick="test5_MinimalPoC()">5. PoC MINIMA (menor codigo possivel)</button>
+
     <br><br>
     <button class="stop-btn" onclick="stopAll()">[ PARAR EXECUCAO ATUAL ]</button>
 
@@ -581,6 +589,112 @@
                 if (count % 65 === 0) log(`Teste T - Iterações: ${count}`);
                 if (count > 800) { stopAll(); log("[+] Teste T finalizado."); }
             }, 13);
+        }
+ // ====================== TESTE 1 - BASELINE ======================
+        function test1_Baseline() {
+            log("[ISOLAMENTO] Teste 1 - BASELINE (timing fixo 9ms)");
+            const workerCode = `onmessage = (e) => { if (e.data && e.data.canvas) postMessage({ack:true}, [e.data.canvas]); };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                const canvas = new OffscreenCanvas(256, 256);
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                
+                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                
+                setTimeout(() => { w.terminate(); }, 9);   // timing fixo
+                
+                count++;
+                if (count % 30 === 0) log(`Baseline: ${count} execuções`);
+                if (count > 400) { clearInterval(interval); log("Teste 1 finalizado"); }
+            }, 15);
+        }
+
+        // ====================== TESTE 2 - SEM terminate() ======================
+        function test2_SemTerminate() {
+            log("[ISOLAMENTO] Teste 2 - SEM terminate() (só transferência)");
+            const workerCode = `onmessage = (e) => { if (e.data && e.data.canvas) postMessage({ack:true}, [e.data.canvas]); };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                const canvas = new OffscreenCanvas(256, 256);
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                
+                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                // ? NENHUM terminate()
+                
+                count++;
+                if (count % 30 === 0) log(`Sem terminate: ${count} execuções`);
+                if (count > 400) { clearInterval(interval); log("Teste 2 finalizado"); }
+            }, 15);
+        }
+
+        // ====================== TESTE 3 - SEM transferToImageBitmap ======================
+        function test3_SemTransferToImageBitmap() {
+            log("[ISOLAMENTO] Teste 3 - SEM transferToImageBitmap (envio normal)");
+            const workerCode = `onmessage = (e) => { if (e.data && e.data.canvas) postMessage({ack:true}); };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                const canvas = new OffscreenCanvas(256, 256);
+                // ? Sem transferable
+                try { w.postMessage({canvas: canvas}); } catch(e) {}
+                
+                setTimeout(() => { w.terminate(); }, 9);
+                
+                count++;
+                if (count % 30 === 0) log(`Sem transferToImageBitmap: ${count} execuções`);
+                if (count > 400) { clearInterval(interval); log("Teste 3 finalizado"); }
+            }, 15);
+        }
+
+        // ====================== TESTE 4 - SEM postMessage no Worker ======================
+        function test4_SemPostMessageWorker() {
+            log("[ISOLAMENTO] Teste 4 - SEM postMessage no Worker");
+            const workerCode = `onmessage = () => { /* nada */ };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                const canvas = new OffscreenCanvas(256, 256);
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                
+                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                
+                setTimeout(() => { w.terminate(); }, 9);
+                
+                count++;
+                if (count % 30 === 0) log(`Sem postMessage worker: ${count} execuções`);
+                if (count > 400) { clearInterval(interval); log("Teste 4 finalizado"); }
+            }, 15);
+        }
+
+        // ====================== TESTE 5 - PoC MÍNIMA ======================
+        function test5_MinimalPoC() {
+            log("[ISOLAMENTO] Teste 5 - PoC MÍNIMA (menor código possível)");
+            const workerCode = `onmessage = (e) => { if (e.data && e.data.canvas) postMessage({ack:true}, [e.data.canvas]); };`;
+            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                const w = new Worker(url);
+                const canvas = new OffscreenCanvas(128, 128);   // menor tamanho
+                const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
+                
+                try { w.postMessage({canvas: transferred}, [transferred]); } catch(e) {}
+                setTimeout(() => { w.terminate(); }, 8);   // timing fixo mínimo
+                
+                count++;
+                if (count % 40 === 0) log(`PoC Mínima: ${count} execuções`);
+                if (count > 500) { clearInterval(interval); log("Teste 5 finalizado"); }
+            }, 12);
         }
     </script>
 </body>
