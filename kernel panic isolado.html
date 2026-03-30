@@ -2,228 +2,116 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>PS4 WebKit Stability Tests (v12.00)</title>
+    <title>PS4 WebKit Crash Lab - Leandro</title>
 </head>
 <body>
 
-    <h1>PS4 Research - Stability Tests</h1>
-    <p>Target Firmware: 12.00 | Focus: CE-36329-3</p>
+    <h1>PS4 12.00 - Full Screen & Teardown Tests</h1>
+    <p>Instructions: Click a button, wait for Full Screen, then press <b>OPTIONS</b>.</p>
 
-    <h3>1. Heap Pressure + Delayed Spray</h3>
-    <button onclick="test1()">Run Pressure Test</button>
-    <div id="res1"></div>
+    <button onclick="test1()">1. Basic UAF Teardown</button>
+    
+    <hr>
+
+    <button onclick="test2()">2. Massive Spray + Write</button>
 
     <hr>
 
-    <h3>2. Complex Object Corruption</h3>
-    <button onclick="test2()">Run Complex UAF</button>
-    <div id="res2"></div>
+    <button onclick="test3()">3. Iframe Teardown</button>
 
     <hr>
 
-    <h3>3. Verified Write + Force Reload</h3>
-    <button onclick="test3()">Run Write & Reload</button>
-    <div id="res3"></div>
-
-<h3>4. Iframe Teardown Isolation</h3>
-    <button onclick="test4()">Run Iframe Crash</button>
-    <div id="iframes-container"></div>
+    <button onclick="test4()">4. Circular Object Crash</button>
 
     <hr>
 
-    <h3>5. Recursive Blur Trigger</h3>
-    <button onclick="test5()">Run Recursive Test</button>
+    <button onclick="test5()">5. Multi-Object Corruption</button>
 
     <hr>
 
-    <h3>6. Heavy GC + Fullscreen Toggle</h3>
-    <button onclick="test6()">Run GC Pressure</button>
+    <button onclick="test6()">6. JIT Array Stress</button>
 
     <script>
     const PATTERN = 2.121995791e-314; // 0x4141414141414141
 
-    // --- TESTE 1: FOCO EM SINCRONIZAÇÃO ---
+    // Função auxiliar para garantir o Full Screen
+    function goFS() {
+        const el = document.documentElement;
+        if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    }
+
+    // 1. UAF BÁSICO: Deleta o objeto e sobrescreve no blur
     function test1() {
-        const out = document.getElementById('res1');
-        out.innerHTML = "Status: Preparation... Click OPTIONS.";
-        
-        // Aloca memória pesada antes para "aquecer" o GC
-        let junk = new Array(1000).fill(new Float64Array(1024));
-        
-        if (document.documentElement.webkitRequestFullscreen) 
-            document.documentElement.webkitRequestFullscreen();
-
+        let victim = new Float64Array(100).fill(1.1);
+        goFS();
         window.onblur = function() {
-            junk = null; // Libera memória pesada
-            
-            // Pequeno atraso para o GC agir antes do Spray
-            setTimeout(() => {
-                let spray = [];
-                for(let i = 0; i < 15000; i++) {
-                    let a = new Float64Array(32);
-                    a.fill(PATTERN);
-                    spray.push(a);
-                }
-                out.innerHTML = "Spray Complete. Press REFRESH.";
-            }, 50);
+            victim = null; 
+            let spray = new Float64Array(1000).fill(PATTERN);
+            document.write("<h1>CRASHING...</h1>");
         };
     }
 
-    // --- TESTE 2: FOCO EM OBJETOS ESTRUTURADOS ---
+    // 2. SPRAY MASSIVO: Tenta ocupar o máximo de memória antes do write
     function test2() {
-        const out = document.getElementById('res2');
-        let victim = { a: 1, b: 2, data: new Float64Array(8) };
-        
-        if (document.documentElement.webkitRequestFullscreen) 
-            document.documentElement.webkitRequestFullscreen();
-
+        goFS();
         window.onblur = function() {
-            victim = null; // Trigger UAF
-            
-            let spray = [];
-            for(let i = 0; i < 10000; i++) {
-                let s = new Float64Array(8);
-                s.fill(PATTERN);
-                spray.push(s);
-            }
-            
-            // Força o acesso ao objeto deletado via temporizador
-            setTimeout(() => {
-                try {
-                    // Tenta acessar uma propriedade do objeto que foi limpo
-                    console.log(victim.data[0]); 
-                } catch(e) {
-                    location.reload(); // Força o crash no teardown
-                }
-            }, 100);
-        };
-    }
-
-    // --- TESTE 3: REFINAMENTO DA ESCRITA (MAIS ESTÁVEL) ---
-    function test3() {
-        const out = document.getElementById('res3');
-        let controllers = [];
-        
-        // Cria alvos menores e mais numerosos
-        for(let i = 0; i < 8000; i++) {
-            let a = new Float64Array(4);
-            a[0] = i;
-            controllers.push(a);
-        }
-
-        if (document.documentElement.webkitRequestFullscreen) 
-            document.documentElement.webkitRequestFullscreen();
-
-        window.onblur = function() {
-            let spray = [];
-            for(let i = 0; i < 12000; i++) {
-                let s = new Float64Array(4);
-                s.fill(PATTERN);
-                spray.push(s);
-            }
-
-            // Verifica se a escrita funcionou antes de crashar
-            let found = false;
-            for(let i = 0; i < controllers.length; i++) {
-                if(controllers[i][0] === PATTERN) {
-                    found = true;
-                    break;
-                }
-            }
-
-            if(found) {
-                out.innerHTML = "<b style='color:red'>CORRUPTION VERIFIED. CRASHING...</b>";
-                // Sequência final de crash estável
-                setTimeout(() => {
-                    document.open();
-                    document.write("<h1>CRASH</h1>");
-                    document.close();
-                    location.reload();
-                }, 500);
-            }
-        };
-    }
- // --- TESTE 4: ISOLAMENTO VIA IFRAME ---
-    function test4() {
-        const container = document.getElementById('iframes-container');
-        // Cria um iframe e injeta o objeto vítima nele
-        container.innerHTML = '<iframe id="test-frame" src="about:blank"></iframe>';
-        const frame = document.getElementById('test-frame');
-        const frameDoc = frame.contentWindow.document;
-        
-        // Objeto no contexto do iframe
-        frame.contentWindow.victim = new Float64Array(100).fill(1.1);
-
-        if (document.documentElement.webkitRequestFullscreen) 
-            document.documentElement.webkitRequestFullscreen();
-
-        window.onblur = function() {
-            // Destrói o contexto do iframe (FREE)
-            container.innerHTML = ''; 
-            
-            // Spray no contexto PAI para ocupar o espaço do frame (USE)
-            let spray = [];
-            for(let i = 0; i < 15000; i++) {
-                let a = new Float64Array(32);
-                a.fill(PATTERN);
-                spray.push(a);
-            }
-            
-            // Força o crash ao tentar recarregar o pai
-            setTimeout(() => { location.reload(); }, 200);
-        };
-    }
-
-    // --- TESTE 5: GATILHO RECURSIVO ---
-    // Tenta disparar múltiplos eventos de blur para confundir a fila de tarefas
-    function test5() {
-        let count = 0;
-        if (document.documentElement.webkitRequestFullscreen) 
-            document.documentElement.webkitRequestFullscreen();
-
-        window.onblur = function() {
-            count++;
-            let spray = [];
-            for(let i = 0; i < 5000; i++) {
-                spray.push(new Float64Array(64).fill(PATTERN));
-            }
-            
-            // Tenta sair e entrar no fullscreen para gerar novos eventos
-            if(count < 3) {
-                document.webkitExitFullscreen();
-                setTimeout(() => {
-                    document.documentElement.webkitRequestFullscreen();
-                }, 100);
-            } else {
-                location.reload();
-            }
-        };
-    }
-
-    // --- TESTE 6: FORÇAR O GARBAGE COLLECTOR (GC) ---
-    function test6() {
-        function forceGC() {
-            let limit = 1000000;
             let storage = [];
-            for (let i = 0; i < limit; i++) {
-                storage.push(new String("GC_PRESSURE_" + i));
-                if (i % 10000 === 0) storage = []; // Cria e deleta constantemente
+            for(let i = 0; i < 10000; i++) {
+                storage.push(new Float64Array(32).fill(PATTERN));
             }
-        }
+            document.write("<h1>CRASHING...</h1>");
+        };
+    }
 
-        if (document.documentElement.webkitRequestFullscreen) 
-            document.documentElement.webkitRequestFullscreen();
-
+    // 3. IFRAME ISOLATION: O que você sugeriu, focado no teardown do frame
+    function test3() {
+        const ifrm = document.createElement('iframe');
+        document.body.appendChild(ifrm);
+        ifrm.contentWindow.victim = new Float64Array(50).fill(1.1);
+        
+        goFS();
         window.onblur = function() {
-            forceGC(); // Estressa o coletor de lixo do WebKit
-            
-            let spray = [];
-            for(let i = 0; i < 20000; i++) {
-                spray.push(new Float64Array(16).fill(PATTERN));
-            }
-            
-            document.write("<h1>Triggering Teardown...</h1>");
-            setTimeout(() => { location.reload(); }, 100);
+            ifrm.remove(); // Destrói o contexto do iframe
+            document.write("<h1>CRASHING...</h1>");
+        };
+    }
+
+    // 4. CIRCULAR REFERENCE: Cria um loop que o document.write terá dificuldade em limpar
+    function test4() {
+        let a = { };
+        let b = { next: a };
+        a.next = b; 
+        
+        goFS();
+        window.onblur = function() {
+            a = null;
+            b = null;
+            document.write("<h1>CRASHING...</h1>");
+        };
+    }
+
+    // 5. MULTI-OBJECT CORRUPTION: Mistura strings e arrays para confundir o Heap
+    function test5() {
+        let targets = [];
+        for(let i=0; i<100; i++) targets.push(new AudioContext());
+        
+        goFS();
+        window.onblur = function() {
+            targets = null;
+            document.write("<h1>CRASHING...</h1>");
+        };
+    }
+
+    // 6. JIT Array Stress: Força o compilador JIT e interrompe com write
+    function test6() {
+        let arr = [1.1, 2.2, 3.3];
+        // "Esquenta" o array
+        for(let i=0; i<10000; i++) arr.push(i + 0.1);
+        
+        goFS();
+        window.onblur = function() {
+            arr.length = 0; // Esvazia o array bruscamente
+            document.write("<h1>CRASHING...</h1>");
         };
     }
     </script>
