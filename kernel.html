@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>PS4 Exploit Chain - SharedWorker + Sort Detach UAF</title>
+    <title>PS4 Exploit Chain - SharedWorker</title>
     
 </head>
 <body>
@@ -17,7 +17,7 @@
 
     <script>
         let keeps = [];
-        const TARGET_CHOKE_ZONE = 402; // Limite de asfixia antes do crash por DoS
+        const TARGET_CHOKE_ZONE = 401; // Limite de asfixia antes do crash por DoS
 
         function log(msg) {
             const el = document.getElementById('log');
