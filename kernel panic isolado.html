@@ -31,6 +31,8 @@
 <button onclick="runTest(8)">Teste 8A: document.write minimo</button>
 <button onclick="runTest(9)">Teste 8B: document.write vazio</button>
 <button onclick="runTest(10)">Teste 8C: document.write pesado</button>
+<button onclick="runTest(11)">Teste 11: Acessibilidade (AXObjectCache Teardown)</button>
+<button onclick="runTest(12)">Teste 12: Resize/Intersection Observers</button>
 
 <div id="log"></div>
 
@@ -70,6 +72,8 @@ function runTest(mode) {
     if(mode === 8) modeName = "document.write minimo";
     if(mode === 9) modeName = "document.write vazio";
     if(mode === 10) modeName = "document.write pesado";
+    if(mode === 11) modeName = "Acessibilidade (AXObjectCache Teardown)";
+    if(mode === 12) modeName = "Resize/Intersection Observers";
 
     log.innerHTML = `Executando <b>${modeName}</b>... <br>Pressione OPTIONS agora.`;
 
@@ -207,7 +211,39 @@ function runTest(mode) {
                 }
                 document.write(big);
                 document.close();
-            }         
+            } 
+            else if (currentMode === 11) {
+                // TESTE 11: Acessibilidade (O maior causador de UAFs)
+                logMsg("[T11] Forçando Teardown de Acessibilidade");
+                
+                // 1. Forçamos a criação da árvore de acessibilidade injetando ARIA
+                document.body.setAttribute('role', 'alert');
+                document.body.setAttribute('aria-hidden', 'false');
+                document.body.tabIndex = 0;
+                
+                // 2. Focamos e desfocamos agressivamente para gerar tráfego no AXObjectCache
+                document.body.focus();
+                document.body.blur();
+                
+                // 3. Removemos tudo subitamente (Simula o clearAXObjectCache do document.write)
+                document.body.removeAttribute('role');
+                document.documentElement.innerHTML = ""; 
+            }
+            else if (currentMode === 12) {
+                // TESTE 12: Abortar Resize Observers durante transição
+                logMsg("[T12] Destruindo Resize Observers");
+                
+                // 1. Criamos um observer atrelado ao body
+                let ro = new ResizeObserver(() => {});
+                ro.observe(document.body);
+                
+                // 2. Mudamos o tamanho forçosamente (simulando o caos do Fullscreen)
+                document.body.style.width = "10px";
+                
+                // 3. Desconectamos e destruímos o nó alvo no mesmo ciclo de CPU
+                ro.disconnect();
+                document.body.remove();
+            }      
             
             // Recarrega a página se o navegador sobreviver ao gatilho
             setTimeout(() => location.reload(), 1000);
