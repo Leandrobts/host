@@ -15,8 +15,9 @@
 <button onclick="runTest(2)">Teste 2: Saida do Fullscreen</button>
 <button onclick="runTest(3)">Teste 3: Teardown de Estilo</button>
 <button onclick="runTest(4)">Teste 4: Reset de Foco e Selecao</button>
-
 <button onclick="runTest(5)">Teste 5: Limpeza de Listeners</button>
+<button onclick="runTest(6)">Teste 6: Teardown de Animacao/Render Loop</button>
+<button onclick="runTest(7)">Teste 7: Abortar Loaders (window.stop)</button>
 
 <div id="log"></div>
 
@@ -34,6 +35,8 @@ function runTest(mode) {
     if(mode === 3) modeName = "Teardown de Estilo";
     if(mode === 4) modeName = "Reset de Foco e Selecao";
     if(mode === 5) modeName = "Limpeza de Listeners";
+    if(mode === 6) modeName = "Teardown de Animacao/Render Loop";
+    if(mode === 7) modeName = "Abortar Loaders (window.stop)";
 
     log.innerHTML = `Executando <b>${modeName}</b>... <br>Pressione OPTIONS agora.`;
 
@@ -111,7 +114,22 @@ function runTest(mode) {
                 // sem o peso do document.write()
                 let clone = document.body.cloneNode(false);
                 document.documentElement.replaceChild(clone, document.body);
-            }           
+            } 
+            
+            else if (currentMode === 6) {
+                // Teste 6: Limpeza do Controlador de Animações
+                // Simula a destruição do m_scriptedAnimationController
+                // Registramos um frame fantasma e logo em seguida cancelamos ABSOLUTAMENTE tudo.
+                let id = requestAnimationFrame(() => {});
+                for (let i = 0; i <= id; i++) {
+                    cancelAnimationFrame(i);
+                }
+            }
+            else if (currentMode === 7) {
+                // Teste 7: Abortar todos os recursos e rotinas ativas
+                // O equivalente JS para frame()->loader().stopAllLoaders()
+                window.stop();
+            }          
          
             
             // Recarrega a página se o navegador sobreviver ao gatilho
