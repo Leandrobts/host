@@ -112,15 +112,11 @@ function runTest(mode) {
             
             if (currentMode === 0) {
                 // TESTE 0: BASELINE (Isolado do arquivo original)
-                safeLog("[1] BEFORE document.open");
+                
 
-                try {
+                
                     document.open();
-                    safeLog("[2] AFTER document.open");
-                } catch(e) {
-                    safeLog("[CRASH POINT] document.open: " + e);
-                    return;
-                }
+                    
 
                 // Não logar depois disso no DOM — pode não existir mais
                 document.write("<h1>Crash</h1>");
