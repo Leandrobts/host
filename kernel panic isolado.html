@@ -91,9 +91,7 @@ function runTest(mode) {
 
     window.onblur = function() {
         // Remove o listener para evitar que múltiplos OPTIONS interfiram no fluxo
-        window.onblur = null;
-        log.innerHTML += "<p>Onblur acionado. Forcando GC e Spray...</p>";
-
+        
         // Passo 2: Força o Garbage Collector liberando a memória alocada
         controllers = null;
         for (let i = 0; i < 20000; i++) {
