@@ -150,20 +150,14 @@ function probe(fsTarget) {
     try {
     let child = fsTarget.firstChild;
 
-    log("[PWN] firstChild = " + child);
+    Object.defineProperty(child, "x", {
+        value: 1337
+    });
 
-    if (child) {
-        log("[PWN] tag = " + child.tagName);
-
-        child.innerHTML = "BBBB";
-        log("[PWN] write OK");
-
-        let attr = child.getAttribute("id");
-        log("[PWN] id = " + attr);
-    }
+    log("[PWN] property injection OK");
 
 } catch(e) {
-    log("[PWN] erro acesso filho");
+    log("[PWN] property injection FAIL");
 }
 
     // layout
