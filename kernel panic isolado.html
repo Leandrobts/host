@@ -148,13 +148,22 @@ function probe(fsTarget) {
     }
     
     try {
-    let el = document.getElementById("pwn");
-    if (el) {
-        el.innerHTML = "BBBB";
-        log("[LEAK] write no pwn OK");
+    let child = fsTarget.firstChild;
+
+    log("[PWN] firstChild = " + child);
+
+    if (child) {
+        log("[PWN] tag = " + child.tagName);
+
+        child.innerHTML = "BBBB";
+        log("[PWN] write OK");
+
+        let attr = child.getAttribute("id");
+        log("[PWN] id = " + attr);
     }
+
 } catch(e) {
-    log("[LEAK] write no pwn crash");
+    log("[PWN] erro acesso filho");
 }
 
     // layout
