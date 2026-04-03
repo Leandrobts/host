@@ -66,13 +66,13 @@ function aggressiveReclaim() {
 
     let bucket = [];
 
-    for (let i = 0; i < 8000; i++) {
+    for (let i = 0; i < 5000; i++) {
         let el = document.createElement("div");
         document.body.appendChild(el);
         el.remove();
     }
 
-    for (let i = 0; i < 10000; i++) {
+    for (let i = 0; i < 5000; i++) {
         let el = document.createElement("div");
         el.innerHTML = "REUSE_EL_" + i;
         el.style.position = "absolute";
@@ -82,13 +82,13 @@ function aggressiveReclaim() {
         bucket.push(el);
     }
 
-    for (let i = 0; i < 10000; i++) {
+    for (let i = 0; i < 5000; i++) {
         let txt = document.createTextNode("TXT_" + i);
         document.body.appendChild(txt);
         bucket.push(txt);
     }
 
-    for (let i = 0; i < 10000; i++) {
+    for (let i = 0; i < 5000; i++) {
         let el = document.createElement("div");
         el.setAttribute("data-x", "ATTR_" + i);
         document.body.appendChild(el);
