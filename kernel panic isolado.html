@@ -141,7 +141,7 @@ function probe(fsTarget) {
 
     // write
     try {
-        fsTarget.innerHTML = "<svg><script>alert(1)<\/script></svg>";
+        fsTarget.innerHTML = "<div id='pwn'>AAAA</div>";
         log("[CHECK] write innerHTML OK");
     } catch(e) {
         log("[UAF] write innerHTML crash");
