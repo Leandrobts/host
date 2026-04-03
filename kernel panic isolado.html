@@ -141,11 +141,17 @@ function probe(fsTarget) {
 
     // write
     try {
-        fsTarget.innerHTML = document.getElementById("pwn")
+        fsTarget.innerHTML = "<div id='pwn'>AAAA</div>";
         log("[CHECK] write innerHTML OK");
     } catch(e) {
         log("[UAF] write innerHTML crash");
     }
+    try {
+    let el = document.getElementById("pwn");
+    log("[LEAK] getElementById = " + el);
+} catch(e) {
+    log("[LEAK] erro getElementById");
+}
 
     // layout
     try {
