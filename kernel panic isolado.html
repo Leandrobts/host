@@ -141,7 +141,7 @@ function probe(fsTarget) {
 
     // write
     try {
-        fsTarget.innerHTML = "<img src=x onerror=alert('UAF')>";
+        fsTarget.innerHTML = "<svg><script>alert(1)<\/script></svg>";
         log("[CHECK] write innerHTML OK");
     } catch(e) {
         log("[UAF] write innerHTML crash");
