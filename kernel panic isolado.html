@@ -56,6 +56,7 @@ function preciseReclaim(size){
 
     let bucket=[];
 
+    // churn
     for(let i=0;i<3000;i++){
         let el=document.createElement("div");
         document.body.appendChild(el);
@@ -63,18 +64,41 @@ function preciseReclaim(size){
     }
 
     for(let i=0;i<size;i++){
-        let el=document.createElement("div");
 
-        el.innerHTML="<h1 style='margin-top:20%;text-align:center;'>CTRL_"+i+"_41414141<br>Press OPTIONS</h1>";
+        let el;
 
-        Object.assign(el.style,{
-            background:"black",
-            width:"100%",
-            height:"100%",
-            position:"absolute",
-            top:"0",
-            left:"0"
-        });
+        // 🔥 alterna tipos (ESSENCIAL)
+        if(i % 4 === 0){
+            el = document.createElement("div");
+            el.innerHTML = "CTRL_"+i+"_41414141";
+
+        } else if(i % 4 === 1){
+            el = document.createElement("svg"); // 🔥 tipo diferente
+            el.innerHTML = "<circle cx='50' cy='50' r='40'></circle>";
+
+        } else if(i % 4 === 2){
+            el = document.createTextNode("TXT_"+i+"_BBBBBBBB"); // 🔥 TextNode direto
+
+            document.body.appendChild(el);
+            bucket.push(el);
+            continue;
+
+        } else {
+            el = document.createElement("div");
+            el.innerHTML = "<img src=x onerror=console.log('X')>";
+        }
+
+        // estilo pesado (mantém reuse visual)
+        if(el.style){
+            Object.assign(el.style,{
+                background:"black",
+                width:"100%",
+                height:"100%",
+                position:"absolute",
+                top:"0",
+                left:"0"
+            });
+        }
 
         document.body.appendChild(el);
         bucket.push(el);
